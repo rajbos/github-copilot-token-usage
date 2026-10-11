@@ -36,7 +36,7 @@ with `gh pr comment --attach` via `.github/workflows/scripts/visual-diff-comment
 
 ```bash
 # Build the bundles first
-cd vscode-extension && npm install && node esbuild.js && cd ..
+cd vscode-extension && pnpm install && node esbuild.js && cd ..
 
 # Compare the working tree against the merge base with origin/main
 node .github/skills/visual-view-diff/visual-diff.js

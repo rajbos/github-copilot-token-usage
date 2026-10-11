@@ -50,7 +50,7 @@ async function main() {
     outfile: "dist/cli.js",
     format: "cjs",
     platform: "node",
-    target: "node18",
+    target: "node22",
     sourcemap: !production,
     minify: production,
     banner: {

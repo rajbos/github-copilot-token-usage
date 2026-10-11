@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import initSqlJs from 'sql.js';
 import { CopilotAppDataAccess } from '../../../vscode-extension/src/copilotAppData';
 
 type FakeRow = (string | number | null)[];
@@ -141,5 +142,50 @@ test('getSessionHierarchy returns an empty map for an empty input list without t
 		assert.equal(harness.opened.length, 0);
 	} finally {
 		harness.cleanup();
+	}
+});
+
+test('getSessionContextInfo sees a row that exists only in the WAL (not yet checkpointed), unlike a main-file-only read', async (t) => {
+	let DatabaseSync: typeof import('node:sqlite').DatabaseSync;
+	try {
+		({ DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite'));
+	} catch {
+		t.skip('node:sqlite is not available in this Node version');
+		return;
+	}
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'copilot-app-data-wal-'));
+	const dbPath = path.join(tmpDir, 'data.db');
+	const writer = new DatabaseSync(dbPath);
+	try {
+		writer.exec('PRAGMA journal_mode=WAL;');
+		writer.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, context_tier TEXT, context_current_tokens INTEGER, context_input_token_limit INTEGER);');
+		// Fold the schema into the main file, then commit the row so it lives only in the -wal.
+		writer.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+		writer.exec("INSERT INTO sessions VALUES ('wal-only-session', 'default', 9876, 200000);");
+		assert.ok(fs.statSync(dbPath + '-wal').size > 0, 'fixture setup: the row must be pending in the -wal file');
+
+		// Negative control: a reader of just the main file (the original bug) cannot see the row.
+		const sqlJs = await initSqlJs();
+		const mainOnly = new sqlJs.Database(fs.readFileSync(dbPath));
+		try {
+			const res = mainOnly.exec("SELECT id FROM sessions WHERE id = 'wal-only-session'");
+			assert.equal(res.length, 0, 'main-file-only read must NOT see the uncheckpointed row — otherwise this test would not exercise the bug');
+		} finally {
+			mainOnly.close();
+		}
+
+		const access = new CopilotAppDataAccess();
+		access.getDbPath = () => dbPath;
+		const result = await access.getSessionContextInfo(['wal-only-session']);
+
+		assert.deepEqual(result.get('wal-only-session'), {
+			uuid: 'wal-only-session',
+			contextTier: 'default',
+			contextReachedTokens: 9876,
+			contextWindowLimit: 200000,
+		});
+	} finally {
+		try { writer.close(); } catch { /* ignore */ }
+		fs.rmSync(tmpDir, { recursive: true, force: true });
 	}
 });

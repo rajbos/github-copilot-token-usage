@@ -105,10 +105,14 @@ jobs:
 
       - name: Compute deployment parameters
         id: env
+        # Ref names are attacker-controlled: pass them via env, never interpolate into the script.
         env:
           FORCE_TEST:  ${{ inputs.deploy_to_test }}
+          GIT_REF:     ${{ github.ref }}
+          BRANCH:      ${{ github.ref_name }}
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" && "$FORCE_TEST" != "true" ]]; then
+          set -euo pipefail
+          if [[ "$GIT_REF" == "refs/heads/main" && "$FORCE_TEST" != "true" ]]; then
             {
               echo "app_name=sharing-server-prod"
               echo "state_key=sharing-server/prod.tfstate"
@@ -117,7 +121,7 @@ jobs:
               echo "min_replicas=1"
               echo "allow_custom_domain=true"
             } >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref }}" == "refs/heads/main" && "$FORCE_TEST" == "true" ]]; then
+          elif [[ "$GIT_REF" == "refs/heads/main" && "$FORCE_TEST" == "true" ]]; then
             # Stable test environment — fixed app name so ai-fluency-server-test.devopsjournal.io
             # always points to the same ACA app. Keeps min_replicas=1 so it stays warm.
             {
@@ -129,7 +133,11 @@ jobs:
               echo "allow_custom_domain=true"
             } >> "$GITHUB_OUTPUT"
           else
-            BRANCH="${{ github.ref_name }}"
+            # Allowlist the branch name before it influences environment, state_key or app_name.
+            if [[ ! "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+              echo "::error::Branch name contains characters outside [A-Za-z0-9._/-]; refusing to compute a deployment target."
+              exit 1
+            fi
             # Slugify: lowercase, replace non-alphanumeric with hyphens, dedupe hyphens, strip leading/trailing hyphens
             SLUG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//;s/-$//')
             # Truncate slug to 13 chars and strip any trailing hyphen that truncation may leave
@@ -162,24 +170,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: '11.2.2'
+
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
-          cache: 'npm'
-          cache-dependency-path: sharing-server/package-lock.json
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+          cache-dependency-path: sharing-server/pnpm-lock.yaml
 
       - name: Install dependencies
         working-directory: sharing-server
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Type-check
         working-directory: sharing-server
-        run: npm run check-types
+        run: pnpm run check-types
 
       - name: Run server and data separation regression tests
         working-directory: sharing-server
-        run: npm test
+        run: pnpm test
 
       - name: Install existing headless browser tooling
         working-directory: .github/workflows/dependencies/playwright
@@ -191,11 +204,11 @@ jobs:
         working-directory: sharing-server
         env:
           NODE_PATH: ${{ github.workspace }}/.github/workflows/dependencies/playwright/node_modules
-        run: npm run check:interaction
+        run: pnpm run check:interaction
 
       - name: Build library (lib/)
         working-directory: sharing-server
-        run: npm run build:lib
+        run: pnpm run build:lib
 
       - name: Verify the published entry point loads
         working-directory: sharing-server
@@ -309,9 +322,11 @@ jobs:
 
       - name: Check Azure credentials
         id: prereqs
+        env:
+          DEPLOY_ENVIRONMENT: ${{ needs.setup.outputs.environment }}
         run: |
           if [[ -z "$ARM_CLIENT_ID" ]]; then
-            echo "⚠️ Azure credentials not configured for '${{ needs.setup.outputs.environment }}' environment — skipping deployment." >> "$GITHUB_STEP_SUMMARY"
+            echo "⚠️ Azure credentials not configured for '${DEPLOY_ENVIRONMENT}' environment — skipping deployment." >> "$GITHUB_STEP_SUMMARY"
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
@@ -324,12 +339,14 @@ jobs:
       - name: Terraform init
         if: steps.prereqs.outputs.configured == 'true'
         working-directory: sharing-server/infra
+        env:
+          STATE_KEY: ${{ needs.setup.outputs.state_key }}
         run: |
           terraform init -reconfigure \
             -backend-config="resource_group_name=${{ vars.TF_STATE_RESOURCE_GROUP }}" \
             -backend-config="storage_account_name=${{ vars.TF_STATE_STORAGE_ACCOUNT }}" \
             -backend-config="container_name=${{ vars.TF_STATE_CONTAINER }}" \
-            -backend-config="key=${{ needs.setup.outputs.state_key }}"
+            -backend-config="key=${STATE_KEY}"
 
       # Azure CLI login (OIDC federated credential) — needed by the `az containerapp`
       # calls below for custom domain/cert reconciliation. Terraform itself
@@ -591,6 +608,8 @@ jobs:
       - name: Output deployment summary
         if: steps.prereqs.outputs.configured == 'true'
         working-directory: sharing-server/infra
+        env:
+          IS_PROD: ${{ needs.setup.outputs.is_prod }}
         run: |
           APP_URL=$(terraform output -raw app_url)
           ACA_FQDN=$(terraform output -raw aca_fqdn)
@@ -610,7 +629,7 @@ jobs:
             echo "| ACA FQDN (CNAME target) | ${ACA_FQDN} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if [[ "${{ needs.setup.outputs.is_prod }}" == "true" ]]; then
+          if [[ "$IS_PROD" == "true" ]]; then
             {
               echo ""
               echo "> 📋 **Custom domain DNS setup** — if \`SHARING_CUSTOM_DOMAIN\` is not yet set,"
@@ -620,7 +639,7 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          if [[ "${{ needs.setup.outputs.is_prod }}" == "false" ]]; then
+          if [[ "$IS_PROD" == "false" ]]; then
             {
               echo ""
               echo "> ⚠️ **Test deployment** — the dashboard OAuth login requires the callback URL above"

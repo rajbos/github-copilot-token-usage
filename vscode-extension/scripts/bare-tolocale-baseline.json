@@ -11,7 +11,7 @@
     "vscode-extension/src/webview/maturity/darkFactorySection.ts": 1,
     "vscode-extension/src/webview/maturity/main.ts": 2,
     "vscode-extension/src/webview/maturity/shareCard.ts": 1,
-    "vscode-extension/src/webview/usage/main.ts": 12,
+    "vscode-extension/src/webview/usage/main.ts": 11,
     "vscode-extension/src/webview/whatsnew/main.ts": 1,
     "cli/src/commands/curation.ts": 3,
     "cli/src/commands/environmental.ts": 1,

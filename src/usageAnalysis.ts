@@ -78,6 +78,7 @@ import { detectJetBrainsModeFromContent, type JetBrainsMode } from './jetbrains'
 import type { IEcosystemAdapter } from './ecosystemAdapter';
 import { isAnalyzable } from './ecosystemAdapter';
 import { isUnsafeObjectKey } from './utils/protoGuard';
+import { applyCliShutdownMetrics, createCliShutdownAccumulator, getCliShutdownTotals, type CliShutdownAccumulator, type CliShutdownModelMetricsEntry } from './cliShutdownMetrics';
 import { createLatencyHistogram, mergeLatencyHistogram, recordLatencyMs } from './latencyHistogram';
 
 
@@ -2959,36 +2960,11 @@ type GmusJsonlState = {
 	defaultModel: string;
 	isDeltaBased: boolean;
 	sessionState: DeltaSessionState;
-	cliShutdownModelUsage: ModelUsage | null;
+	/** Folded session.shutdown modelMetrics; null until the first shutdown with modelMetrics. */
+	cliShutdown: CliShutdownAccumulator | null;
 	cliRealOutputByModel: { [model: string]: number } | null;
 	totalCliToolCalls: number;
 };
-
-type CliShutdownMetricsEntry = { usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number } };
-
-function _gmusApplyMetricEntry(modelName: string, usage: NonNullable<CliShutdownMetricsEntry['usage']>, dest: ModelUsage): void {
-	// Untrusted `modelName` key from a parsed modelMetrics JSON object (JSON.parse
-	// creates own "__proto__" properties, so Object.entries can yield it) — see protoGuard.ts.
-	if (isUnsafeObjectKey(modelName)) { return; }
-	if (!dest[modelName]) { dest[modelName] = { inputTokens: 0, outputTokens: 0, sessions: 0 }; }
-	dest[modelName].inputTokens += typeof usage.inputTokens === 'number' ? usage.inputTokens : 0;
-	dest[modelName].outputTokens += typeof usage.outputTokens === 'number' ? usage.outputTokens : 0;
-	const cacheRead = typeof usage.cacheReadTokens === 'number' ? usage.cacheReadTokens : 0;
-	const cacheWrite = typeof usage.cacheWriteTokens === 'number' ? usage.cacheWriteTokens : 0;
-	if (cacheRead > 0) { dest[modelName].cachedReadTokens = (dest[modelName].cachedReadTokens ?? 0) + cacheRead; }
-	if (cacheWrite > 0) { dest[modelName].cacheCreationTokens = (dest[modelName].cacheCreationTokens ?? 0) + cacheWrite; }
-}
-
-/** Accumulate per-model token data from a session.shutdown modelMetrics block. */
-function _gmusProcessCliShutdownMetrics(
-	modelMetrics: Record<string, CliShutdownMetricsEntry>,
-	cliShutdownModelUsage: ModelUsage
-): void {
-	for (const [modelName, metrics] of Object.entries(modelMetrics)) {
-		if (!metrics?.usage) { continue; }
-		_gmusApplyMetricEntry(modelName, metrics.usage, cliShutdownModelUsage);
-	}
-}
 
 /** Handle an assistant.message event, recording real or estimated output tokens. */
  
@@ -3002,12 +2978,16 @@ function _gmusHandleAssistantMessage(event: any, model: string, state: GmusJsonl
 	}
 }
 
-/** Handle a session.shutdown event, accumulating CLI shutdown model metrics into state. */
+/**
+ * Handle a session.shutdown event, folding its CLI model metrics into state.
+ * Shutdown metrics are cumulative across resume, so the latest snapshot replaces
+ * earlier ones rather than being summed (see cliShutdownMetrics.ts).
+ */
  
 function _gmusHandleShutdownEvent(event: any, state: GmusJsonlState): void {
 	if (!event.data?.modelMetrics) { return; }
-	if (!state.cliShutdownModelUsage) { state.cliShutdownModelUsage = {}; }
-	_gmusProcessCliShutdownMetrics(event.data.modelMetrics as Record<string, CliShutdownMetricsEntry>, state.cliShutdownModelUsage);
+	if (!state.cliShutdown) { state.cliShutdown = createCliShutdownAccumulator(); }
+	applyCliShutdownMetrics(state.cliShutdown, event.data.modelMetrics as Record<string, CliShutdownModelMetricsEntry>);
 }
 
 /** Dispatch a CLI-format JSONL event to the appropriate token accumulation handler. */
@@ -3077,7 +3057,7 @@ function _gmusProcessJsonlLine(event: any, state: GmusJsonlState, modelUsage: Mo
 function _gmusParseJsonlLines(lines: string[], modelUsage: ModelUsage, deps: GmusDeps): GmusJsonlState {
 	const state: GmusJsonlState = {
 		defaultModel: 'unknown', isDeltaBased: false, sessionState: {},
-		cliShutdownModelUsage: null, cliRealOutputByModel: null, totalCliToolCalls: 0
+		cliShutdown: null, cliRealOutputByModel: null, totalCliToolCalls: 0
 	};
 	for (const line of lines) {
 		if (!line.trim()) { continue; }
@@ -3162,7 +3142,7 @@ function _gmusBuildEstimatedCliUsage(state: GmusJsonlState, modelUsage: ModelUsa
 /** Process all JSONL lines and return resolved model usage, or null to use accumulated modelUsage. */
 function _gmusProcessJsonlContent(lines: string[], modelUsage: ModelUsage, deps: GmusDeps): ModelUsage | null {
 	const state = _gmusParseJsonlLines(lines, modelUsage, deps);
-	if (!state.isDeltaBased && state.cliShutdownModelUsage) { return state.cliShutdownModelUsage; }
+	if (!state.isDeltaBased && state.cliShutdown) { return getCliShutdownTotals(state.cliShutdown); }
 	if (!state.isDeltaBased && state.cliRealOutputByModel) { return _gmusBuildEstimatedCliUsage(state, modelUsage); }
 	_gmusProcessDeltaRequests(state, modelUsage, deps);
 	_gmusDeltaFallbackExtraction(lines, state, modelUsage, deps);

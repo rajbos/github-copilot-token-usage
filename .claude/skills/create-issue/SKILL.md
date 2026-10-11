@@ -26,7 +26,7 @@ If any of this is unclear, ambiguous or you detect a gap (e.g. the request names
 Before writing anything, look at the code. Do not describe changes from memory.
 
 - Start from `AGENTS.md` (repo structure, sub-project instructions) and the matching `.github/instructions/*.instructions.md`.
-- If `.graphify-agent/graph.json` exists, query it for structural questions (callers, blast radius), e.g. `GRAPHIFY_OUT=.graphify-agent graphify query "<question>"` (or pass `--graph .graphify-agent/graph.json`). Do not use the committed `graphify-out/` directory; if the graph is missing, search with grep/glob.
+- If `.graphify-agent/graph.json` exists, query it for structural questions (callers, blast radius), e.g. `GRAPHIFY_OUT=.graphify-agent graphify query "<question>"` (or pass `--graph .graphify-agent/graph.json`). Ignore any local `graphify-out/` directory (stale, not the CI graph); if the graph is missing, search with grep/glob.
 - Check `docs/` (especially `docs/features/`, `docs/adr/`, `docs/FLUENCY-METRICS-SCHEMA.md`, `docs/TRACKABLE-DATA.md`) for existing design decisions that apply.
 - Search existing open and recently closed issues/PRs (`gh issue list --state all --search "<keywords>"`, `gh pr list --state all --search "<keywords>"`) to avoid duplicates; link related ones instead of duplicating.
 
@@ -44,7 +44,7 @@ State the approach you recommend; if there are real alternatives with different 
 
 ## Step 4 — Tests
 
-List the tests that must be added or updated: the existing test files that cover the touched code (find them, give paths) and new cases needed (edge cases, regressions, empty/missing data). Name the validation commands from the relevant instructions file (e.g. `npm run test:node`, `npm run check:contract`, `npm run check:interaction`, `dotnet test`, `./gradlew test`). If a UI changes, note that before/after screenshots are expected.
+List the tests that must be added or updated: the existing test files that cover the touched code (find them, give paths) and new cases needed (edge cases, regressions, empty/missing data). Name the validation commands from the relevant instructions file (e.g. `pnpm run test:node`, `pnpm run check:contract`, `pnpm run check:interaction`, `dotnet test`, `./gradlew test`). If a UI changes, note that before/after screenshots are expected.
 
 ## Step 5 — Check for cross-surface gaps
 

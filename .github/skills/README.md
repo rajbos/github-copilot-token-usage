@@ -99,7 +99,8 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 **Use this skill when:**
 - The CI step summary's "Code Duplication Analysis" report grows
 - A PR review notes duplicated / copy-pasted code
-- You want to DRY up the codebase (vscode-extension/src, shared src/, cli/src)
+- You want to DRY up the codebase (vscode-extension/src, shared src/, cli/src, sharing-server/src, desktop/src, release-video/src)
+- The CI `duplication-check` ratchet (`scripts/code-duplication-baseline.json`) can be lowered after a cleanup
 
 **Contents:**
 - Step-by-step workflow: list groups → pick one → baseline tests → extract helper → lint → re-run detector → build → commit → PR
@@ -149,7 +150,7 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 **Contents:**
 - `scan-hardcoded-strings.js` — dependency-free Node script that flags string/template literals in UI-rendering positions (`.textContent`/`.innerText`/`.innerHTML`/`.title`/`.placeholder` assignments, `aria-label`/`title`/`placeholder` HTML attributes, and text inside `<div>`/`<button>`/`<label>`/`<h1>`–`<h6>`/`<p>`/`<span>`/`<td>`/`<th>`/`<option>`/`<summary>`/`<caption>` tags)
 - `scan-hardcoded-strings.test.js` — unit tests for the detection helpers
-- Console and Markdown report output (`hardcoded-strings-report.md` at the repo root); always exits `0` — informational, not a CI gate
+- Console and Markdown report output (git-ignored `hardcoded-strings-report.md` at the repo root); always exits `0` — informational, not a CI gate
 
 ### validate-app-db-schema
 

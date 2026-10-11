@@ -12,6 +12,10 @@ import {
 	sweepStaleWalTempFiles,
 	walMergeCacheSizeForTests,
 	walMergeCacheHasEntryForTests,
+	WAL_MERGE_MIN_INTERVAL_MS,
+	WAL_MERGE_WRITER_ACTIVE_INTERVAL_MS,
+	WRITER_ACTIVE_WAL_RECENCY_MS,
+	setNodeSqliteLoaderForTests,
 } from '../../../src/utils/sqliteWal';
 
 /**
@@ -498,6 +502,68 @@ test('tryReadDbWithWal throttles a persistently failing merge instead of retryin
 		);
 	} finally {
 		restoreCopyFileSync();
+		fixture.cleanup();
+	}
+});
+
+test('the throttle interval constants keep their documented values (1 min, 5 min writer-active, 30 s recency)', () => {
+	assert.equal(WAL_MERGE_MIN_INTERVAL_MS, 60_000);
+	assert.equal(WAL_MERGE_WRITER_ACTIVE_INTERVAL_MS, 5 * 60_000);
+	assert.equal(WRITER_ACTIVE_WAL_RECENCY_MS, 30_000);
+	assert.ok(WAL_MERGE_WRITER_ACTIVE_INTERVAL_MS > WAL_MERGE_MIN_INTERVAL_MS, 'a live writer must back off harder than the plain throttle');
+});
+
+test('the over-cap skip is logged once per path via console.debug, and again after the path becomes eligible and regrows', async () => {
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sqlitewal-logonce-'));
+	const dbPath = path.join(tmpDir, 'huge.db');
+	const walPath = dbPath + '-wal';
+	const messages: string[] = [];
+	const originalDebug = console.debug;
+	console.debug = (...args: unknown[]) => { messages.push(args.join(' ')); };
+	const makeSparse = (file: string, size: number) => {
+		const fd = fs.openSync(file, 'w');
+		fs.ftruncateSync(fd, size);
+		fs.closeSync(fd);
+	};
+	try {
+		makeSparse(dbPath, MAX_WAL_MERGE_DB_SIZE_BYTES + 1024);
+		fs.writeFileSync(walPath, 'not empty');
+
+		await tryReadDbWithWal(dbPath);
+		await tryReadDbWithWal(dbPath);
+		await tryReadDbWithWal(dbPath);
+		const forPath = () => messages.filter(m => m.includes(dbPath));
+		assert.equal(forPath().length, 1, 'repeated polls over the cap must log exactly once');
+
+		// Shrink the main db below the cap: the path becomes eligible again (clearing the logged flag),
+		// and the merge attempt on this fake db fails quietly. Then regrow it past the cap.
+		makeSparse(dbPath, 1024);
+		await tryReadDbWithWal(dbPath);
+		makeSparse(dbPath, MAX_WAL_MERGE_DB_SIZE_BYTES + 1024);
+		await tryReadDbWithWal(dbPath);
+		assert.equal(forPath().length, 2, 'regrowing past the cap after being eligible must log again');
+	} finally {
+		console.debug = originalDebug;
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	}
+});
+
+test('falls back to a direct (WAL-blind) read, without throwing, when node:sqlite cannot be loaded', async () => {
+	// A REAL WAL fixture: without the loader seam being consulted, the merge would succeed and
+	// return the WAL row, so this test fails if performWalMerge bypasses the injected loader.
+	const fixture = createWalFixture();
+	let loaderCalls = 0;
+	try {
+		setNodeSqliteLoaderForTests(() => { loaderCalls++; throw new Error('Cannot find module node:sqlite'); });
+
+		assert.equal(await tryReadDbWithWal(fixture.dbPath), null, 'no merge is possible without node:sqlite');
+		assert.equal(loaderCalls, 1, 'the merge must have gone through the injected loader, not the real module');
+
+		const result = await readDbBufferWithWalFingerprint(fixture.dbPath);
+		assert.deepEqual(result.buffer, fs.readFileSync(fixture.dbPath), 'must fall back to the plain main-file bytes');
+		assert.equal(result.walIncluded, false, 'the non-empty WAL was not merged, and must be reported as such');
+	} finally {
+		setNodeSqliteLoaderForTests(undefined);
 		fixture.cleanup();
 	}
 });

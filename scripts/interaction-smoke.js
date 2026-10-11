@@ -61,8 +61,8 @@ const SKILL_DIR = path.join(__dirname, '..', '.github', 'skills', 'visual-view-d
 const REPO_ROOT = path.resolve(__dirname, '..');
 const DIST_DIR = path.join(REPO_ROOT, 'vscode-extension', 'dist', 'webview');
 
-const { buildPageHtml, loadFixture } = require(path.join(SKILL_DIR, 'lib', 'harness.js'));
-const { loadChromium } = require(path.join(SKILL_DIR, 'lib', 'browser.js'));
+const { buildPageHtml, loadFixture, resolveInside } = require(path.join(SKILL_DIR, 'lib', 'harness.js'));
+const { blockNetwork, loadChromium } = require(path.join(SKILL_DIR, 'lib', 'browser.js'));
 const { parseArgs, readConfig, selectViews } = require(path.join(SKILL_DIR, 'lib', 'config.js'));
 // The step vocabulary (`click`, `select`, `post`) is shared with the visual
 // diff's `states`, so a scenario and a screenshot state read alike. The
@@ -266,6 +266,7 @@ async function openPage(browser, pageFile, view, defaults) {
   // A control that opens a real URL or a dialog must not hang or navigate the
   // harness away from the page under test.
   page.on('dialog', (dialog) => void dialog.dismiss().catch(() => {}));
+  await blockNetwork(page);
   await page.addInitScript(INSTALL_VISIBILITY_HELPER);
   await page.goto(require('url').pathToFileURL(pageFile).href, { waitUntil: 'load' });
   await page.waitForTimeout(view.settleMs || defaults.settleMs || 1200);
@@ -354,7 +355,7 @@ async function checkStepVisibility(page, step) {
 }
 
 /** Replays one declared scenario on a fresh page and reports what each step did. */
-async function runScenario(page, view, scenario) {
+async function runScenario(page, view, scenario, handledCommands) {
   const steps = [];
   const findings = [];
   const fail = (control, detail) => findings.push({ view: view.id, kind: 'scenario-step-failed', control, detail });
@@ -402,13 +403,34 @@ async function runScenario(page, view, scenario) {
 
     await page.waitForTimeout(120);
     await waitForQuietDom(page);
-    const [errors, after] = await Promise.all([
+    const [errors, after, posted] = await Promise.all([
       page.evaluate(() => window.__HARNESS_ERRORS__.slice()),
       page.evaluate(DOM_SIGNATURE),
+      page.evaluate(() => window.__HARNESS_POSTED_MESSAGES__.slice()),
     ]);
     if (errors.length > 0) {
       findings.push({ view: view.id, kind: 'scenario-step-threw', control: label, detail: errors.join(' | ').slice(0, 400) });
       break;
+    }
+    // `expectPosted` is what the step must have sent to the host. A click on a button whose
+    // listener is gone changes no DOM and posts nothing, which the DOM signature alone would
+    // record as a harmless no-op; this is the assertion that catches it. The command must also
+    // have a host-side handler, the same rule the one-pass crawl applies.
+    if (step.expectPosted) {
+      const commands = posted.map((message) => (message && typeof message === 'object' ? message.command : undefined));
+      if (!commands.includes(step.expectPosted)) {
+        findings.push({
+          view: view.id,
+          kind: 'scenario-expected-post-missing',
+          control: label,
+          detail: `expected a '${step.expectPosted}' message, got ${commands.length ? commands.map(String).join(', ') : 'none'}`,
+        });
+        break;
+      }
+      if (handledCommands && !handledCommands.has(step.expectPosted)) {
+        findings.push({ view: view.id, kind: 'scenario-post-unhandled', control: label, detail: `'${step.expectPosted}' has no handler in the extension host` });
+        break;
+      }
     }
     // `expect` is what the view must still be showing after the step — the point
     // of the scenario, not a bonus assertion: a picker that silently drops to an
@@ -442,7 +464,17 @@ async function runScenario(page, view, scenario) {
 }
 
 async function smokeView({ browser, view, defaults, handledCommands, isolate }) {
-  const bundlePath = path.join(DIST_DIR, `${view.bundle}.js`);
+  // Registry paths are contained the same way render-views.js contains them:
+  // no absolute paths, `../` or symlinks out of the dist or fixtures directory,
+  // and no link between the repo root and either of those directories.
+  let bundlePath;
+  let fixturePath;
+  try {
+    bundlePath = resolveInside(DIST_DIR, `${view.bundle}.js`, 'bundle', REPO_ROOT);
+    fixturePath = resolveInside(path.join(SKILL_DIR, 'fixtures'), view.fixture, 'fixture', REPO_ROOT);
+  } catch (error) {
+    return { view: view.id, status: 'error', error: String(error && error.message || error), controls: [], findings: [] };
+  }
   if (!fs.existsSync(bundlePath)) {
     return {
       view: view.id,
@@ -452,7 +484,6 @@ async function smokeView({ browser, view, defaults, handledCommands, isolate }) 
       findings: [],
     };
   }
-  const fixturePath = path.join(SKILL_DIR, 'fixtures', view.fixture);
   if (!fs.existsSync(fixturePath)) {
     return { view: view.id, status: 'error', error: `Missing fixture ${view.fixture}`, controls: [], findings: [] };
   }
@@ -536,7 +567,7 @@ async function smokeView({ browser, view, defaults, handledCommands, isolate }) 
   const scenarios = [];
   for (const scenario of view.scenarios || []) {
     const scenarioPage = await openPage(browser, pageFile, view, defaults);
-    const outcome = await runScenario(scenarioPage, view, scenario);
+    const outcome = await runScenario(scenarioPage, view, scenario, handledCommands);
     await scenarioPage.close();
     scenarios.push({ name: outcome.name, steps: outcome.steps });
     findings.push(...outcome.findings);

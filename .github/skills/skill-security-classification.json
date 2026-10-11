@@ -27,7 +27,7 @@
     },
     "scan-hardcoded-strings": {
       "status": "exempt",
-      "reason": "Repo-only. Regex-scans vscode-extension/src/webview/** and extension.ts, prints to stdout and writes one Markdown report to its declared location (default hardcoded-strings-report.md, overridable with --out); no network, no child processes, no home-directory data."
+      "reason": "Repo-only. Regex-scans vscode-extension/src/webview/** and extension.ts, prints to stdout and writes one Markdown report to its declared location (default git-ignored hardcoded-strings-report.md, overridable with --out); no network, no child processes, no home-directory data."
     },
     "whats-new-catalog": {
       "status": "exempt",

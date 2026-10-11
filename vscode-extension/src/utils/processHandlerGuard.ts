@@ -33,6 +33,10 @@ type FatalEvent = 'uncaughtException' | 'unhandledRejection';
 
 const FATAL_EVENTS: readonly FatalEvent[] = ['uncaughtException', 'unhandledRejection'];
 
+// `process.listeners()` has per-event overloads in @types/node 24 that reject a union-typed
+// event name, so go through the plain EventEmitter view of `process`.
+const processEmitter: NodeJS.EventEmitter = process;
+
 /** Strip comments and collapse whitespace so minified and readable sources compare alike. */
 function normalizeSource(fn: Function): string {
 	let source: string;
@@ -79,7 +83,7 @@ export function isBareRethrowListener(fn: Function): boolean {
 export function snapshotFatalHandlers(): Map<FatalEvent, Function[]> {
 	const snapshot = new Map<FatalEvent, Function[]>();
 	for (const event of FATAL_EVENTS) {
-		snapshot.set(event, [...process.listeners(event)]);
+		snapshot.set(event, [...processEmitter.listeners(event)]);
 	}
 	return snapshot;
 }
@@ -102,7 +106,7 @@ export function removeFatalHandlersAddedSince(snapshot: Map<FatalEvent, Function
 	let kept = 0;
 	for (const event of FATAL_EVENTS) {
 		const before = new Set(snapshot.get(event) ?? []);
-		for (const listener of process.listeners(event)) {
+		for (const listener of processEmitter.listeners(event)) {
 			if (before.has(listener)) { continue; }
 			if (!isBareRethrowListener(listener)) { kept++; continue; }
 			process.removeListener(event, listener as (...args: unknown[]) => void);
