@@ -26,27 +26,33 @@ export interface SessionClaims {
 	exp: number;  // expires-at (epoch seconds)
 }
 
+/** NODE_ENV values for which the insecure dev fallback is tolerated. Anything else, including unset, needs a real secret. */
+const DEV_FALLBACK_ENVIRONMENTS: readonly string[] = ['development', 'test'];
+
 /**
- * Throw if `env` is a production environment without a usable SESSION_SECRET.
+ * Throw unless `env` either explicitly opts into development/test or has a usable SESSION_SECRET.
  *
  * Admin status is looked up by the cookie's `sub`, so a guessable signing secret means
- * a forgeable admin session. Called from `createApp` and `startServer` (before listening)
- * and again whenever a cookie is signed or verified, so embedders that bypass either entry
- * point still cannot run production on the dev fallback. Evaluated lazily, never at import.
+ * a forgeable admin session. This fails closed: a deployment that forgets NODE_ENV is treated
+ * as production, and only `NODE_ENV=development|test` may use the dev fallback. Called from
+ * `createApp` and `startServer` (before listening) and again whenever a cookie is signed or
+ * verified, so embedders that bypass either entry point are still covered. Evaluated lazily,
+ * never at import. A secret that is set must be strong in every environment.
  */
 export function assertSessionSecretConfigured(env: NodeJS.ProcessEnv = process.env): void {
-	if (env.NODE_ENV !== 'production') return;
 	const secret = env.SESSION_SECRET;
-	const problem = !secret ? 'is not set'
-		: secret === DEV_SESSION_SECRET ? 'is the insecure development default'
-		: KNOWN_PLACEHOLDER_SESSION_SECRETS.includes(secret.toLowerCase()) ? 'is a documented example placeholder'
+	if (!secret && DEV_FALLBACK_ENVIRONMENTS.includes(env.NODE_ENV ?? '')) return;
+	const normalized = secret?.trim().toLowerCase();
+	const problem = !secret ? 'is not set (and NODE_ENV is not "development" or "test")'
+		: secret !== secret.trim() ? 'has leading or trailing whitespace'
+		: normalized === DEV_SESSION_SECRET || KNOWN_PLACEHOLDER_SESSION_SECRETS.includes(normalized!) ? 'is a documented example placeholder'
 		: secret.length < MIN_SESSION_SECRET_LENGTH ? `is shorter than ${MIN_SESSION_SECRET_LENGTH} characters`
 		: undefined;
 	if (problem) {
 		throw new Error(
-			`SESSION_SECRET ${problem}. Refusing to run with NODE_ENV=production: session cookies would be forgeable. ` +
+			`SESSION_SECRET ${problem}. Refusing to start: session cookies would be forgeable. ` +
 			`Set SESSION_SECRET to a random value of at least ${MIN_SESSION_SECRET_LENGTH} characters, e.g. ` +
-			`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`,
+			`openssl rand -base64 48 (or set NODE_ENV=development for local work only).`,
 		);
 	}
 }

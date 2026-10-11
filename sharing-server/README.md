@@ -178,7 +178,7 @@ stubbed GitHub access, never production data or live GitHub; see the
 |---|---|---|
 | `GITHUB_CLIENT_ID` | ✅ | GitHub OAuth App client ID (for dashboard login) |
 | `GITHUB_CLIENT_SECRET` | ✅ | GitHub OAuth App client secret (for dashboard login) |
-| `SESSION_SECRET` | ✅ | Random secret for signing session cookies (≥32 chars). **Required when `NODE_ENV=production`** (the Docker image default): the server refuses to start, and `createApp()` throws, if it is missing, shorter than 32 characters, or the built-in dev default. Outside production an insecure dev fallback is used with a warning |
+| `SESSION_SECRET` | ✅ | Random secret for signing session cookies (≥ 32 chars, no leading/trailing whitespace, not a documented example value). **Required unless `NODE_ENV` is explicitly `development` or `test`**: an unset or any other `NODE_ENV` (including `production`) makes startup and `createApp()` fail. Generate one with `openssl rand -base64 48`. Only `development`/`test` may use an insecure dev fallback, with a warning |
 | `BASE_URL` | ✅ | Public base URL of the server (no trailing slash) |
 | `PORT` | ❌ | HTTP port (default: `3000`) |
 | `DB_PATH` | ❌ | SQLite database path (default: `/data/sharing.db`) |

@@ -47,7 +47,7 @@
     "update": "pnpm install --frozen-lockfile && node esbuild.js",
     "check-types": "tsc --noEmit",
     "check:interaction": "node scripts/check-team-interaction.cjs",
-    "test": "node esbuild.tests.js && node --test \"out/test/*.test.js\""
+    "test": "node esbuild.tests.js && node --require ./scripts/test-env.cjs --test \"out/test/*.test.js\""
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",
