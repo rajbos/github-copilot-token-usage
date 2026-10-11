@@ -70,3 +70,20 @@ test('the committed baseline is current: no file exceeds it, and the allowlisted
 	assert.ok(!Object.keys(counts).some((f) => f.endsWith('shared/theme.css')), 'theme.css defines the palette and is allowlisted');
 	assert.ok(!Object.keys(baseline).some((f) => f.endsWith('shared/theme.css')));
 });
+
+test('function names and hex digits are matched case-insensitively', () => {
+	assert.deepEqual(findColors('a { color: RGB(1 2 3); background: HsLa(20 30% 40% / .5); border-color: #ABCDEF }'),
+		['RGB(1 2 3)', 'HsLa(20 30% 40% / .5)', '#ABCDEF']);
+});
+
+test('space-separated modern syntax and the other absolute color functions are colors', () => {
+	assert.deepEqual(findColors('a { color: rgb(1 2 3 / 50%); b: hwb(200 10% 20%); c: oklch(60% 0.2 30); d: LAB(50 10 10) }'),
+		['rgb(1 2 3 / 50%)', 'hwb(200 10% 20%)', 'oklch(60% 0.2 30)', 'LAB(50 10 10)']);
+	assert.deepEqual(findColors('a { color: color-mix(in srgb, var(--x) 50%, transparent) }'), [], 'theme-derived mixes are fine');
+});
+
+test('allowlist matching ignores case and spacing, so uppercase uses of an allowed literal stay allowed', () => {
+	const allowed = { '#fff': ['color'], 'rgba(1,2,3,0.5)': null };
+	assert.deepEqual(findColors('a { color: #FFF; border-color: RGBA(1, 2, 3, 0.5) }', allowed), []);
+	assert.deepEqual(findColors('a { background: #FFF }', allowed), ['#FFF']);
+});

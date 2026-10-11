@@ -32,8 +32,8 @@ const baselinePath = path.join(scriptDir, 'hardcoded-colors-baseline.json');
 const allowlistPath = path.join(scriptDir, 'hardcoded-colors-allowlist.json');
 const SCAN_ROOT = path.join(extRoot, 'src', 'webview');
 
-// A hex color, or a complete rgb()/rgba()/hsl()/hsla() call (one level of nested parens, e.g. rgba(var(--x), .5)).
-const COLOR_LITERAL = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\b|\b(?:rgba?|hsla?)\((?:[^()]|\([^()]*\))*\)/g;
+// Case-insensitive (CSS function names and hex digits are). A hex color, or a complete rgb()/hsl()/hwb()/lab()/lch()/oklab()/oklch() call (one level of nested parens, e.g. rgba(var(--x), .5)).
+const COLOR_LITERAL = /#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\((?:[^()]|\([^()]*\))*\)/gi;
 
 function collectCssFiles(dir) {
 	if (!fs.existsSync(dir)) { return []; }
