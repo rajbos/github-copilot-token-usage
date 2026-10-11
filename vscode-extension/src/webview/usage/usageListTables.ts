@@ -1,6 +1,6 @@
 /**
- * Column definitions and renderers for the smaller Usage Analysis list tables: the tool call
- * counts, the missed-potential workspaces, the agent plugins and the memory files rollup.
+ * Column definitions and renderers for the smaller Usage Analysis list tables: the
+ * missed-potential workspaces, the agent plugins and the memory files rollup.
  *
  * Split out of main.ts, which sits against the repository's `max-lines` ceiling. Every table here
  * is pure markup over its rows; anything that depends on main.ts module state (tool name lookup,
@@ -10,44 +10,6 @@ import type { MemoryFilesAnalysisView, ToolCurationAnalysis } from '../../../../
 import { getDataTableState, renderDataTable, renderDataTableFilter, type DataTableColumn, type DataTableFooterRow } from '../shared/dataTable';
 import { escapeHtml, formatAbsoluteDate, formatFileSize, formatNumber } from '../shared/formatUtils';
 import { localize } from '../shared/localization';
-
-// ── Tool call counts ─────────────────────────────────────────────────────────
-
-interface ToolCountRow { tool: string; name: string; count: number; rank: number; }
-
-export interface ToolCountTableOptions {
-	tableId: string;
-	ariaLabel: string;
-	/** Tool id → call count, already filtered and limited by the caller, sorted by count. */
-	entries: ReadonlyArray<[string, number]>;
-	nameResolver: (id: string) => string;
-	isAutomatic: (id: string) => boolean;
-}
-
-export function renderToolCountTable(options: ToolCountTableOptions): string {
-	const rows: ToolCountRow[] = options.entries.map(([tool, count], index) => ({ tool, name: options.nameResolver(tool), count, rank: index + 1 }));
-	const columns: DataTableColumn<ToolCountRow>[] = [
-		{ id: 'rank', label: '#', align: 'center', width: '40px', sortValue: row => row.rank, firstSortDirection: 'asc', render: row => String(row.rank) },
-		{
-			id: 'tool', label: 'Tool', className: 'data-table-wrap-anywhere', sortValue: row => row.name,
-			render: row => {
-				const autoBadge = options.isAutomatic(row.tool)
-					? `<span class="auto-badge" title="Automatic tool — Copilot uses this internally and it does not count toward fluency scoring">auto</span>`
-					: '';
-				return { html: `<strong title="${escapeHtml(row.tool)}">${escapeHtml(row.name)}</strong>${autoBadge}` };
-			},
-		},
-		{ id: 'calls', label: 'Calls', align: 'right', width: '90px', sortValue: row => row.count, render: row => formatNumber(row.count) },
-	];
-	return renderDataTable({
-		tableId: options.tableId,
-		ariaLabel: options.ariaLabel,
-		rows,
-		columns,
-		initialSort: { columnId: 'calls', direction: 'desc' },
-		className: 'data-table--fixed',
-	});
-}
 
 // ── Missed potential (non-Copilot instruction files) ─────────────────────────
 

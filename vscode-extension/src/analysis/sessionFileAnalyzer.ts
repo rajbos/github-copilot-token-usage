@@ -16,6 +16,8 @@
 import * as fs from 'fs';
 
 import type { IEcosystemAdapter } from '../../../src/ecosystemAdapter';
+import { findWorkspacePathForDiscoveredPath as _findWorkspacePathForDiscoveredPath } from '../../../src/ecosystemAdapter';
+import { extractRepositoryFromSessionContent } from '../../../src/sessionRepository';
 import type {
 	DailyRollupEntry,
 	ModelPricing,
@@ -52,7 +54,7 @@ import {
 	type UsageAnalysisDeps,
 } from '../../../src/usageAnalysis';
 import { extractCopilotCliSessionId, getCopilotCliExactUsage } from '../../../src/copilotCliOtel';
-import { resolveDebugLogCandidatePaths } from '../../../src/workspaceHelpers';
+import { findRepositoryRemoteForFolder, resolveDebugLogCandidatePaths, resolveWorkspaceFolderWithFallback } from '../../../src/workspaceHelpers';
 import { toLocalDayKey } from '../../../src/utils/dayKeys';
 
 /** The slice of Windsurf the pipeline needs; Windsurf itself imports `vscode`, so it is host-only. */
@@ -78,6 +80,8 @@ type SessionMeta = {
 	dailyInteractions: { [localDayKey: string]: number };
 	dailyFractions?: Record<string, number>;
 	workspacePath?: string;
+	/** Git remote the owning adapter recorded (e.g. Copilot CLI's session-store "owner/repo"). */
+	repository?: string;
 };
 type TokenResult = {
 	tokens: number; thinkingTokens?: number; actualTokens?: number; cacheReadTokens?: number; copilotNanoAiu?: number;
@@ -193,15 +197,7 @@ async function extractWindsurfSessionMetadata(windsurf: WindsurfSessionSource, s
  * Copilot CLI events.jsonl that are discovered by an adapter but parsed generically.
  */
 export async function findWorkspacePathForDiscoveredPath(deps: SessionAnalyzerDeps, sessionFile: string): Promise<string | undefined> {
-	for (const eco of deps.ecosystems) {
-		if (eco.handles(sessionFile)) { continue; }
-		if (typeof eco.getWorkspacePathForDiscoveredPath !== 'function') { continue; }
-		try {
-			const cwd = await eco.getWorkspacePathForDiscoveredPath(sessionFile);
-			if (cwd) { return cwd; }
-		} catch { /* adapter failed; try next */ }
-	}
-	return undefined;
+	return _findWorkspacePathForDiscoveredPath(deps.ecosystems, sessionFile);
 }
 
 function metadataFromUserMessage(event: any, timestamps: number[], requestTimestamps: number[]): string | undefined {
@@ -768,6 +764,18 @@ function buildOptionalSessionFields(
 	};
 }
 
+/**
+ * The repository fields of a cache entry: the remote when known, and `repositoryResolved` when
+ * extraction was attempted, so getSessionFileDetailsFromCache() does not re-parse the file only
+ * to look for a repository again.
+ */
+function repositoryFields(source: Pick<SessionFileCache, 'repository' | 'repositoryResolved'> | undefined): Pick<SessionFileCache, 'repository' | 'repositoryResolved'> {
+	return {
+		...(source?.repository !== undefined ? { repository: source.repository } : {}),
+		...(source?.repositoryResolved ? { repositoryResolved: true } : {}),
+	};
+}
+
 function buildSessionDataObject(
 	tokenResult: TokenResult,
 	interactions: number,
@@ -781,7 +789,7 @@ function buildSessionDataObject(
 	debugLogTokens: DebugLogTokens | null | undefined,
 	dailyRollups: DailyRollups,
 	taskAttribution: SessionTaskAttribution,
-	existingCache?: Pick<SessionFileCache, 'repository'>,
+	existingCache?: Pick<SessionFileCache, 'repository' | 'repositoryResolved'>,
 ): SessionFileCache {
 	const copilotNanoAiu = debugLogTokens?.copilotNanoAiu ?? tokenResult.copilotNanoAiu ?? 0;
 	const copilotExactCostDollars = copilotNanoAiu > 0 ? copilotNanoAiu * NANO_AIU_TO_DOLLARS : undefined;
@@ -803,14 +811,14 @@ function buildSessionDataObject(
 		// Persist workspace attribution from the adapter so the Recent Sessions list can
 		// show it without requiring a separate getSessionFileDetails() parse pass.
 		...(sessionMeta.workspacePath ? { workspaceFolderPath: sessionMeta.workspacePath } : {}),
-		// Repository is discovered separately by getSessionFileDetails() (via content-reference
-		// git-root lookup) and is not recomputed here. Without preserving it, every cache-miss
+		// Repository is resolved by analyzeSessionFile() (adapter metadata, else content-reference
+		// git-root lookup — the same derivation as getSessionFileDetails()). Without preserving it, every cache-miss
 		// rebuild of this entry (e.g. an actively-edited session whose file keeps changing)
 		// would silently wipe out a previously-known repository, making it fall back to
 		// "Unknown" and disappear from all "By Repository" charts — most noticeably for the
 		// "Output" (lines of code) chart, since LOC is attributed to the most recently active
 		// day, which is exactly the day whose cache entry keeps getting rebuilt.
-		...(existingCache?.repository !== undefined ? { repository: existingCache.repository } : {}),
+		...repositoryFields(existingCache),
 		...optionals,
 	};
 }
@@ -875,5 +883,49 @@ export async function analyzeSessionFile(
 
 	await applyWindsurfBreakdown(deps.windsurf, sessionFilePath, resolvedModelUsage, dailyRollups, usageAnalysis);
 
-	return buildSessionDataObject(tokenResult, interactions, resolvedModelUsage, mtime, fileSize, usageAnalysis, sessionMeta, resolvedActualTokens, finalCacheReadTokens, debugLogTokens, dailyRollups, taskAttribution, existing);
+	const resolution = await resolveSessionRepository(sessionMeta, existing, preloadedContent, preloadedParsedJson, sessionFilePath);
+	return buildSessionDataObject(tokenResult, interactions, resolvedModelUsage, mtime, fileSize, usageAnalysis, sessionMeta, resolvedActualTokens, finalCacheReadTokens, debugLogTokens, dailyRollups,
+		taskAttribution, resolution);
+}
+
+/**
+ * The session's git remote, resolved during the normal analysis — on the worker thread — so
+ * workspace grouping has its strongest signal on a cold cache too, not only after the Details
+ * view happened to run. Precedence: the owning adapter's recorded remote; a previously found
+ * (non-empty) remote; the remote of the session's own workspace folder (walking up, so a
+ * sub-folder workspace or in-repo worktree resolves to its repository — referenced files are not
+ * trusted for this, as they can belong to another or a nested repository); and only when the
+ * workspace is unknown, the remote of the files the session referenced. '' records "none found".
+ *
+ * A previous '' is deliberately not carried over: this runs because the file changed. An
+ * adapter-handled session for which nothing was found stays unresolved, so the Details pass still
+ * applies its workspace-name fallback. `repositoryResolved` is otherwise set whenever extraction
+ * was attempted, so the Details cache path does not re-parse just to find a repository; a failed
+ * extraction stays unresolved and is retried.
+ */
+async function resolveSessionRepository(
+	sessionMeta: SessionMeta,
+	existing: Pick<SessionFileCache, 'repository'> | undefined,
+	content: string | undefined,
+	parsedJson: unknown,
+	sessionFilePath: string,
+): Promise<Pick<SessionFileCache, 'repository' | 'repositoryResolved'>> {
+	if (sessionMeta.repository) { return { repository: sessionMeta.repository, repositoryResolved: true }; }
+	try {
+		const workspace = resolveWorkspaceFolderWithFallback(sessionFilePath, new Map(), sessionMeta.workspacePath);
+		// The workspace's current remote wins over a cached value: a details-only entry can hold a
+		// repository *name* derived from the folder, not a remote. The cached value stays the
+		// fallback for when no current remote is found (e.g. the folder was deleted).
+		const workspaceRemote = workspace ? await findRepositoryRemoteForFolder(workspace) : undefined;
+		if (workspaceRemote) { return { repository: workspaceRemote, repositoryResolved: true }; }
+		if (existing?.repository) { return { repository: existing.repository, repositoryResolved: true }; }
+		// Adapter-handled sessions (no preloaded content) stay unresolved, so Details still applies
+		// its workspace-name fallback; a scanned file session records '' for "none found".
+		if (content === undefined) { return {}; }
+		// Referenced files only decide when the workspace is unknown.
+		const referenced = workspace ? undefined : await extractRepositoryFromSessionContent(content, parsedJson);
+		return { repository: referenced ?? '', repositoryResolved: true };
+	} catch {
+		return existing?.repository ? { repository: existing.repository, repositoryResolved: true } : {};
+	}
 }

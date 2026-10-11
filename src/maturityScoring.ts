@@ -653,17 +653,29 @@ function _scoreToolUsage(p: UsageAnalysisPeriod, isMCPEnabled?: boolean): Catego
 	return { stage, evidence, tips: _tuBuildTips(stage, [], mcpDisabled) };
 }
 
+/**
+ * The most-used resolved workspaces that have no customization at all, most active first. A row
+ * with no status data is unknown, not missing (`every()` is true for an empty list), so it is
+ * never recommended as a repository to customize.
+ */
+export function topReposMissingCustomization(matrix: WorkspaceCustomizationMatrix | undefined, limit = 3): WorkspaceCustomizationMatrix['workspaces'] {
+	return (matrix?.workspaces || [])
+		.filter(row => {
+			const statuses = Object.values(row.typeStatuses ?? {});
+			return statuses.length > 0 && statuses.every(status => status === '❌');
+		})
+		.filter(row => !row.workspacePath.startsWith('<unresolved:'))
+		.sort((a, b) => b.interactionCount !== a.interactionCount ? b.interactionCount - a.interactionCount : b.sessionCount - a.sessionCount)
+		.slice(0, limit);
+}
+
 function _buildCustomizationStage4Tip(matrix: WorkspaceCustomizationMatrix | undefined, totalRepos: number, reposWithCustomization: number): string {
 	const uncustomized = totalRepos - reposWithCustomization;
 	if (uncustomized === 0) {
 		return 'All repos customized! Keep instructions up to date and add [skill files](https://code.visualstudio.com/docs/copilot/customization/agent-skills) or [MCP server configs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) for deeper integration';
 	}
 	const summaryTip = `${fmt(uncustomized)} repo${uncustomized === 1 ? '' : 's'} still missing customization — add [instructions](https://code.visualstudio.com/docs/copilot/customization/custom-instructions), [agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions), or [MCP configs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) for full coverage.`;
-	const prioritizedMissingRepos = (matrix?.workspaces || [])
-		.filter(row => Object.values(row.typeStatuses).every(status => status === '❌'))
-		.filter(row => !row.workspacePath.startsWith('<unresolved:'))
-		.sort((a, b) => b.interactionCount !== a.interactionCount ? b.interactionCount - a.interactionCount : b.sessionCount - a.sessionCount)
-		.slice(0, 3);
+	const prioritizedMissingRepos = topReposMissingCustomization(matrix);
 	if (prioritizedMissingRepos.length === 0) { return summaryTip; }
 	const repoLines = prioritizedMissingRepos.map(row =>
 		`${row.workspaceName} (${fmt(row.interactionCount)} interaction${row.interactionCount === 1 ? '' : 's'})`

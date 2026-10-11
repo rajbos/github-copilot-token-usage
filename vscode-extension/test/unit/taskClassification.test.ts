@@ -264,6 +264,6 @@ test('wiring: the session analyzer feeds one resolved task attribution to the ro
 	const src = fs.readFileSync(path.join(__dirname, '../../../../src/analysis/sessionFileAnalyzer.ts'), 'utf8');
 	assert.match(src, /const taskAttribution = resolveSessionTaskAttribution\(usageAnalysis, sessionMeta\.title\);/);
 	assert.match(src, /computeDailyRollups\([^)]*taskAttribution\)/);
-	assert.match(src, /buildSessionDataObject\([^)]*taskAttribution, existing\)/);
+	assert.match(src, /buildSessionDataObject\([^)]*taskAttribution, resolution\)/);
 	assert.doesNotMatch(src, /usageAnalysis\.taskClassification\?\.(primaryCategory|categoryShares)/, 'nothing may bypass the resolved attribution');
 });
