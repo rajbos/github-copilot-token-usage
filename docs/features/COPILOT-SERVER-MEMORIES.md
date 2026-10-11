@@ -153,7 +153,21 @@ carries a fingerprint of the row it was rendered from (subject, fact, citations,
 `promotionGroupFingerprint()`), and the host refuses — and re-renders — when the
 current analysis's group no longer matches, so a background refresh cannot swap
 what gets drafted. It likewise refuses when the workspace now resolves to a
-different repository or checkout than the analysis was read for.
+different repository or checkout than the analysis was read for, and when the
+group's last live source was deleted since the analysis (a targeted re-check of
+just that group's cited files).
+
+Only the network read is cached for the TTL. The extension re-derives everything
+that depends on the checkout — eligibility, live citations, missing documentation
+— from that raw read with `analyzeServerMemoriesForCheckoutAsync()`: the cited
+paths are probed with asynchronous, yielding I/O (`probeCheckoutPathsAsync()`), so
+a store of hundreds of memories never blocks the extension host
+(`docs/adr/ANALYSIS-WORKER.md`, rule 1). That re-check runs in the background at
+most once a minute and re-renders the section only when the result changed. The
+CLI, which has no shared event loop, uses the synchronous
+`analyzeServerMemoriesForCheckout()`; both produce the same analysis (tested).
+Liveness is tracked per memory record rather than per id, since the store can
+repeat an id.
 
 The target file is chosen deterministically by `selectPromotionTarget()`: an
 existing root `AGENTS.md`, else an existing `.github/copilot-instructions.md`, else

@@ -651,13 +651,14 @@ interface MemoryScan {
 	 */
 	codeDerivedIds: Set<string>;
 	/**
-	 * Ids of memories with at least one citation that is an existing regular file inside the
-	 * checkout — the evidence a promotion needs. Fully stale memories and memories citing only
-	 * directories are code-derived in form but not here.
+	 * Memory *records* with at least one citation that is an existing regular file inside the
+	 * checkout — the evidence a promotion needs. Keyed by record, not id: the store can repeat an
+	 * id, and a stale duplicate must not borrow its sibling's live evidence. Fully stale memories
+	 * and memories citing only directories are code-derived in form but not here.
 	 */
-	liveIds: Set<string>;
-	/** For each id in {@link liveIds}, the citations whose file is an existing regular file. */
-	liveCitations: Map<string, string[]>;
+	liveRecords: Set<ServerMemory>;
+	/** For each record in {@link liveRecords}, the citations whose file is an existing regular file. */
+	liveCitations: Map<ServerMemory, string[]>;
 	staleCitations: ServerMemoryStaleCitation[];
 }
 
@@ -703,9 +704,9 @@ function probeCitations(checkable: string[], deps: ServerMemoryAnalysisDeps): { 
 function orderLiveCitations(representative: ServerMemory, liveMembers: ServerMemory[], scan: MemoryScan): string[] {
 	// De-duplicated like the others: a server that repeats one citation must not let the copies
 	// fill every capped slot and hide another distinct live source.
-	const own = Array.from(new Set(scan.liveCitations.get(representative.id) ?? [])).sort();
+	const own = Array.from(new Set(scan.liveCitations.get(representative) ?? [])).sort();
 	const ownSet = new Set(own);
-	const others = Array.from(new Set(liveMembers.flatMap(m => scan.liveCitations.get(m.id) ?? []))).filter(c => !ownSet.has(c)).sort();
+	const others = Array.from(new Set(liveMembers.flatMap(m => scan.liveCitations.get(m) ?? []))).filter(c => !ownSet.has(c)).sort();
 	return [...own, ...others];
 }
 
@@ -716,8 +717,8 @@ function scanMemories(memories: ServerMemory[], deps: ServerMemoryAnalysisDeps):
 		documentedIds: new Set<string>(),
 		documented: [],
 		codeDerivedIds: new Set<string>(),
-		liveIds: new Set<string>(),
-		liveCitations: new Map<string, string[]>(),
+		liveRecords: new Set<ServerMemory>(),
+		liveCitations: new Map<ServerMemory, string[]>(),
 		staleCitations: [],
 	};
 
@@ -743,10 +744,10 @@ function scanMemories(memories: ServerMemory[], deps: ServerMemoryAnalysisDeps):
 
 		const { missing, livePaths } = probeCitations(checkable, deps);
 		if (livePaths.size > 0) {
-			scan.liveIds.add(memory.id);
+			scan.liveRecords.add(memory);
 			// Kept as the original citation strings, so the prompt can quote them with their
 			// line ranges and reserve room for them before any cap is applied.
-			scan.liveCitations.set(memory.id, memory.citations.filter(citation => livePaths.has(citationFilePath(citation) ?? '')));
+			scan.liveCitations.set(memory, memory.citations.filter(citation => livePaths.has(citationFilePath(citation) ?? '')));
 		}
 		if (missing.length > 0) {
 			scan.staleCitations.push({
@@ -780,7 +781,7 @@ function buildPromotionGroups(scan: MemoryScan): ServerMemoryPromotionGroup[] {
 		// every cited file is gone, or that cites only directories, is code-derived in form only —
 		// nothing checkable supports it, so it must not be offered for promotion into the one
 		// file every agent reads.
-		const liveMembers = group.filter(memory => scan.liveIds.has(memory.id));
+		const liveMembers = group.filter(memory => scan.liveRecords.has(memory));
 		if (liveMembers.length === 0) { continue; }
 		// The longest fact is kept as the representative: when the agent restates one fact many
 		// times the wordings differ mainly by how much detail survived, and the fullest wording is
@@ -848,6 +849,112 @@ export function analyzeServerMemoriesForCheckout(result: RepoMemoriesResult, rep
 		isRegularFile: createRepoRegularFileCheck(repoRoot),
 		promotionTargetStatus: createPromotionTargetProbe(repoRoot),
 	});
+}
+
+/** What one repo-relative cited path is in the checkout, probed asynchronously. */
+export interface CheckoutPathStatus {
+	/** Resolves to a real path inside the checkout. */
+	exists: boolean;
+	/** ...and that path is a regular file. */
+	regularFile: boolean;
+}
+
+/** Every distinct cited path that may be probed: repo-relative and lexically safe. */
+export function collectCitedRepoPaths(memories: readonly ServerMemory[]): string[] {
+	const paths = new Set<string>();
+	for (const memory of memories) {
+		for (const citation of memory.citations) {
+			const filePath = citationFilePath(citation);
+			if (filePath && isSafeRepoRelativePath(filePath)) { paths.add(filePath); }
+		}
+	}
+	return Array.from(paths);
+}
+
+/** The async `fs`/`path` surface {@link probeCheckoutPathsAsync} needs, injected for tests. */
+export interface AsyncCheckoutProbeDeps {
+	realpath: (target: string) => Promise<string>;
+	/** Follows symlinks; resolves true for a regular file. */
+	isFile: (target: string) => Promise<boolean>;
+	resolve: (...parts: string[]) => string;
+	relative: (from: string, to: string) => string;
+	isAbsolute: (target: string) => boolean;
+}
+
+/** How many paths are probed concurrently before yielding the event loop. */
+const ASYNC_PROBE_BATCH = 32;
+
+/**
+ * Probe cited paths without blocking the caller's event loop. Same containment rule as
+ * {@link createRepoFileExists} — the real path must stay under the real root — but with
+ * asynchronous I/O, in batches that yield between them, so a store of hundreds of memories
+ * never stalls the VS Code extension host (see `docs/adr/ANALYSIS-WORKER.md`, rule 1).
+ * A path that cannot be resolved, or resolves outside the checkout, is reported missing.
+ */
+export async function probeCheckoutPathsAsync(
+	repoRoot: string,
+	paths: readonly string[],
+	deps?: AsyncCheckoutProbeDeps,
+): Promise<Map<string, CheckoutPathStatus>> {
+	const io = deps ?? defaultAsyncCheckoutProbeDeps();
+	let realRoot: string;
+	try { realRoot = await io.realpath(io.resolve(repoRoot)); } catch { realRoot = io.resolve(repoRoot); }
+	const statuses = new Map<string, CheckoutPathStatus>();
+	const missing: CheckoutPathStatus = { exists: false, regularFile: false };
+	for (let i = 0; i < paths.length; i += ASYNC_PROBE_BATCH) {
+		const batch = paths.slice(i, i + ASYNC_PROBE_BATCH);
+		await Promise.all(batch.map(async (relativePath) => {
+			if (!isSafeRepoRelativePath(relativePath)) { statuses.set(relativePath, missing); return; }
+			try {
+				const real = await io.realpath(io.resolve(realRoot, relativePath));
+				const rel = io.relative(realRoot, real);
+				if (!(rel === '' || (!rel.startsWith('..') && !io.isAbsolute(rel)))) { statuses.set(relativePath, missing); return; }
+				statuses.set(relativePath, { exists: true, regularFile: await io.isFile(real).catch(() => false) });
+			} catch {
+				statuses.set(relativePath, missing);
+			}
+		}));
+		await new Promise<void>(resolve => setImmediate(resolve));
+	}
+	return statuses;
+}
+
+function defaultAsyncCheckoutProbeDeps(): AsyncCheckoutProbeDeps {
+	const fs = require('fs') as typeof import('fs');
+	const path = require('path') as typeof import('path');
+	return {
+		realpath: (target) => fs.promises.realpath(target),
+		isFile: async (target) => (await fs.promises.stat(target)).isFile(),
+		resolve: (...parts) => path.resolve(...parts),
+		relative: (from, to) => path.relative(from, to),
+		isAbsolute: (target) => path.isAbsolute(target),
+	};
+}
+
+/**
+ * Analyze a raw read from pre-probed path statuses (see {@link probeCheckoutPathsAsync}). Pure
+ * and fast: no filesystem access beyond the optional target probe, which touches two paths.
+ */
+export function analyzeServerMemoriesFromStatus(
+	result: RepoMemoriesResult,
+	statuses: ReadonlyMap<string, CheckoutPathStatus>,
+	promotionTargetStatus?: PromotionTargetProbe,
+): ServerMemoriesAnalysis {
+	return analyzeServerMemories(result, {
+		fileExists: (filePath) => statuses.get(filePath)?.exists ?? false,
+		isRegularFile: (filePath) => statuses.get(filePath)?.regularFile ?? false,
+		promotionTargetStatus,
+	});
+}
+
+/**
+ * {@link analyzeServerMemoriesForCheckout} for hosts with a shared event loop (the VS Code
+ * extension host): the bulk per-citation probing is asynchronous and yielding, and only the
+ * two-path target probe runs synchronously. Produces the same analysis as the sync version.
+ */
+export async function analyzeServerMemoriesForCheckoutAsync(result: RepoMemoriesResult, repoRoot: string): Promise<ServerMemoriesAnalysis> {
+	const statuses = await probeCheckoutPathsAsync(repoRoot, collectCitedRepoPaths(result.memories));
+	return analyzeServerMemoriesFromStatus(result, statuses, createPromotionTargetProbe(repoRoot));
 }
 
 /**
@@ -1109,12 +1216,21 @@ export function buildPromotionPromptForSubject(
 	subject: string,
 	fingerprint: string,
 	status: PromotionTargetProbe,
-): { prompt: string } | { reason: 'unknown-subject' | 'row-changed' | 'no-safe-target'; blockedPath?: string } {
+	isRegularFile?: (repoRelativePath: string) => boolean,
+): { prompt: string } | { reason: 'unknown-subject' | 'row-changed' | 'no-live-source' | 'no-safe-target'; blockedPath?: string } {
 	const group = analysis.promotionGroups.find(candidate => candidate.subject === subject);
 	if (!group) { return { reason: 'unknown-subject' }; }
 	// The subject alone does not identify what the user saw: a background refresh can keep the
 	// subject while changing its fact or citations. Draft only what the clicked row displayed.
 	if (promotionGroupFingerprint(group) !== fingerprint) { return { reason: 'row-changed' }; }
+	// A targeted re-check of just this group's evidence (a handful of paths), so a click never
+	// drafts a fact whose last cited file was deleted after the analysis was computed.
+	if (isRegularFile && !(group.liveCitations ?? []).some(citation => {
+		const filePath = citationFilePath(citation);
+		return Boolean(filePath && isSafeRepoRelativePath(filePath) && isRegularFile(filePath));
+	})) {
+		return { reason: 'no-live-source' };
+	}
 	const { target, blockedPath } = resolvePromotionTarget(status);
 	if (!target) { return { reason: 'no-safe-target', blockedPath }; }
 	return { prompt: buildPromotionPrompt(analysis.repo, group, target) };

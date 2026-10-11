@@ -26,6 +26,9 @@ import {
 	sameRepoSlug,
 	normalizeRepoSlug,
 	analyzeServerMemoriesForCheckout,
+	analyzeServerMemoriesForCheckoutAsync,
+	probeCheckoutPathsAsync,
+	collectCitedRepoPaths,
 	buildPromotionPrompt,
 	MEMORY_INTEGRATION_ID,
 	isSafeRepoRelativePath,
@@ -35,7 +38,7 @@ import {
 	sanitizeForDisplay,
 	INVALID_REPO_LABEL,
 } from '../../../src/copilotServerMemories';
-import { decideServerMemoriesRefresh, serverMemoriesDraftContextMatches } from '../../src/extension';
+import { decideServerMemoriesRefresh, serverMemoriesDraftContextMatches, shouldRecheckServerMemories } from '../../src/extension';
 import type { ServerMemory } from '../../../src/types';
 
 // ---------------------------------------------------------------------------
@@ -1785,4 +1788,113 @@ test('the representative\'s repeated citations cannot crowd out another live sou
 	assert.deepEqual(analysis.promotionGroups[0].liveCitations, ['src/a.ts:1', 'src/b.ts:2']);
 	const prompt = toServerMemoriesAnalysisView(analysis)?.topPromotionGroups[0].prompt ?? '';
 	assert.match(prompt, /Cited sources: src\/a\.ts:1, src\/b\.ts:2/);
+});
+
+// ---------------------------------------------------------------------------
+// Review round 10 (#2373): async, yielding checkout analysis; liveness per record
+// ---------------------------------------------------------------------------
+
+test('analyzeServerMemoriesForCheckoutAsync matches the synchronous analysis and sees file changes', async () => {
+	const fsMod = require('fs') as typeof import('fs');
+	const os = require('os') as typeof import('os');
+	const pathMod = require('path') as typeof import('path');
+	const root = fsMod.mkdtempSync(pathMod.join(os.tmpdir(), 'srvmem-async-'));
+	try {
+		fsMod.mkdirSync(pathMod.join(root, 'src'));
+		fsMod.mkdirSync(pathMod.join(root, 'docs'));
+		fsMod.writeFileSync(pathMod.join(root, 'src', 'a.ts'), 'x');
+		fsMod.writeFileSync(pathMod.join(root, 'AGENTS.md'), '# agents');
+		const result = { repo: 'o/n', enabled: true, memories: [
+			memory({ id: '1', subject: 'promotable', citations: ['src/a.ts:1', 'src/gone.ts:2'] }),
+			memory({ id: '2', subject: 'documented', citations: ['docs/guide.md:1', 'AGENTS.md:3'] }),
+			memory({ id: '3', subject: 'dir', citations: ['src:1'] }),
+			memory({ id: '4', subject: 'escape', citations: ['../outside.ts:1', '/etc/passwd:1'] }),
+			memory({ id: '5', subject: 'told', citations: ['User input: tabs'] }),
+		] };
+		// Equivalence: the async path must produce exactly what the sync path does.
+		assert.deepEqual(await analyzeServerMemoriesForCheckoutAsync(result, root), analyzeServerMemoriesForCheckout(result, root));
+
+		fsMod.rmSync(pathMod.join(root, 'src', 'a.ts'));
+		fsMod.writeFileSync(pathMod.join(root, 'docs', 'guide.md'), '# guide');
+		const after = await analyzeServerMemoriesForCheckoutAsync(result, root);
+		assert.deepEqual(after, analyzeServerMemoriesForCheckout(result, root));
+		assert.deepEqual(after.promotionGroups, []);
+		assert.deepEqual(after.documentedMemories[0].missingInstructionFiles, []);
+	} finally {
+		fsMod.rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('collectCitedRepoPaths keeps only distinct, lexically safe repo-relative paths', () => {
+	const paths = collectCitedRepoPaths([
+		memory({ id: '1', citations: ['src/a.ts:1', 'src/a.ts:9', 'User input: x', '../up.ts:1', 'C:/abs.ts:1'] }),
+		memory({ id: '2', citations: ['docs/b.md:2'] }),
+	]);
+	assert.deepEqual(paths.sort(), ['docs/b.md', 'src/a.ts']);
+});
+
+test('probeCheckoutPathsAsync applies the containment rule and yields between batches', async () => {
+	const files = new Set(['/repo/a.ts']);
+	const links: Record<string, string> = { '/repo/escape.ts': '/etc/passwd', '/repo/dir': '/repo/dir' };
+	let realpathCalls = 0;
+	let yieldedBetweenBatches = false;
+	const paths = ['a.ts', 'escape.ts', 'dir', 'missing.ts', ...Array.from({ length: 40 }, (_, i) => `x${i}.ts`)];
+	setImmediate(() => { yieldedBetweenBatches = realpathCalls > 0 && realpathCalls < paths.length + 1; });
+	const statuses = await probeCheckoutPathsAsync('/repo', paths, {
+		resolve: (...parts: string[]) => parts.join('/').replace(/\/+/g, '/'),
+		relative: (from: string, to: string) => (to.startsWith(`${from}/`) ? to.slice(from.length + 1) : to === from ? '' : `../${to}`),
+		isAbsolute: (target: string) => target.startsWith('/'),
+		realpath: async (target: string) => {
+			realpathCalls++;
+			if (target === '/repo') { return '/repo'; }
+			if (target in links) { return links[target]; }
+			if (files.has(target)) { return target; }
+			throw new Error('ENOENT');
+		},
+		isFile: async (target: string) => files.has(target),
+	});
+	assert.deepEqual(statuses.get('a.ts'), { exists: true, regularFile: true });
+	assert.deepEqual(statuses.get('escape.ts'), { exists: false, regularFile: false }, 'outside the checkout is missing');
+	assert.deepEqual(statuses.get('dir'), { exists: true, regularFile: false });
+	assert.deepEqual(statuses.get('missing.ts'), { exists: false, regularFile: false });
+	assert.equal(yieldedBetweenBatches, true, 'the event loop got a turn before all paths were probed');
+});
+
+test('liveness is tracked per memory record, so a stale duplicate id cannot borrow live evidence', () => {
+	const analysis = analyzeServerMemories({
+		repo: 'o/n',
+		enabled: true,
+		memories: [
+			// Same id twice: the longer record cites only a deleted file.
+			memory({ id: 'dup', subject: 's', fact: 'A much longer but obsolete wording of the fact.', citations: ['src/deleted.ts:1'] }),
+			memory({ id: 'dup', subject: 's', fact: 'Live wording.', citations: ['src/live.ts:1'] }),
+		],
+	}, { fileExists: p => p === 'src/live.ts', promotionTargetStatus: () => 'exists' });
+	const group = analysis.promotionGroups[0];
+	assert.equal(group.representativeFact, 'Live wording.');
+	assert.deepEqual(group.liveCitations, ['src/live.ts:1']);
+});
+
+test('a click is refused when the group\'s last live source was deleted after the analysis', () => {
+	const analysis = analyzeServerMemories({ repo: 'o/n', enabled: true, memories: [memory({ id: '1', subject: 's', citations: ['src/a.ts:1'] })] },
+		{ fileExists: () => true, promotionTargetStatus: () => 'exists' });
+	const row = toServerMemoriesAnalysisView(analysis)?.topPromotionGroups[0];
+	assert.ok(row?.subject && row.fingerprint);
+	assert.deepEqual(buildPromotionPromptForSubject(analysis, row.subject, row.fingerprint, () => 'exists', () => false), { reason: 'no-live-source' });
+	assert.ok('prompt' in buildPromotionPromptForSubject(analysis, row.subject, row.fingerprint, () => 'exists', p => p === 'src/a.ts'));
+});
+
+test('shouldRecheckServerMemories: a second view build within the window reuses the last analysis', () => {
+	const base = { hasResult: true, hasRepoRoot: true, inFlight: false, intervalMs: 60_000 };
+	// First build after a fetch whose analysis was never re-checked: start one.
+	assert.equal(shouldRecheckServerMemories({ ...base, checkedAt: undefined, now: 1_000 }), true);
+	// The next builds — the re-check is still running, then it just finished: no re-probe.
+	assert.equal(shouldRecheckServerMemories({ ...base, inFlight: true, checkedAt: undefined, now: 1_500 }), false);
+	assert.equal(shouldRecheckServerMemories({ ...base, checkedAt: 2_000, now: 2_100 }), false);
+	assert.equal(shouldRecheckServerMemories({ ...base, checkedAt: 2_000, now: 61_999 }), false);
+	// Once the window has passed, the next build re-checks again.
+	assert.equal(shouldRecheckServerMemories({ ...base, checkedAt: 2_000, now: 62_000 }), true);
+	// Nothing to re-check without a raw read or a checkout.
+	assert.equal(shouldRecheckServerMemories({ ...base, hasResult: false, checkedAt: undefined, now: 0 }), false);
+	assert.equal(shouldRecheckServerMemories({ ...base, hasRepoRoot: false, checkedAt: undefined, now: 0 }), false);
 });
