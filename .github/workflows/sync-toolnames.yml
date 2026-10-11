@@ -5,6 +5,9 @@ on:
   schedule:
     - cron: '30 17 * * 1'  # Run every Monday at 17:30 UTC
   push:
+    # main only: the privileged job (contents/pull-requests: write) must never
+    # run a script from an unreviewed branch.
+    branches: [main]
     paths:
       - .github/workflows/sync-toolnames.yml
       - .github/scripts/sync_toolnames.py
