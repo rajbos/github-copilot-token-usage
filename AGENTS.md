@@ -234,7 +234,7 @@ Inside the devcontainer (`.devcontainer/devcontainer.json`), terminal output cap
 3. **Run tests one file at a time**, e.g.
    ```bash
    cd vscode-extension
-   node --require ./out/vscode-extension/test/unit/vscode-shim-register.js --test out/vscode-extension/test/unit/windsurf.test.js
+   node --require ./out/vscode-extension/test/unit/vscode-shim-register.js --test out/vscode-extension/test/unit/l10n.test.js
    ```
    Tests for shared `src/` modules live in `src/test/` and run without the shim:
    ```bash

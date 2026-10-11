@@ -21,7 +21,7 @@ export interface WindsurfExtensionLike {
 
 /**
  * Editor-host services Windsurf discovery needs. Supplied by the VS Code extension
- * (see vscode-extension/src/windsurfHost.ts); src/ never imports `vscode` itself.
+ * (see vscode-extension/src/srcHostAdapters.ts); src/ never imports `vscode` itself.
  * Without a host (CLI, worker threads) the editor is treated as "not Windsurf",
  * no extension is found and the integration stays enabled.
  */
@@ -301,7 +301,6 @@ export class WindsurfDataAccess {
 		this.log('[Windsurf] Waiting for devClient to be ready...');
 		for (let attempt = 0; attempt < 10; attempt++) {
 			const devClient = exports.devClient();
-			this.log(`[Windsurf] DevClient attempt ${attempt + 1}: ${!!devClient}`);
 			if (devClient) { return devClient; }
 			await new Promise(resolve => setTimeout(resolve, 2000));
 		}
@@ -312,14 +311,12 @@ export class WindsurfDataAccess {
 	private async triggerDevClientForCsrf(devClient: any, hasCsrf: () => boolean): Promise<void> {
 		for (const method of Object.keys(devClient)) {
 			if (typeof devClient[method] !== 'function') { continue; }
-			this.log(`[Windsurf] Trying method: ${method}`);
 			try {
 				await Promise.race([
 					devClient[method]({}),
 					new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
 				]);
 			} catch (error) {
-				this.log(`[Windsurf] Method ${method} failed (expected): ${error instanceof Error ? error.message : String(error)}`);
 			}
 			if (hasCsrf()) { break; }
 		}
@@ -331,7 +328,6 @@ export class WindsurfDataAccess {
 			const value = exports[key];
 			if (!value || typeof value !== 'object') { continue; }
 			if (!(value.port || value.token || value.csrf)) { continue; }
-			this.log(`[Windsurf] Found potential credentials in exports.${key}`);
 			const port = value.port || value.serverPort || value.languageServerPort;
 			const csrf = value.token || value.csrf || value.authToken;
 			if (port && csrf) { return { csrf: String(csrf), port: Number(port) }; }
@@ -378,7 +374,6 @@ export class WindsurfDataAccess {
 		const capture = function (this: http.ClientRequest) {
 			const token = this.getHeader('x-codeium-csrf-token');
 			const host = this.getHeader('host');
-			log(`[Windsurf] HTTP Request intercepted - CSRF token: ${!!token}, Host: ${host}`);
 			if (token && !csrf) {
 				csrf = String(token);
 				log('[Windsurf] Captured CSRF token');
@@ -543,9 +538,6 @@ export class WindsurfDataAccess {
 			const trajectoryCount = Object.keys(result.trajectorySummaries).length;
 			this.log(`[Windsurf] Successfully retrieved ${trajectoryCount} trajectories`);
 			// Log details of each trajectory for debugging
-			for (const [cascadeId, summary] of Object.entries(result.trajectorySummaries)) {
-				this.log(`[Windsurf] Trajectory ${cascadeId}: status=${summary.status}, type=${summary.trajectoryType}, steps=${summary.stepCount}`);
-			}
 			return result;
 		} catch (error) {
 			// Remove newlines from the (attacker-influenceable) error message before
@@ -811,7 +803,6 @@ export class WindsurfDataAccess {
 	 * Simple test method to verify basic functionality
 	 */
 	async testMethod(): Promise<string> {
-		this.log('[Windsurf] testMethod() called');
 		return 'test-method-works';
 	}
 
