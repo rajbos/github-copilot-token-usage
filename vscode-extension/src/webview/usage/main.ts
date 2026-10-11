@@ -20,7 +20,7 @@ import {
 // Imported from the shared contract rather than re-declared locally, so a shape
 // change in src/types.ts surfaces here as a type error instead of silently
 // drifting out of sync with what the extension host actually sends.
-import type { AutomaticCompactionStats, AvailableToolEntry, ContextPressureStats, ContextWindowStats, MemoryFilesAnalysisView, ServerMemoriesAnalysisView, ToolCurationAnalysis } from '../../../../src/types';
+import type { AutomaticCompactionStats, AvailableToolEntry, ContextPressureStats, ContextWindowStats, MemoryFilesAnalysisView, ServerMemoriesAnalysisView, RepoAgentActivityReport, ToolCurationAnalysis } from '../../../../src/types';
 import { CONTEXT_NEAR_LIMIT_RATIO } from '../../../../src/types';
 import { getSessionContextFillPercent, isSessionNearContextLimit } from '../../../../src/utils/contextFill';
 
@@ -54,6 +54,7 @@ import { applyBillingFields, sanitizeAccountBudgets, sanitizeCopilotApiBalance, 
 import { billingExtGroupCostsHtml } from './billingCoverage';
 import { type ContextRefRow } from './contextRefRows';
 import { sanitizeAgentSessionsData, toSafeNumber, toSafeHttpUrl, type AgentRepoSummary, type AgentSessionsResult } from './agentSessionsSanitizer';
+import { sanitizeRepoPrStatsData, type RepoPrInfo, type RepoPrStatsResult } from './repoPrStatsSanitizer';
 import { isSwitchableTab } from './switchableTabs';
 import { USAGE_TAB_GROUPS, groupOfUsageTab } from './tabGroups';
 import { DarkFactoryTab } from './darkFactoryTab';
@@ -61,6 +62,7 @@ import { insightCardElementId, isInsightCardAnchor } from '../../insightAnchors'
 import { placeBubbleLabels, scaleBubbleRadius, type BubbleLabelPlacement } from './modelLeaderboard';
 import { createUsageWebviewReadyNotifier, restoreGitHubActivityPanels } from './readiness';
 import { sanitizeServerMemoriesAnalysis as _sanitizeServerMemoriesAnalysis, buildServerMemoriesSectionHtml, wireServerMemoriesButtons } from './serverMemories';
+import { buildCorrectionsRepoSummaryHtml, buildParticipationModesCardHtml, buildRevertCellHtml, sanitizeRepoActivity } from './agenticSignals';
 import { buildBuiltinToolsHtml, buildUnusedMcpHtml, buildUnusedSkillsHtml } from './toolCurationTables';
 import { renderAgentPluginsFilter, renderAgentPluginsTable, renderMemoryFilesTable, renderMissedPotentialTable, renderRepoHygieneListTable, type RepoHygieneListRow } from './usageListTables';
 import { buildSkillSuggestionsSectionHtml, sanitizeRepeatedTaskReport, wireSkillSuggestions, type RepeatedTaskReport, type SkillSuggestionsMessage } from './skillSuggestions';
@@ -219,6 +221,8 @@ type UsageAnalysisStats = {
 	correctionReport?: CorrectionReport | null;
 	/** Repeated-task candidates (skill suggestions). Null when no repeated task was found. */
 	repeatedTasks?: RepeatedTaskReport | null;
+	/** Per-repository agent activity (last 30 days) for the rework summary and participation modes. */
+	repoActivity?: RepoAgentActivityReport | null;
 	curationAnalysis?: ToolCurationAnalysis | null;
 	/** Compact projection of the memory-files hygiene analysis (counts/rollup scalars only — no per-file paths). Null when none found. */
 	memoryFilesAnalysis?: MemoryFilesAnalysisView | null;
@@ -410,6 +414,7 @@ let currentInsights: EvaluatedInsight[] = [];
 const darkFactoryTab = new DarkFactoryTab((message) => vscode.postMessage(message), traceToHost);
 let activeCorrectionFilter: CorrectionFilter | null = null;
 let currentCorrectionReport: CorrectionReport | null | undefined = undefined;
+let currentRepoActivity: RepoAgentActivityReport | null = null;
 // Persisted across stats refreshes so the curation section doesn't disappear
 // when a periodic updateStats message omits curationAnalysis.
 let currentCurationAnalysis: ToolCurationAnalysis | null = null;
@@ -737,37 +742,6 @@ let repoPrStatsData: RepoPrStatsResult | null = null;
 let agentSessionsLoaded = false;
 let agentSessionsData: AgentSessionsResult | null = null;
 
-type RepoPrDetail = {
-  number: number;
-  title: string;
-  url: string;
-  aiType: 'copilot' | 'claude' | 'openai' | 'other-ai';
-  role: 'author' | 'reviewer-requested';
-};
-
-type RepoPrInfo = {
-  owner: string;
-  repo: string;
-  repoUrl: string;
-  totalPrs: number;
-  aiAuthoredPrs: number;
-  aiReviewRequestedPrs: number;
-  aiDetails: RepoPrDetail[];
-  userAuthoredPrs?: number;
-  userMergedPrs?: number;
-  error?: string;
-};
-
-type RepoPrStatsResult = {
-  repos: RepoPrInfo[];
-  authenticated: boolean;
-  since: string;
-  error?: string;
-  /** When the snapshot was fetched from GitHub; empty string when it has never been fetched. */
-  fetchedAt?: string;
-  /** How often the snapshot is refreshed, so the UI can say when the next refresh is due. */
-  refreshIntervalMs?: number;
-};
 
 const EFFORT_DISPLAY_NAMES: Record<string, string> = {
 	xhigh: 'Extra High',
@@ -1774,6 +1748,9 @@ function sanitizeOptionalReports(sanitized: UsageAnalysisStats, raw: any): void 
 		sanitized.correctionReport = sanitizeCorrectionReport(raw.correctionReport);
 	}
 	sanitized.repeatedTasks = sanitizeRepeatedTaskReport(raw.repeatedTasks);
+	if (Object.prototype.hasOwnProperty.call(raw ?? {}, 'repoActivity')) {
+		sanitized.repoActivity = sanitizeRepoActivity(raw.repoActivity);
+	}
 	sanitized.autoCompactionsLast7Days = sanitizeAutomaticCompactions(raw?.autoCompactionsLast7Days);
 }
 
@@ -2525,50 +2502,6 @@ function setupGroupTabs(): void {
 	});
 }
 
-function sanitizeRepoPrStatsData(input: unknown): RepoPrStatsResult {
-	const src = (input && typeof input === 'object') ? (input as Record<string, unknown>) : {};
-	const repos = Array.isArray(src.repos) ? src.repos : [];
-	return {
-		authenticated: Boolean(src.authenticated),
-		since: typeof src.since === 'string' || typeof src.since === 'number' ? src.since : Date.now(),
-		error: typeof src.error === 'string' ? escapeHtml(src.error) : undefined,
-		fetchedAt: typeof src.fetchedAt === 'string' ? src.fetchedAt : '',
-		refreshIntervalMs: toSafeNumber(src.refreshIntervalMs),
-		repos: repos.map((repo) => {
-			const r = (repo && typeof repo === 'object') ? (repo as Record<string, unknown>) : {};
-			const aiDetails = Array.isArray(r.aiDetails) ? r.aiDetails : [];
-			return {
-				repoUrl: toSafeHttpUrl(r.repoUrl),
-				owner: escapeHtml(typeof r.owner === 'string' ? r.owner : ''),
-				repo: escapeHtml(typeof r.repo === 'string' ? r.repo : ''),
-				error: typeof r.error === 'string' ? escapeHtml(r.error) : '',
-				totalPrs: toSafeNumber(r.totalPrs),
-				aiAuthoredPrs: toSafeNumber(r.aiAuthoredPrs),
-				aiReviewRequestedPrs: toSafeNumber(r.aiReviewRequestedPrs),
-				userAuthoredPrs: toSafeNumber(r.userAuthoredPrs),
-				userMergedPrs: toSafeNumber(r.userMergedPrs),
-				aiDetails: aiDetails.map((d) => {
-					const detail = (d && typeof d === 'object') ? (d as Record<string, unknown>) : {};
-					const validAiTypes = ['copilot', 'claude', 'openai', 'other-ai'] as const;
-					const validRoles = ['author', 'reviewer-requested'] as const;
-					const aiType = validAiTypes.includes(detail.aiType as typeof validAiTypes[number])
-						? detail.aiType as typeof validAiTypes[number]
-						: 'other-ai';
-					const role = validRoles.includes(detail.role as typeof validRoles[number])
-						? detail.role as typeof validRoles[number]
-						: 'author';
-					return {
-						number: toSafeNumber(detail.number),
-						title: escapeHtml(typeof detail.title === 'string' ? detail.title : ''),
-						url: toSafeHttpUrl(detail.url),
-						aiType,
-						role,
-					};
-				}),
-			};
-		}),
-	} as RepoPrStatsResult;
-}
 
 /** Display label per detected AI agent type, used in the PR detail list. */
 const AI_PR_LABEL: Record<string, string> = {
@@ -2634,6 +2567,8 @@ function renderRepoPrTable(repos: RepoPrInfo[]): string {
 				r => r.aiAuthoredPrs, r => boldCount(r.aiAuthoredPrs)),
 			githubCountColumn<RepoPrInfo>('aiReview', '👁 Copilot Review Agent requested†', 'Open PRs where an AI agent was listed as a requested reviewer',
 				r => r.aiReviewRequestedPrs, r => boldCount(r.aiReviewRequestedPrs)),
+			githubCountColumn<RepoPrInfo>('aiReverted', localize('agentic.reverts.header'), localize('agentic.reverts.headerTitle'),
+				r => r.aiRevertedPrs ?? 0, r => buildRevertCellHtml(r)),
 		],
 	});
 }
@@ -3312,6 +3247,7 @@ function buildInsightsTabPanelHtml(insights: EvaluatedInsight[]): string {
 					${allSection}
 				</div>
 			</div>
+			${safeSectionHtml(localize('agentic.modes.title'), () => buildParticipationModesCardHtml(currentRepoActivity))}
 		</div>`;
 }
 
@@ -3487,6 +3423,7 @@ function buildCorrectionsTabPanelHtml(report: CorrectionReport | null | undefine
 		</div>`;
 	}
 
+	const repoSummary = safeSectionHtml(localize('agentic.repoSummary.title'), () => buildCorrectionsRepoSummaryHtml(currentRepoActivity));
 	if (!report || report.repos.length === 0) {
 		return `
 		<div id="tab-panel-corrections" class="tab-panel"${activeTab !== 'corrections' ? ' style="display:none"' : ''}>
@@ -3496,6 +3433,7 @@ function buildCorrectionsTabPanelHtml(report: CorrectionReport | null | undefine
 				<div style="margin-top:16px; padding:16px; background:var(--bg-tertiary); border-radius:8px; font-size:12px; color:var(--text-secondary); text-align:center;">
 					✨ No correction moments detected in your recent sessions — nice and smooth!
 				</div>
+				${repoSummary}
 			</div>
 		</div>`;
 	}
@@ -3521,6 +3459,7 @@ function buildCorrectionsTabPanelHtml(report: CorrectionReport | null | undefine
 					sessions without corrections are not listed. Summary counts include all detected moments; long sessions show a capped detail sample.
 					Pattern-based matches are candidates, not verdicts; open the session in the log viewer for full context.
 				</div>
+				${repoSummary}
 				<div style="font-size:11px; color:var(--text-secondary); margin-top:12px;">Filter the list below — select a pill to drill down, select it again to clear.</div>
 				<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">${summaryChips}</div>
 				${statusBar}
@@ -5292,6 +5231,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	const matrix = syncRenderLayoutState(stats);
 	darkFactoryTab.setAvailable(stats.readinessAvailable === true);
 	currentCorrectionReport = stats.correctionReport;
+	currentRepoActivity = stats.repoActivity ?? null;
 	const customizationHtml = safeSectionHtml('Workspace Customization', () => buildCustomizationSectionHtml(matrix));
 	// buildUsageAllKeysSets and the context-ref totals are cheap, pure aggregations over
 	// already-validated stats — not worth isolating individually. buildUsageRootHtml (and each
@@ -5531,6 +5471,17 @@ function wireCopyButtons(): void {
 	});
 }
 
+/**
+ * A partial refresh may omit a report it has not recomputed; keep the one already on screen
+ * instead of blanking its tab.
+ */
+function keepOmittedReports(sanitized: UsageAnalysisStats, raw: unknown): void {
+	const has = (key: string) => Object.prototype.hasOwnProperty.call(raw ?? {}, key);
+	if (!has('correctionReport')) { sanitized.correctionReport = currentCorrectionReport; }
+	if (!has('repoActivity')) { sanitized.repoActivity = currentRepoActivity; }
+	if (!has('memoryFilesAnalysis')) { sanitized.memoryFilesAnalysis = currentMemoryFilesAnalysis; }
+}
+
 function handleUpdateStats(message: any): void {
 	clearLoadingTimeout();
 	// The initial payload is `null` for a panel opened before any stats were cached, so this is
@@ -5546,12 +5497,7 @@ function handleUpdateStats(message: any): void {
 	const sanitized = sanitizeStats(message.data);
 	if (sanitized) {
 		_ulLoadingActive = false;
-		if (!Object.prototype.hasOwnProperty.call(message.data ?? {}, 'correctionReport')) {
-			sanitized.correctionReport = currentCorrectionReport;
-		}
-		if (!Object.prototype.hasOwnProperty.call(message.data ?? {}, 'memoryFilesAnalysis')) {
-			sanitized.memoryFilesAnalysis = currentMemoryFilesAnalysis;
-		}
+		keepOmittedReports(sanitized, message.data);
 		// Same rule for the server memories, and it matters more here: this card is filled by
 		// an out-of-band background fetch, so a partial refresh arriving between fetches would
 		// otherwise blank a section the host is not going to re-send until its TTL expires.

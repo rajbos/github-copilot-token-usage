@@ -476,5 +476,24 @@ export function insightFixtureContexts(translate: Translate): InsightContext[] {
 		contexts.push(ctx);
 	}
 
+	// Agentic engineering system: adoption up with rework up, short-prompt sessions needing
+	// corrections, agent PRs with no enforced review, and rising agent PR load with reverts. Each
+	// reads only its own optional context field, so one context fires all four.
+	{
+		const ctx = base(translate);
+		const zeroTotals = () => ({
+			sessions: 40, interactions: 0, tokens: 0, agenticSessions: 15, delegationSessions: 0,
+			sessionsWithTurnDetail: 20, editTurns: 100, oneShotEditTurns: 80, retries: 0, selfCorrections: 0,
+			toolCalls: 0, sessionsWithCorrections: 0, userCorrections: 0, toolErrors: 0, correctionMoments: 10,
+			scoping: { underScoped: 10, underScopedCorrected: 4, scoped: 10, scopedCorrected: 1 },
+			modes: { director: 0, performer: 0, assessor: 0 },
+		});
+		ctx.activityTrend = { current: { ...zeroTotals(), correctionMoments: 20 }, currentDays: 15, previous: zeroTotals(), previousDays: 30 };
+		ctx.repoActivity = { windowDays: 30, repos: [], unattributed: zeroTotals(), totals: zeroTotals() };
+		ctx.reviewControls = [{ repository: 'octo/app', agentPullRequests: 'present', humanReview: 'unknown' }];
+		ctx.agentPrActivity = [{ repository: 'octo/app', aiAuthoredRecent: 8, aiAuthoredEarlier: 4, aiRevertedPrs: 2 }];
+		contexts.push(ctx);
+	}
+
 	return contexts;
 }

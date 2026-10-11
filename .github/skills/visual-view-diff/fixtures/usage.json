@@ -1862,6 +1862,165 @@
     "withTranscript": 76,
     "missingTranscript": 69
   },
+  "repoActivity": {
+    "windowDays": 30,
+    "repos": [
+      {
+        "key": "rajbos/ai-engineering-fluency",
+        "repository": "rajbos/ai-engineering-fluency",
+        "sessions": 48,
+        "interactions": 610,
+        "tokens": 9400000,
+        "agenticSessions": 41,
+        "delegationSessions": 14,
+        "sessionsWithTurnDetail": 44,
+        "editTurns": 260,
+        "oneShotEditTurns": 221,
+        "retries": 18,
+        "selfCorrections": 21,
+        "toolCalls": 1140,
+        "sessionsWithCorrections": 17,
+        "userCorrections": 12,
+        "toolErrors": 9,
+        "correctionMoments": 31,
+        "scoping": {
+          "underScoped": 0,
+          "underScopedCorrected": 0,
+          "scoped": 0,
+          "scopedCorrected": 0
+        },
+        "modes": {
+          "director": 70,
+          "performer": 210,
+          "assessor": 12
+        },
+        "knowledge": {
+          "instructionFiles": 4,
+          "staleInstructionFiles": 1
+        }
+      },
+      {
+        "key": "xebia/xms-techradar",
+        "repository": "xebia/xms-techradar",
+        "sessions": 12,
+        "interactions": 96,
+        "tokens": 1300000,
+        "agenticSessions": 9,
+        "delegationSessions": 2,
+        "sessionsWithTurnDetail": 11,
+        "editTurns": 48,
+        "oneShotEditTurns": 29,
+        "retries": 9,
+        "selfCorrections": 10,
+        "toolCalls": 390,
+        "sessionsWithCorrections": 8,
+        "userCorrections": 9,
+        "toolErrors": 5,
+        "correctionMoments": 24,
+        "scoping": {
+          "underScoped": 0,
+          "underScopedCorrected": 0,
+          "scoped": 0,
+          "scopedCorrected": 0
+        },
+        "modes": {
+          "director": 12,
+          "performer": 40,
+          "assessor": 3
+        },
+        "knowledge": {
+          "instructionFiles": 0,
+          "staleInstructionFiles": 0
+        }
+      },
+      {
+        "key": "rajbos/dotfiles",
+        "repository": "rajbos/dotfiles",
+        "sessions": 4,
+        "interactions": 18,
+        "tokens": 210000,
+        "agenticSessions": 1,
+        "delegationSessions": 0,
+        "sessionsWithTurnDetail": 3,
+        "editTurns": 6,
+        "oneShotEditTurns": 6,
+        "retries": 0,
+        "selfCorrections": 0,
+        "toolCalls": 20,
+        "sessionsWithCorrections": 0,
+        "userCorrections": 0,
+        "toolErrors": 0,
+        "correctionMoments": 0,
+        "scoping": {
+          "underScoped": 0,
+          "underScopedCorrected": 0,
+          "scoped": 0,
+          "scopedCorrected": 0
+        },
+        "modes": {
+          "director": 2,
+          "performer": 5,
+          "assessor": 0
+        }
+      }
+    ],
+    "unattributed": {
+      "sessions": 6,
+      "interactions": 0,
+      "tokens": 0,
+      "agenticSessions": 0,
+      "delegationSessions": 0,
+      "sessionsWithTurnDetail": 0,
+      "editTurns": 0,
+      "oneShotEditTurns": 0,
+      "retries": 0,
+      "selfCorrections": 0,
+      "toolCalls": 0,
+      "sessionsWithCorrections": 0,
+      "userCorrections": 0,
+      "toolErrors": 0,
+      "correctionMoments": 0,
+      "scoping": {
+        "underScoped": 0,
+        "underScopedCorrected": 0,
+        "scoped": 0,
+        "scopedCorrected": 0
+      },
+      "modes": {
+        "director": 0,
+        "performer": 0,
+        "assessor": 0
+      }
+    },
+    "totals": {
+      "sessions": 70,
+      "interactions": 0,
+      "tokens": 0,
+      "agenticSessions": 51,
+      "delegationSessions": 16,
+      "sessionsWithTurnDetail": 58,
+      "editTurns": 0,
+      "oneShotEditTurns": 0,
+      "retries": 0,
+      "selfCorrections": 0,
+      "toolCalls": 0,
+      "sessionsWithCorrections": 0,
+      "userCorrections": 0,
+      "toolErrors": 0,
+      "correctionMoments": 0,
+      "scoping": {
+        "underScoped": 0,
+        "underScopedCorrected": 0,
+        "scoped": 0,
+        "scopedCorrected": 0
+      },
+      "modes": {
+        "director": 84,
+        "performer": 255,
+        "assessor": 15
+      }
+    }
+  },
   "todaySessions": [
     {
       "title": "g2g?",

@@ -28,6 +28,18 @@ export type RepoPrInfo = {
 	userAuthoredPrs?: number;
 	/** Subset of `userAuthoredPrs` that has been merged. */
 	userMergedPrs?: number;
+	/**
+	 * Merged agent-authored PRs, and how many of them a later PR reverted — an escaped-defect
+	 * proxy (see src/prOutcomes.ts). `otherMergedPrs` / `otherRevertedPrs` are the baseline for
+	 * everyone else's PRs. `aiAuthoredRecent` / `aiAuthoredEarlier` split agent-authored PRs across
+	 * the two halves of the window. Absent in snapshots written before these fields existed.
+	 */
+	aiMergedPrs?: number;
+	aiRevertedPrs?: number;
+	otherMergedPrs?: number;
+	otherRevertedPrs?: number;
+	aiAuthoredRecent?: number;
+	aiAuthoredEarlier?: number;
 	error?: string;
 };
 

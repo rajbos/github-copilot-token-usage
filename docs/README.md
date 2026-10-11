@@ -89,6 +89,7 @@ Detailed documentation for individual features.
 | [features/COPILOT-MEMORY-FILES-INSIGHT.md](features/COPILOT-MEMORY-FILES-INSIGHT.md) | Copilot memory-files hygiene: shared analysis module, insight card, CLI `memory-files` command, and a Tools-tab UI section |
 | [features/COPILOT-SERVER-MEMORIES.md](features/COPILOT-SERVER-MEMORIES.md) | Copilot's server-side per-repository memory store: undocumented API contract, and turning re-learned facts into `AGENTS.md` entries |
 | [features/CLOUD-AGENT-COST.md](features/CLOUD-AGENT-COST.md) | Cloud Agent tab — per-repository AI credits, and the hourly cached snapshot behind it |
+| [features/AGENTIC-ENGINEERING-SIGNALS.md](features/AGENTIC-ENGINEERING-SIGNALS.md) | Agentic Engineering System signals — rework per repository, quality alongside adoption, reverted agent PRs, participation modes and anti-pattern insights |
 | [features/DARK-FACTORY-READINESS.md](features/DARK-FACTORY-READINESS.md) | Dark Factory Readiness — per-repository governance control scan on the Fluency Score view |
 | [features/WORKSPACE-GROUPING.md](features/WORKSPACE-GROUPING.md) | Workspace grouping — folding worktrees, clones and remote spellings of one repository into one workspace, shared by the extension and the CLI |
 | [features/TTFT-TRENDS.md](features/TTFT-TRENDS.md) | Research > TTFT diagnostics tab — time-to-first-token averages and per-model trendlines from VS Code Chat's debug log |
@@ -109,4 +110,5 @@ Implementation notes and decisions captured during development sessions.
 | [adr/ANALYSIS-WORKER.md](adr/ANALYSIS-WORKER.md) | Why session parsing and workspace scans run on worker threads, and how that is kept from regressing |
 | [adr/LOCALIZATION-ARCHITECTURE.md](adr/LOCALIZATION-ARCHITECTURE.md) | Repo-wide localization standard: the four runtime tiers and one source of truth |
 | [adr/INSIGHTS-CATALOG-LOCALIZATION.md](adr/INSIGHTS-CATALOG-LOCALIZATION.md) | How the Insights catalog is localized without giving up insightsEngine.ts's purity |
+| [adr/AGENTIC-ENGINEERING-SYSTEM-PLAN.md](adr/AGENTIC-ENGINEERING-SYSTEM-PLAN.md) | Plan: per-repo rework, speed-vs-error, PR revert rate, anti-pattern insights and participation modes (its adoption × foundations matrix was dropped; the plan records why) |
 | [adr/TOOL-EXECUTION-STATS.md](adr/TOOL-EXECUTION-STATS.md) | Per-tool failure counts and latency histograms (reliability, latency, MCP health, cost-vs-speed panels): data sources, additive design, phased plan |

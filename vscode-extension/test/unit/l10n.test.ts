@@ -1500,7 +1500,7 @@ test('insights l10n: the catalog actually has keys to cover', () => {
 	// Guards the tests below against silently passing on an empty set if the
 	// catalog is ever refactored to a different key prefix.
 	assert.ok(insightKeys().length > 150, `expected the insight catalog's keys, got ${insightKeys().length}`);
-	assert.equal(INSIGHT_CATALOG.length, 53, 'catalog size changed — update the expected count deliberately');
+	assert.equal(INSIGHT_CATALOG.length, 57, 'catalog size changed — update the expected count deliberately');
 });
 
 test('insights l10n: every catalog title and action label resolves in English', () => {
@@ -1738,6 +1738,28 @@ test('l10n: backend Sync Now failure and nothing-sent text resolve in English an
 	}
 });
 
+test('l10n: agentic engineering system labels resolve in both languages', () => {
+	const expected: Array<[string, string, string]> = [
+		['agentic.repoSummary.title', 'Rework per repository', '各仓库的返工情况'],
+		['agentic.modes.title', 'How you work with agents', '你与智能体的协作方式'],
+		['agentic.quality.title', 'Quality alongside adoption', '质量与采用程度'],
+		['agentic.reverts.baseline', 'others: {0}', '其他：{0}'],
+		['agentic.repoSummary.cohortZeroBaseline', 'Repositories without agent instruction files needed a median of 0 corrections per session ({0} repositories), so there is no baseline to compare against; repositories with instruction files needed {1} ({2} repositories).', '没有智能体说明文件的仓库每个会话的纠正次数中位数为 0（{0} 个仓库），因此没有可供比较的基线；有说明文件的仓库为 {1}（{2} 个仓库）。'],
+		['insight.speedWithoutQuality.title', '⚖️ More agent use, more rework', '⚖️ 智能体使用更多，返工也更多'],
+		['insight.delegationWithoutObjective.title', '🎯 State the goal before the agent starts', '🎯 在智能体开始前说明目标'],
+		['insight.unreviewedAgentMerges.title', '🛡️ Make sure agent PRs get a human review', '🛡️ 确保智能体 PR 经过人工审查'],
+		['insight.reviewBurdenRising.title', '📈 Review load from agents is rising', '📈 来自智能体的审查负担在增加'],
+		['insight.action.viewReadiness', 'View AI Readiness', '查看 AI 就绪度'],
+	];
+	for (const [key, english] of expected) { assert.equal(t(key), english, key); }
+	mock.setLanguage('zh-cn');
+	try {
+		for (const [key, , chinese] of expected) { assert.equal(t(key), chinese, key); }
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
 test('l10n: per-account budget strings resolve in English and zh-cn', () => {
 	mock.setLanguage('en');
 	const english: Record<string, string> = {
@@ -1771,6 +1793,15 @@ test('l10n: per-account budget strings resolve in English and zh-cn', () => {
 	} finally {
 		mock.setLanguage('en');
 	}
+});
+
+test('l10n: every agentic engineering system key has a zh-CN translation and the webviews ship the UI ones', () => {
+	const zh = JSON.parse(readFileSync(join(__dirname, '../../../../package.nls.zh-cn.json'), 'utf8')) as Record<string, string>;
+	const webviewKeys = JSON.parse(readFileSync(join(__dirname, '../../../../src/webview/shared/webviewKeys.json'), 'utf8')) as string[];
+	const agenticKeys = Object.keys(ENGLISH_BUNDLE).filter(key => key.startsWith('agentic.'));
+	assert.ok(agenticKeys.length > 40, `expected the agentic.* keys, found ${agenticKeys.length}`);
+	assert.deepEqual(agenticKeys.filter(key => !zh[key]), [], 'agentic.* keys without a zh-CN translation');
+	assert.deepEqual(agenticKeys.filter(key => !webviewKeys.includes(key)), [], 'agentic.* keys missing from webviewKeys.json');
 });
 
 test('l10n: Diagnostics API-driven budget hint strings resolve in English and zh-cn', () => {

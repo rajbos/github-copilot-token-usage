@@ -23,7 +23,7 @@ function fmt(n: number): string {
 }
 
 /** Total CLI-style interactions: terminal CLI plus Copilot desktop app sessions (`cliApp`) and non-terminal Claude Code surfaces (`claudeDesktop`, `claudeVsCode`) — all still agentic, tool-calling sessions, just launched from a different surface than a plain terminal. */
-function cliTotal(m: UsageAnalysisPeriod['modeUsage']): number {
+export function cliTotal(m: UsageAnalysisPeriod['modeUsage']): number {
 	return (m.cli ?? 0) + (m.cliApp ?? 0) + (m.claudeDesktop ?? 0) + (m.claudeVsCode ?? 0);
 }
 

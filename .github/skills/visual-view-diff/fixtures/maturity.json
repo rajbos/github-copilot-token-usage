@@ -111,5 +111,13 @@
     "$fromRepoJson": "src/fluencyLevelData.json"
   },
   "backendConfigured": false,
-  "installedHooks": []
+  "installedHooks": [],
+  "agenticQuality": {
+    "comparison": {
+      "classification": "faster-but-weaker",
+      "agenticPerDay": { "current": 2.4, "previous": 1.6 },
+      "correctionsPerSession": { "current": 0.71, "previous": 0.48 },
+      "oneShotRate": { "current": 0.78, "previous": 0.84 }
+    }
+  }
 }

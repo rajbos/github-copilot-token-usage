@@ -22,7 +22,7 @@ export const REPO_PRS_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
  * Bumped whenever the shape of `RepoPrStatsResult` changes in a way that would make an older
  * snapshot render incorrectly. Snapshots from a different version are ignored (and refetched).
  */
-export const REPO_PRS_CACHE_SCHEMA_VERSION = 1;
+export const REPO_PRS_CACHE_SCHEMA_VERSION = 2;
 
 /** On-disk envelope: the snapshot plus what it takes to decide whether it is still usable. */
 export interface RepoPrCacheEnvelope {

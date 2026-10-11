@@ -1,0 +1,17 @@
+{
+	"$comment": "Maps each task category (src/taskClassification.ts) to a participation mode from GitHub's Agentic Engineering System: director sets intent, performer executes, assessor checks. Exploration is contextual: before the first performer turn of a session it is scoping (director); after one it is reading the change back (assessor). Conversation carries no mode.",
+	"categories": {
+		"Planning": "director",
+		"Brainstorming": "director",
+		"Delegation": "director",
+		"Coding": "performer",
+		"Feature Dev": "performer",
+		"Refactoring": "performer",
+		"Debugging": "performer",
+		"Build/Deploy": "performer",
+		"Git Ops": "performer",
+		"Testing": "assessor",
+		"Exploration": "contextual",
+		"Conversation": "none"
+	}
+}

@@ -30,7 +30,13 @@ import type {
 	ToolCurationAnalysis,
 	RepeatedTaskReport,
 	MemoryFilesAnalysis,
+	RepoAgentActivityReport,
+	ActivityTrendWindows,
+	DarkFactoryControlState,
 } from '../../src/types';
+import { compareInstructionCohorts } from '../../src/knowledgeSignals';
+import { compareSpeedAndQuality, reworkWorsened } from '../../src/speedVsError';
+import { repoKeyFromSlug } from '../../src/repoKey';
 import toolNamesData from '../../src/toolNames.json';
 import modelPricingData from '../../src/modelPricing.json';
 import { resolveGuidMcpToolName, resolveMcpFamilyToolName, lookupKnownToolName } from '../../src/utils/toolUtils';
@@ -352,6 +358,29 @@ export interface InsightContext {
 	repeatedTasks?: RepeatedTaskReport | null;
 	/** Optional — populated when Copilot memory-files discovery has run. */
 	memoryFilesAnalysis?: MemoryFilesAnalysis | null;
+	/** Optional — per-repository agent activity over the last 30 days (src/repoAgentActivity.ts). */
+	repoActivity?: RepoAgentActivityReport | null;
+	/** Optional — this month to date against last month (src/speedVsError.ts). */
+	activityTrend?: ActivityTrendWindows | null;
+	/** Optional — per-repository review controls from the latest AI Readiness scan. */
+	reviewControls?: AgenticReviewControls[] | null;
+	/** Optional — per-repository cloud-agent PR volume and reverts from the repository PR snapshot. */
+	agentPrActivity?: AgentPrActivity[] | null;
+}
+
+/** Whether agents open PRs in a repository, and whether merges there require a human review. */
+export interface AgenticReviewControls {
+	repository: string;
+	agentPullRequests: DarkFactoryControlState;
+	humanReview: DarkFactoryControlState;
+}
+
+/** Cloud-agent PRs in one repository, split across the two halves of the PR window. */
+export interface AgentPrActivity {
+	repository: string;
+	aiAuthoredRecent: number;
+	aiAuthoredEarlier: number;
+	aiRevertedPrs: number;
 }
 
 export interface InsightState {
@@ -459,6 +488,82 @@ function compactedSessionPhrase(ctx: InsightContext): string {
 // focus times, streaks, and MCP/tool adoption insights.
 // ---------------------------------------------------------------------------
 
+// ── Agentic engineering system helpers (docs/features/AGENTIC-ENGINEERING-SIGNALS.md) ──
+
+/** The with/without instruction files comparison, when it is large enough and favours instructions. */
+function instructionEvidencePct(ctx: InsightContext): number | null {
+	if (!ctx.repoActivity) { return null; }
+	const pct = compareInstructionCohorts(ctx.repoActivity.repos).correctionsReductionPct;
+	return pct !== null && pct >= 10 ? Math.round(pct) : null;
+}
+
+/** Agent sessions that opened without a stated objective need corrections this much more often. Tunable. */
+const UNDER_SCOPED_RATE_RATIO = 1.5;
+/** …and by at least this many percentage points. Tunable. */
+const UNDER_SCOPED_MIN_GAP = 0.1;
+/** Each side of the comparison needs this many sessions. Tunable. */
+const MIN_SCOPING_SESSIONS = 5;
+
+function scopingRates(ctx: InsightContext): { under: number; scoped: number; underCorrected: number; underSessions: number } | null {
+	const s = ctx.repoActivity?.totals.scoping;
+	if (!s || s.underScoped < MIN_SCOPING_SESSIONS || s.scoped < MIN_SCOPING_SESSIONS) { return null; }
+	return { under: s.underScopedCorrected / s.underScoped, scoped: s.scopedCorrected / s.scoped, underCorrected: s.underScopedCorrected, underSessions: s.underScoped };
+}
+
+function isDelegationWithoutObjective(ctx: InsightContext): boolean {
+	const r = scopingRates(ctx);
+	return !!r && r.underCorrected >= 2
+		&& r.under >= r.scoped * UNDER_SCOPED_RATE_RATIO
+		&& r.under - r.scoped >= UNDER_SCOPED_MIN_GAP;
+}
+
+function unreviewedAgentRepos(ctx: InsightContext): AgenticReviewControls[] {
+	return (ctx.reviewControls ?? []).filter(r => r.agentPullRequests === 'present' && r.humanReview !== 'present');
+}
+
+/** Cloud-agent PR volume up this much between the two halves of the window… Tunable. */
+const REVIEW_LOAD_GROWTH = 1.5;
+/** …with at least this many agent PRs in the recent half. Tunable. */
+const MIN_RECENT_AGENT_PRS = 5;
+
+/**
+ * Whether rework rose this month in this one repository, judged on its own sessions with the
+ * same thresholds as the overall trend. False when that repository has too little data.
+ */
+function repoReworkUp(ctx: InsightContext, repository: string): boolean {
+	const trend = ctx.activityTrend;
+	const key = repoKeyFromSlug(repository);
+	const windows = key ? trend?.repos?.[key] : undefined;
+	if (!trend || !windows) { return false; }
+	const c = compareSpeedAndQuality({ ...windows, currentDays: trend.currentDays, previousDays: trend.previousDays });
+	return c.classification !== 'insufficient-data' && reworkWorsened(c.correctionsPerSession, c.oneShotRate);
+}
+
+function risingReviewLoad(ctx: InsightContext): AgentPrActivity[] {
+	return (ctx.agentPrActivity ?? []).filter(r =>
+		r.aiAuthoredRecent >= MIN_RECENT_AGENT_PRS
+		&& r.aiAuthoredRecent >= r.aiAuthoredEarlier * REVIEW_LOAD_GROWTH
+		&& (r.aiRevertedPrs > 0 || repoReworkUp(ctx, r.repository)));
+}
+
+/** Firmer wording once review is observed to be absent; "cannot confirm" while it is unknown. */
+function unreviewedAgentMergesBodyKey(reviewAbsent: boolean): string {
+	return reviewAbsent ? 'insight.unreviewedAgentMerges.body.absent' : 'insight.unreviewedAgentMerges.body.unknown';
+}
+
+/** Cite reverts when there are any, otherwise the rising rework. */
+function reviewBurdenBodyKey(hasReverts: boolean): string {
+	return hasReverts ? 'insight.reviewBurdenRising.body.reverts' : 'insight.reviewBurdenRising.body.rework';
+}
+
+function fixed(value: number | null, digits: number): string {
+	return value === null ? '—' : value.toFixed(digits);
+}
+
+function pct(value: number | null): string {
+	return value === null ? '—' : `${Math.round(value * 100)}%`;
+}
+
 export const INSIGHT_CATALOG: InsightDefinition[] = [
 	// ── Customization ──────────────────────────────────────────────────────
 	{
@@ -469,7 +574,9 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		buildBody: (ctx) => {
 			const count = ctx.missedPotential.length;
 			const names = joinNames(ctx, ctx.missedPotential.slice(0, 3).map(w => w.workspaceName));
-			return ctx.translate(plural('insight.missingInstructions.body', count), count, names, moreSuffix(ctx, count, 3));
+			const body = ctx.translate(plural('insight.missingInstructions.body', count), count, names, moreSuffix(ctx, count, 3));
+			const evidence = instructionEvidencePct(ctx);
+			return evidence === null ? body : `${body} ${ctx.translate('insight.missingInstructions.evidence', evidence)}`;
 		},
 		actionLabelKey: 'insight.action.viewWorkspaceHealth',
 		actionCommand: 'aiEngineeringFluency.openHealthTab',
@@ -1530,6 +1637,69 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		actionLabelKey: 'insight.action.viewSkillSuggestions',
 		actionCommand: 'aiEngineeringFluency.openToolsTab',
 		appliesTo: (ctx) => (ctx.repeatedTasks?.clusters[0]?.sessionCount ?? 0) >= 3,
+		weight: 60,
+	},
+	// ── Agentic engineering system ──────────────────────────────────────────
+	{
+		id: 'speed-without-quality',
+		category: 'trend',
+		severity: 'tip',
+		titleKey: 'insight.speedWithoutQuality.title',
+		buildBody: (ctx) => {
+			const c = compareSpeedAndQuality(ctx.activityTrend);
+			return ctx.translate('insight.speedWithoutQuality.body',
+				fixed(c.agenticPerDay.previous, 1), fixed(c.agenticPerDay.current, 1),
+				fixed(c.correctionsPerSession.previous, 2), fixed(c.correctionsPerSession.current, 2),
+				pct(c.oneShotRate.previous), pct(c.oneShotRate.current));
+		},
+		actionLabelKey: 'insight.action.viewCorrections',
+		actionCommand: 'aiEngineeringFluency.openCorrectionsTab',
+		appliesTo: (ctx) => compareSpeedAndQuality(ctx.activityTrend).classification === 'faster-but-weaker',
+		weight: 80,
+	},
+	{
+		id: 'delegation-without-objective',
+		category: 'agentic',
+		severity: 'tip',
+		titleKey: 'insight.delegationWithoutObjective.title',
+		buildBody: (ctx) => {
+			const r = scopingRates(ctx)!;
+			return ctx.translate('insight.delegationWithoutObjective.body', r.underCorrected, r.underSessions, Math.round(r.under * 100), Math.round(r.scoped * 100));
+		},
+		actionLabelKey: 'insight.action.viewCorrections',
+		actionCommand: 'aiEngineeringFluency.openCorrectionsTab',
+		appliesTo: isDelegationWithoutObjective,
+		weight: 72,
+	},
+	{
+		id: 'unreviewed-agent-merges',
+		category: 'agentic',
+		severity: 'tip',
+		titleKey: 'insight.unreviewedAgentMerges.title',
+		buildBody: (ctx) => {
+			const repos = unreviewedAgentRepos(ctx);
+			const absent = repos.filter(r => r.humanReview === 'absent');
+			const shown = absent.length > 0 ? absent : repos;
+			const names = joinNames(ctx, shown.slice(0, 3).map(r => r.repository));
+			return ctx.translate(unreviewedAgentMergesBodyKey(absent.length > 0), names, moreSuffix(ctx, shown.length, 3));
+		},
+		actionLabelKey: 'insight.action.viewReadiness',
+		actionCommand: 'aiEngineeringFluency.showReadiness',
+		appliesTo: (ctx) => unreviewedAgentRepos(ctx).length > 0,
+		weight: 65,
+	},
+	{
+		id: 'review-burden-rising',
+		category: 'trend',
+		severity: 'tip',
+		titleKey: 'insight.reviewBurdenRising.title',
+		buildBody: (ctx) => {
+			const top = risingReviewLoad(ctx).sort((a, b) => b.aiAuthoredRecent - a.aiAuthoredRecent)[0];
+			return ctx.translate(reviewBurdenBodyKey(top.aiRevertedPrs > 0), top.aiAuthoredRecent, top.repository, top.aiAuthoredEarlier, top.aiRevertedPrs);
+		},
+		actionLabelKey: 'insight.action.viewRepoPrs',
+		actionCommand: 'aiEngineeringFluency.openReposTab',
+		appliesTo: (ctx) => risingReviewLoad(ctx).length > 0,
 		weight: 60,
 	},
 ];

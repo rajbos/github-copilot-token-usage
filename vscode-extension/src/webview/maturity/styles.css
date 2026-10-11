@@ -938,3 +938,65 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .demo-step-active.demo
 	color: var(--text-primary);
 	margin-bottom: 6px;
 }
+
+/* Quality alongside adoption (qualityStrip.ts) — on-screen only, never exported */
+.quality-strip {
+	background: var(--bg-tertiary);
+	border: 1px solid var(--border-color);
+	border-radius: 10px;
+	padding: 12px 16px;
+	margin-bottom: 16px;
+}
+
+.quality-strip-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 8px;
+}
+
+.quality-strip-title {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+.quality-strip-note {
+	font-size: 11px;
+	color: var(--text-muted);
+}
+
+.quality-metrics {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+	gap: 8px;
+	margin-top: 10px;
+}
+
+.quality-metric-label {
+	font-size: 11px;
+	color: var(--text-secondary);
+}
+
+.quality-metric-value {
+	font-size: 18px;
+	font-weight: 700;
+	color: var(--text-primary);
+	font-variant-numeric: tabular-nums;
+}
+
+.quality-metric-previous {
+	font-size: 11px;
+	color: var(--text-muted);
+}
+
+.quality-verdict {
+	margin-top: 8px;
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+
+.quality-verdict-warn {
+	color: var(--warning-fg);
+	font-weight: 600;
+}
