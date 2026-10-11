@@ -1261,7 +1261,11 @@ export function buildPromotionPromptForSubject(
  * the payload a row was rendered from and the analysis the host holds when it is clicked.
  */
 export function promotionGroupFingerprint(group: Pick<ServerMemoryPromotionGroup, 'subject' | 'representativeFact' | 'citations'>): string {
-	const text = JSON.stringify([group.subject, group.representativeFact, group.citations]);
+	return fnv1a(JSON.stringify([group.subject, group.representativeFact, group.citations]));
+}
+
+/** FNV-1a over a string, as 8 hex digits: change detection, not security. */
+function fnv1a(text: string): string {
 	let hash = 0x811c9dc5;
 	for (let i = 0; i < text.length; i++) {
 		hash ^= text.charCodeAt(i);
@@ -1284,8 +1288,10 @@ export function serverMemoriesAnalysisSignature(analysis: ServerMemoriesAnalysis
 		analysis.totalMemories, analysis.distinctSubjects, analysis.documentedCount, analysis.fullyStaleCount,
 		target ? `${target.path}:${target.exists}` : `blocked:${analysis.promotionTargetBlockedPath ?? ''}`,
 		analysis.promotionGroups.slice(0, VIEW_PROMOTION_GROUP_LIMIT).map(promotionGroupFingerprint).join(','),
+		// Every field a documented row renders: subject, fact, cited files and which are missing.
+		// Hashed like the promotion rows, so the signature stays small without prompt-sized text.
 		(analysis.documentedMemories ?? []).slice(0, VIEW_DOCUMENTED_LIMIT)
-			.map(entry => `${entry.id}:${(entry.missingInstructionFiles ?? []).join('|')}`).join(','),
+			.map(entry => fnv1a(JSON.stringify([entry.id, entry.subject, entry.fact, entry.instructionFiles, entry.missingInstructionFiles ?? []]))).join(','),
 	].join(';');
 }
 

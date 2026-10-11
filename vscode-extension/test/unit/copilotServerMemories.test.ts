@@ -1915,6 +1915,13 @@ test('serverMemoriesAnalysisSignature changes exactly when the rendered section 
 	assert.notEqual(serverMemoriesAnalysisSignature(analyzeServerMemories(result, deps(false, true, 'exists'))), base, 'a group losing its last live source');
 	assert.notEqual(serverMemoriesAnalysisSignature(analyzeServerMemories(result, deps(true, false, 'exists'))), base, 'a documentation file going missing');
 	assert.notEqual(serverMemoriesAnalysisSignature(analyzeServerMemories(result, deps(true, true, 'unsafe'))), base, 'the target becoming unsafe');
+	// Same id and counts, but a documented row's rendered content changes.
+	const withDoc = (doc: Partial<ServerMemory>) => serverMemoriesAnalysisSignature(analyzeServerMemories(
+		{ ...result, memories: [result.memories[0], memory({ id: '2', subject: 'doc', citations: ['docs/x.md:1'], ...doc })] }, deps(true, true, 'exists')));
+	assert.equal(withDoc({}), base);
+	assert.notEqual(withDoc({ subject: 'renamed' }), base, 'a documented subject change');
+	assert.notEqual(withDoc({ fact: 'A different fact.' }), base, 'a documented fact change');
+	assert.notEqual(withDoc({ citations: ['docs/y.md:1'] }), base, 'a cited document swapped for another');
 	assert.equal(serverMemoriesAnalysisSignature(null), 'none');
 });
 

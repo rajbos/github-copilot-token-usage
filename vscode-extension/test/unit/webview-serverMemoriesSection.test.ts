@@ -244,3 +244,11 @@ test('wireServerMemoriesButtons handles a click dispatched on a text node', () =
 		assert.deepEqual(posted, [{ command: 'openServerMemoryCitation', path: 'AGENTS.md' }]);
 	});
 });
+
+test('serverMemories section: error and disabled states still name the repository and checkout', () => {
+	for (const state of [view({ error: 'HTTP 403' }), view({ enabled: false })]) {
+		const html = buildServerMemoriesSectionHtml(state);
+		assert.match(html, /<strong>owner\/name<\/strong>/);
+		assert.match(html, /C:\\code\\&lt;repo&gt;/);
+	}
+});

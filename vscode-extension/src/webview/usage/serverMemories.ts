@@ -254,13 +254,17 @@ export function buildServerMemoriesSectionHtml(analysis: ServerMemoriesAnalysisV
 			<div class="section-title"><span>🧠</span><span>${escapeHtml(localize('serverMemories.sectionTitle'))}</span></div>
 			<div class="section-subtitle" style="color:var(--text-primary); opacity:0.75;">${escapeHtml(localize('serverMemories.sectionSubtitle'))}</div>`;
 
+		// The scope is shown in every state, not just a successful read: "which repository failed,
+		// or has Memory turned off?" is exactly what these states must answer.
 		if (analysis.error) {
 			return `<div id="section-server-memories" class="section">${header}
+				${buildScopeHtml(analysis)}
 				<div style="font-size:13px; color:var(--text-secondary);">${escapeHtml(localizeFormat('serverMemories.unavailable', analysis.error))}</div>
 			</div>`;
 		}
 		if (analysis.enabled === false) {
 			return `<div id="section-server-memories" class="section">${header}
+				${buildScopeHtml(analysis)}
 				<div style="font-size:13px; color:var(--text-secondary);">${escapeHtml(localize('serverMemories.disabled'))}</div>
 			</div>`;
 		}
