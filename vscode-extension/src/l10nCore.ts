@@ -11,7 +11,7 @@
  * real localized strings by being handed a translator, rather than being forced
  * to either import `vscode` or ship hardcoded English.
  *
- * `insightsEngine.ts` is the motivating case (see issue #2081): its 50+ insight
+ * `src/insightsEngine.ts` is the motivating case (see issue #2081): its 50+ insight
  * definitions are user-facing prose, but the module's own header comment
  * commits it to staying VS Code-free. It receives `InsightContext.translate`,
  * which `extension.ts` fills with the real `t()` and tests fill with
@@ -23,6 +23,7 @@
  */
 import englishBundleData from '../package.nls.json';
 import zhCnBundleData from '../package.nls.zh-cn.json';
+import type { Translate } from '../../src/types';
 
 /** The English bundle — also the final fallback for every other locale. */
 export const ENGLISH_BUNDLE = englishBundleData as Record<string, string>;
@@ -34,8 +35,8 @@ const LOCALE_BUNDLES: Record<string, Record<string, string>> = {
 
 const missingKeyWarnings = new Set<string>();
 
-/** A key-based translation function: the shape pure modules are handed. */
-export type Translate = (key: string, ...args: Array<string | number | boolean>) => string;
+/** A key-based translation function: the shape pure modules are handed. Declared in src/types.ts. */
+export type { Translate };
 
 /** Replace {0}, {1}, ... placeholders, mirroring vscode.l10n.t() formatting. */
 export function formatMessage(template: string, args: Array<string | number | boolean>): string {
@@ -147,8 +148,8 @@ export function translate(language: string, key: string, ...args: Array<string |
  * if real `l10n/bundle.l10n.<lang>.json` files are shipped one day (none are
  * today); until then `t()` and a translator bound to `vscode.env.language`
  * resolve identically. `extension.ts` injects the real `t()` rather than a
- * translator from here, so production keeps the full resolution order and only
- * tests use this.
+ * translator from here, so it keeps the full resolution order; tests and the
+ * hosts without VS Code (the CLI and desktop app) use this.
  */
 export function createTranslator(language: string): Translate {
 	return (key, ...args) => translate(language, key, ...args);
