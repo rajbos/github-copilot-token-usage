@@ -35,8 +35,6 @@ Run `ls -a` (or `git ls-files | cut -d/ -f1 | sort -u`) for the live top level.
 ├── docs/                        ← Shared documentation
 ├── screenshots/                 ← Only a `.vscode/settings.json` pointing the sample-data
 │                                   setting at sample session data; not otherwise used
-├── .pi/                         ← Pi subagent config (coverage-improvement agent + chain);
-│                                   only referenced by its own README/QUICKSTART
 ├── .vscode/                     ← Shared VS Code settings, tasks and launch configs
 │                                   (for human developers; see "Never Launch a Real Editor/IDE Instance")
 ├── .devcontainer/               ← Dev container definition (see "DevContainer Terminal Behavior")
