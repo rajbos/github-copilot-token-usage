@@ -79,7 +79,7 @@ async function loadSqlJs() {
     }
   }
   throw new Error(
-    'sql.js not found. Run `npm install sql.js` inside vscode-extension/ or ' +
+    'sql.js not found. Run `pnpm add sql.js` inside vscode-extension/ or ' +
     path.join(__dirname, '') + ' first.'
   );
 }

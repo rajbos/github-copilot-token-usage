@@ -19,8 +19,12 @@ import {
 	parseRepoFromRemoteUrl,
 	renderPromotionMarkdown,
 	isValidRepoSlug,
-	createRepoFileExists,
+	analyzeServerMemoriesForCheckout,
+	normalizeRepoSlug,
+	describePromotionTarget,
+	describeNoPromotionCandidates,
 	sanitizeForDisplay,
+	sameRepoSlug,
 	INVALID_REPO_LABEL,
 	DEFAULT_MEMORY_LIMIT,
 } from '../../../src/copilotServerMemories';
@@ -85,18 +89,10 @@ export const memoryFilesCommand = new Command('memory-files')
 		}
 
 		if (options.promote) {
-			if (!serverAnalysis) {
-				process.stdout.write('Not a GitHub repository checkout — pass --repo owner/name.\n');
-			} else if (serverAnalysis.error) {
-				// A failed read must not fall through to renderPromotionMarkdown(): with no
-				// memories it prints "every stored memory already cites an instruction file",
-				// so a 401, a missing `gh` or a dropped connection would read as "you have
-				// nothing left to document" — the most misleading answer this command can give.
-				process.stderr.write(`Could not read ${sanitizeForDisplay(serverAnalysis.repo)}: ${sanitizeForDisplay(serverAnalysis.error)}\n`);
-				process.exitCode = 1;
-			} else {
-				process.stdout.write(renderPromotionMarkdown(serverAnalysis));
-			}
+			const output = buildPromoteOutput(serverAnalysis);
+			if (output.stdout) { process.stdout.write(output.stdout); }
+			if (output.stderr) { process.stderr.write(output.stderr); }
+			if (output.exitCode !== 0) { process.exitCode = output.exitCode; }
 			return;
 		}
 
@@ -105,6 +101,50 @@ export const memoryFilesCommand = new Command('memory-files')
 			printServerMemoriesReport(serverAnalysis);
 		}
 	});
+
+/**
+ * Normalize a `--repo` override (`owner/repo.git` → `owner/repo`) before it is validated or
+ * fetched, so the API request goes to the repository the local-checkout match compares against.
+ * Only `undefined` means the option was absent: an explicit value that normalizes to nothing
+ * (whitespace, a bare `.git`) is invalid, never a silent "no override".
+ */
+export function resolveRepoOverride(raw: string | undefined): { repoOverride: string | undefined; invalid: boolean } {
+	if (raw === undefined) { return { repoOverride: undefined, invalid: false }; }
+	const repoOverride = normalizeRepoSlug(raw);
+	return { repoOverride, invalid: !isValidRepoSlug(repoOverride) };
+}
+
+/**
+ * Whether the repository being analyzed is the one checked out here: no `--repo`, or a
+ * `--repo` naming the origin's repository in any letter case (GitHub slugs are
+ * case-insensitive). Only then is the local tree evidence about that repository.
+ */
+export function analyzesLocalCheckout(repoOverride: string | undefined, originRepo: string | undefined): boolean {
+	return repoOverride === undefined || sameRepoSlug(repoOverride, originRepo);
+}
+
+/**
+ * What `--promote` prints, split by stream. Exported so the output contract — stdout is only
+ * the paste-ready block, everything about *how* it was produced goes to stderr — is tested
+ * without a network read.
+ */
+export function buildPromoteOutput(serverAnalysis: ServerMemoriesAnalysis | undefined): { stdout: string; stderr: string; exitCode: number } {
+	if (!serverAnalysis) {
+		return { stdout: 'Not a GitHub repository checkout — pass --repo owner/name.\n', stderr: '', exitCode: 0 };
+	}
+	if (serverAnalysis.error) {
+		// A failed read must not fall through to renderPromotionMarkdown(): with no
+		// memories it prints "every stored memory already cites an instruction or documentation file",
+		// so a 401, a missing `gh` or a dropped connection would read as "you have
+		// nothing left to document" — the most misleading answer this command can give.
+		return { stdout: '', stderr: `Could not read ${sanitizeForDisplay(serverAnalysis.repo)}: ${sanitizeForDisplay(serverAnalysis.error)}\n`, exitCode: 1 };
+	}
+	// stderr, so stdout stays a block that can be redirected straight into a file.
+	const stderr = serverAnalysis.repoRoot
+		? `Analyzed ${sanitizeForDisplay(serverAnalysis.repo)} at ${sanitizeForDisplay(serverAnalysis.repoRoot)}\n`
+		: '';
+	return { stdout: renderPromotionMarkdown(serverAnalysis), stderr, exitCode: 0 };
+}
 
 /**
  * Run a command and return its trimmed stdout, or `undefined` if it is missing or fails.
@@ -143,23 +183,27 @@ function resolveRepoContext(cwd: string): { root: string; repo: string } | undef
  * (no `gh`, no Copilot access, memory disabled) comes back as an analysis carrying an
  * `error`, so the report can say *why* it is empty.
  */
-async function buildServerMemoriesAnalysis(cwd: string, repoOverride: string | undefined, limit: number): Promise<ServerMemoriesAnalysis | undefined> {
+async function buildServerMemoriesAnalysis(cwd: string, rawRepoOverride: string | undefined, limit: number): Promise<ServerMemoriesAnalysis | undefined> {
 	const context = resolveRepoContext(cwd);
-	const repo = repoOverride ?? context?.repo;
-	if (!repo) { return undefined; }
+	const { repoOverride, invalid } = resolveRepoOverride(rawRepoOverride);
 	// `--repo` never went through the remote parser's validation but reaches the same URL
 	// builder. fetchRepoMemories() rejects an invalid slug too; failing here as well turns a
-	// typo into an immediate, specific message instead of a generic read failure.
-	if (repoOverride !== undefined && !isValidRepoSlug(repoOverride)) {
+	// typo into an immediate, specific message instead of a generic read failure. Checked before
+	// the "no repository" fallback below, so an explicit but empty `--repo " "` is an error, not
+	// silently treated as if the option were absent.
+	if (invalid) {
 		// The rejected value is untrusted and may carry a credential, so neither the label nor
 		// the message echoes it — `--json` serializes both.
 		return { repo: INVALID_REPO_LABEL, enabled: undefined, error: '--repo must be owner/name.', truncated: false,
-			totalMemories: 0, distinctSubjects: 0, documentedCount: 0, promotionCandidateCount: 0,
+			totalMemories: 0, distinctSubjects: 0, documentedCount: 0, documentedMemories: [],
+			promotionCandidateCount: 0,
 			repeatedGroupCount: 0, promotionGroups: [], unverifiableCount: 0, staleCitations: [], fullyStaleCount: 0,
 			byAgent: {}, byModel: {} };
 	}
+	const repo = repoOverride ?? context?.repo;
+	if (!repo) { return undefined; }
 	const root = context?.root ?? cwd;
-	const analyzingThisCheckout = !repoOverride || repoOverride === context?.repo;
+	const analyzingThisCheckout = analyzesLocalCheckout(repoOverride, context?.repo);
 
 	const result = await fetchRepoMemories(repo, {
 		getToken: async () => {
@@ -175,15 +219,32 @@ async function buildServerMemoriesAnalysis(cwd: string, repoOverride: string | u
 		},
 	}, limit);
 
-	return analyzeServerMemories(result, {
-		// Only check citations against the working tree when the analyzed repo is the one
-		// checked out here. With `--repo` pointing elsewhere, the local tree says nothing
-		// about that repo's files, so every citation would look missing — report none instead.
-		//
-		// createRepoFileExists() rather than a bare existsSync(): that follows symlinks, so a
-		// repository symlink out of the checkout would let a citation probe an arbitrary path.
-		fileExists: analyzingThisCheckout ? createRepoFileExists(root) : () => true,
-	});
+	// Only check citations against the working tree when the analyzed repo is the one checked
+	// out here. With `--repo` pointing elsewhere, the local tree says nothing about that repo's
+	// files — every citation would look missing, and AGENTS.md here is not its target — so
+	// none are checked and no target is reported rather than a guessed one.
+	const analysis = analyzingThisCheckout
+		? analyzeServerMemoriesForCheckout(result, root)
+		: analyzeServerMemories(result, { fileExists: () => true });
+	// Named in every output mode so it is clear which checkout the citations and the promotion
+	// target were resolved against. Omitted for `--repo` elsewhere: that tree says nothing.
+	return analyzingThisCheckout ? { ...analysis, repoRoot: root } : analysis;
+}
+
+/** The promotion section of the text report, or the shared reason there is nothing to promote. */
+function printPromotionCandidates(analysis: ServerMemoriesAnalysis): void {
+	if (analysis.promotionGroups.length === 0) {
+		process.stdout.write(`${describeNoPromotionCandidates(analysis)}\n`);
+		return;
+	}
+	// Shared with --promote, so neither ever suggests a path the target probe rejected.
+	process.stdout.write(`Top promotion candidates (suggested target: ${sanitizeForDisplay(describePromotionTarget(analysis))}):\n`);
+	for (const group of analysis.promotionGroups.slice(0, 10)) {
+		const repeats = group.repeatCount > 1 ? ` (re-learned ${group.repeatCount}x)` : '';
+		process.stdout.write(`  • ${sanitizeForDisplay(group.displaySubject)}${repeats}\n`);
+		process.stdout.write(`      ${sanitizeForDisplay(group.representativeFact)}\n`);
+	}
+	process.stdout.write('\n  Run with --promote for a Markdown block you can paste in.\n');
 }
 
 function printServerMemoriesReport(analysis: ServerMemoriesAnalysis | undefined): void {
@@ -204,11 +265,12 @@ function printServerMemoriesReport(analysis: ServerMemoriesAnalysis | undefined)
 	// when printed verbatim — a report about what an agent learned must not be able to act on
 	// the machine reading it. JSON mode is safe by construction; this path was not.
 	process.stdout.write(`Repository:           ${sanitizeForDisplay(analysis.repo)}\n`);
+	if (analysis.repoRoot) { process.stdout.write(`Checkout:             ${sanitizeForDisplay(analysis.repoRoot)}\n`); }
 	process.stdout.write(`Memory enabled:       ${analysis.enabled ?? 'unknown'}\n`);
 	// Say so when the page was full: these routes have no pagination cursor, so every number
 	// below describes the prefix that was read, not the whole store.
 	process.stdout.write(`Stored memories:      ${analysis.totalMemories}${analysis.truncated ? '+ (truncated at the request limit)' : ''} across ${analysis.distinctSubjects} subjects\n`);
-	process.stdout.write(`Already documented:   ${analysis.documentedCount} (cite AGENTS.md or another instruction file)\n`);
+	process.stdout.write(`Already documented:   ${analysis.documentedCount} (cite an instruction or documentation file)\n`);
 	// Reported rather than silently dropped: a reader comparing the totals should be able to
 	// see where the difference went.
 	if (analysis.unverifiableCount > 0) {
@@ -231,13 +293,7 @@ function printServerMemoriesReport(analysis: ServerMemoriesAnalysis | undefined)
 		return;
 	}
 
-	process.stdout.write('Top promotion candidates (consider adding these to AGENTS.md):\n');
-	for (const group of analysis.promotionGroups.slice(0, 10)) {
-		const repeats = group.repeatCount > 1 ? ` (re-learned ${group.repeatCount}x)` : '';
-		process.stdout.write(`  • ${sanitizeForDisplay(group.displaySubject)}${repeats}\n`);
-		process.stdout.write(`      ${sanitizeForDisplay(group.representativeFact)}\n`);
-	}
-	process.stdout.write('\n  Run with --promote for a Markdown block you can paste in.\n');
+	printPromotionCandidates(analysis);
 
 	if (analysis.fullyStaleCount > 0) {
 		process.stdout.write('\nMemories whose every cited file is gone:\n');

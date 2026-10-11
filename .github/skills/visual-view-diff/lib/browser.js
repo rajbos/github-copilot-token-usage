@@ -86,4 +86,23 @@ function loadChromium() {
 	throw new Error(INSTALL_HINT);
 }
 
-module.exports = { loadChromium, INSTALL_HINT };
+/**
+ * Keeps the page off the network. The bundle under review runs in this page,
+ * and nothing it renders needs more than the local `file://` page, its bundle
+ * and codicons, so every http(s) request and WebSocket is refused. Routing on
+ * the context also covers popups the page opens. A blocked request surfaces as
+ * a console error, which marks the render `warn` instead of passing silently.
+ */
+async function blockNetwork(page) {
+	await page.context().route('**/*', (route) => (
+		/^(file|data|blob):/i.test(route.request().url()) ? route.continue() : route.abort('blockedbyclient')
+	));
+	// Fail closed: an older Playwright without WebSocket routing would leave
+	// that channel open while the run reports the page as isolated.
+	if (typeof page.context().routeWebSocket !== 'function') {
+		throw new Error('This Playwright cannot block WebSockets (routeWebSocket needs Playwright 1.48+); upgrade it to render webviews.');
+	}
+	await page.context().routeWebSocket(/.*/, (ws) => ws.close());
+}
+
+module.exports = { blockNetwork, loadChromium, INSTALL_HINT };

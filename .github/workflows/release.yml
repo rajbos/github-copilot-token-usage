@@ -55,13 +55,17 @@ jobs:
 
     - name: Checkout code
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      with:
+        version: '11.2.2'
     - name: Setup Node.js
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version-file: '.nvmrc'
-        cache: 'npm'
-        cache-dependency-path: vscode-extension/package-lock.json
+        cache: 'pnpm'
+        cache-dependency-path: vscode-extension/pnpm-lock.yaml
 
     - name: Determine trigger type
       id: trigger_type
@@ -186,37 +190,37 @@ jobs:
     - name: Install dependencies
       if: inputs.vs_only != true
       working-directory: vscode-extension
-      run: npm ci --ignore-scripts
+      run: pnpm install --frozen-lockfile --ignore-scripts
       
     - name: Run linting
       if: inputs.vs_only != true
       working-directory: vscode-extension
-      run: npm run lint
+      run: pnpm run lint
       
     - name: Run type checking
       if: inputs.vs_only != true
       working-directory: vscode-extension
-      run: npm run check-types
+      run: pnpm run check-types
       
     - name: Compile extension
       if: inputs.vs_only != true
       working-directory: vscode-extension
-      run: npm run compile
+      run: pnpm run compile
       
     - name: Build production package
       if: inputs.vs_only != true
       working-directory: vscode-extension
-      run: npm run package
+      run: pnpm run package
       
     - name: Compile tests
       if: inputs.vs_only != true
       working-directory: vscode-extension
-      run: npm run compile-tests
+      run: pnpm run compile-tests
       
     - name: Run tests
       if: inputs.vs_only != true
       working-directory: vscode-extension
-      run: xvfb-run -s "-screen 0 1024x768x24" npm test
+      run: xvfb-run -s "-screen 0 1024x768x24" pnpm test
       
     - name: Create VSIX package
       if: inputs.vs_only != true
@@ -406,6 +410,10 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+    - name: Setup pnpm
+      uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      with:
+        version: '11.2.2'
     - name: Check marketplace version
       id: version_check
       run: |
@@ -438,12 +446,12 @@ jobs:
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version-file: '.nvmrc'
-        cache: 'npm'
-        cache-dependency-path: vscode-extension/package-lock.json
+        cache: 'pnpm'
+        cache-dependency-path: vscode-extension/pnpm-lock.yaml
 
     - name: Install dependencies
       working-directory: vscode-extension
-      run: npm ci --ignore-scripts
+      run: pnpm install --frozen-lockfile --ignore-scripts
 
     # Publish the exact bytes the attest job attested: take the VSIX from the workflow
     # artifact (not a re-package), and verify the attestation again right before publishing.
@@ -604,26 +612,34 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+    - name: Setup pnpm
+      uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      with:
+        version: '11.2.2'
     - name: Setup Node.js
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version-file: '.nvmrc'
+        cache: 'pnpm'
+        cache-dependency-path: |
+          vscode-extension/pnpm-lock.yaml
+          cli/pnpm-lock.yaml
 
     # ── Install dependencies ────────────────────────────────────────────────
 
     - name: Install vscode-extension dependencies
-      run: npm ci --ignore-scripts
+      run: pnpm install --frozen-lockfile --ignore-scripts
       working-directory: vscode-extension
 
     - name: Install CLI dependencies
-      run: npm ci --ignore-scripts
+      run: pnpm install --frozen-lockfile --ignore-scripts
       working-directory: cli
 
     # ── Build CLI (production bundle + Windows .exe) ───────────────────────
 
     - name: Build CLI (production bundle)
       working-directory: cli
-      run: npm run build:production
+      run: pnpm run build:production
 
     - name: Bundle CLI as single executable
       working-directory: cli
@@ -645,7 +661,7 @@ jobs:
 
     - name: Build VS Code extension webview bundles
       working-directory: vscode-extension
-      run: npm run package
+      run: pnpm run package
 
     - name: Copy webview bundles to VS extension project
       shell: pwsh

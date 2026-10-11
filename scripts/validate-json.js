@@ -49,7 +49,6 @@ const EXCLUDE_PATTERNS = [
 const JSON_FILES = [
   // VS Code extension configuration files
   'vscode-extension/package.json',
-  'vscode-extension/package-lock.json',
   'vscode-extension/tsconfig.json',
   'vscode-extension/tsconfig.tests.json',
   
