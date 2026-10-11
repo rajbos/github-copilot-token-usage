@@ -1593,6 +1593,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private _customizationFilesCache: Map<string, CustomizationFileEntry[]> = new Map();
 	/** Latest AI Readiness scan, kept so insights can read it without re-scanning (see rememberReadinessScan). */
 	private _lastReadinessScan: { report: DarkFactoryReport; scannedAt: number; prStatsKey: string } | undefined;
+	/** A background readiness scan for insights is queued (see scheduleReadinessScanForInsights). */
+	private _readinessScanScheduled = false;
+	/** When the last background readiness scan for insights failed; it is not retried for an hour. */
+	private _readinessScanFailedAt: number | undefined;
 	/** Workspaces whose customization scan has been requested but not yet run (see resolvePendingCustomizationScans). */
 	private readonly _pendingCustomizationScans = new Set<string>();
 	/** Tail of the serialized calculateUsageAnalysisStats runs. */
@@ -11206,28 +11210,46 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 	 */
 	private rememberReadinessScan(report: DarkFactoryReport): void {
 		this._lastReadinessScan = { report, scannedAt: Date.now(), prStatsKey: readinessPrStatsKey(this._lastRepoPrStats) };
+		this._readinessScanFailedAt = undefined;
 	}
 
 	/**
-	 * The latest readiness scan for insight evaluation. Re-scans (filesystem only, bounded) when
-	 * none is cached, it is over an hour old, or the PR snapshot it was built from has since been
-	 * replaced (a refetch or a sign-out). Never throws: a failed scan simply leaves the
-	 * scan-based insights silent.
+	 * The latest readiness scan for insight evaluation, or null while there is none that is under an
+	 * hour old and built from the current PR snapshot. Never scans inline: insights are evaluated on
+	 * panel renders and message handlers, and the scan walks up to 25 repositories synchronously.
+	 * A missing or stale scan is refreshed in the background instead, and the insights are
+	 * re-published once it lands, so the scan-based insights appear a moment later.
 	 */
 	private readinessForInsights(): { report: DarkFactoryReport } | null {
-		try {
-			const cached = this._lastReadinessScan;
-			if (cached && Date.now() - cached.scannedAt < 60 * 60 * 1000
-				&& cached.prStatsKey === readinessPrStatsKey(this._lastRepoPrStats)) {
-				return { report: cached.report };
-			}
-			const report = this.runDarkFactoryScan(this.darkFactoryCandidatePaths());
-			this.rememberReadinessScan(report);
-			return { report };
-		} catch (err) {
-			this.warn(`AI Readiness scan for insights failed: ${err}`);
-			return null;
+		const cached = this._lastReadinessScan;
+		if (cached && Date.now() - cached.scannedAt < 60 * 60 * 1000
+			&& cached.prStatsKey === readinessPrStatsKey(this._lastRepoPrStats)) {
+			return { report: cached.report };
 		}
+		this.scheduleReadinessScanForInsights();
+		return null;
+	}
+
+	/**
+	 * Runs one readiness scan off the current call stack, then re-publishes insights. At most one
+	 * is pending at a time, and a failed scan is not retried for an hour, so an evaluation that
+	 * keeps finding no scan cannot keep re-scanning a workspace that fails.
+	 */
+	private scheduleReadinessScanForInsights(): void {
+		if (this._readinessScanScheduled) { return; }
+		if (this._readinessScanFailedAt !== undefined && Date.now() - this._readinessScanFailedAt < 60 * 60 * 1000) { return; }
+		this._readinessScanScheduled = true;
+		setTimeout(() => {
+			this._readinessScanScheduled = false;
+			try {
+				this.rememberReadinessScan(this.runDarkFactoryScan(this.darkFactoryCandidatePaths()));
+			} catch (err) {
+				this._readinessScanFailedAt = Date.now();
+				this.warn(`AI Readiness scan for insights failed: ${err}`);
+				return;
+			}
+			this.republishInsights();
+		}, 0);
 	}
 
 	/**

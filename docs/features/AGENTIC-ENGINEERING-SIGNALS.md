@@ -128,7 +128,7 @@ corrections, and their rate is at least 1.5× and 10 points above the scoped ses
 | `unreviewed-agent-merges` | Agents open PRs in a workspace repository whose `human-review-enforced` control is not present. Today that control is API-only and not yet collected, so the wording says the scan *cannot confirm* review |
 | `review-burden-rising` | A repository's cloud-agent PRs in the recent half of the PR window are ≥ 5 and ≥ 1.5× the earlier half, together with reverts there or rising rework in that same repository (its own month-over-month windows, with the thresholds above) |
 
-The readiness scan behind `unreviewed-agent-merges` is cached and re-run at most once an hour. Opening the Fluency Score never scans repositories.
+The readiness scan behind `unreviewed-agent-merges` is cached for an hour, and also redone when the PR snapshot it read changes (a refetch or a sign-out). It never runs while insights are being shown: a missing or stale scan is queued in the background, and the insight appears once it finishes. Opening the Fluency Score never scans repositories.
 
 ## Tests
 

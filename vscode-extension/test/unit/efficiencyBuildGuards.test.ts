@@ -1259,6 +1259,20 @@ function readinessForInsightsBody(): string {
 	assert.notEqual(body, -1);
 	const end = EXTENSION_SRC.indexOf('\n\t}\n', body);
 	const text = EXTENSION_SRC.slice(start, end);
-	assert.ok(text.includes('this.runDarkFactoryScan('), 'the slice must cover the method body');
+	assert.ok(text.includes('this.scheduleReadinessScanForInsights()'), 'the slice must cover the method body');
 	return text;
 }
+
+test('wiring: insight evaluation never runs the readiness scan inline', () => {
+	// Insights are evaluated on panel renders and message handlers, and the scan walks up to 25
+	// repositories synchronously. A missing scan is queued instead, and the insights re-published.
+	const read = readinessForInsightsBody();
+	assert.ok(!read.includes('runDarkFactoryScan('), 'readinessForInsights() must not scan');
+	const schedule = methodBody('private scheduleReadinessScanForInsights(');
+	assert.ok(schedule.includes('if (this._readinessScanScheduled) { return; }'), 'at most one queued scan');
+	assert.ok(schedule.includes('setTimeout('), 'the scan runs off the current call stack');
+	const scan = schedule.indexOf('this.rememberReadinessScan(this.runDarkFactoryScan(');
+	assert.ok(scan !== -1 && scan < schedule.indexOf('this.republishInsights();'), 'insights are re-published after the scan lands');
+	assert.ok(schedule.indexOf('return;', schedule.indexOf('catch')) < schedule.indexOf('this.republishInsights();'),
+		'a failed scan must not re-publish, or the evaluation would queue another scan');
+});
