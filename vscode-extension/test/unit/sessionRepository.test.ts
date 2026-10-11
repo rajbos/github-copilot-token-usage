@@ -209,3 +209,33 @@ test('resolveSessionAttributes: none found is an empty string; an unreadable ses
 	assert.deepEqual(await resolveSessionAttributes([], path.join(__dirname, 'session.json'), JSON.stringify({ requests: [{}] })), { repository: '' });
 	assert.equal(await resolveSessionAttributes([], path.join(__dirname, 'no-such-dir', 'missing.json')), undefined);
 });
+
+test('scanSessionContent titles a Copilot CLI log like the extension: rename_session, else the first user message', async () => {
+	const longMessage = 'Investigate why the nightly build fails on Windows runners when the cache is cold and restore it';
+	const events = (extra: object[]) => [
+		{ type: 'user.message', data: { content: longMessage } },
+		{ type: 'tool.execution_start', data: { toolName: 'view', arguments: { path: '/r/a.ts' } } },
+		...extra,
+	].map(e => JSON.stringify(e)).join('\n');
+	assert.deepEqual(await scanSessionContent(events([])), { refs: [ref('/r/a.ts')], title: `${longMessage.slice(0, 60)}…` });
+	const renamed = await scanSessionContent(events([
+		{ type: 'tool.execution_start', data: { toolName: 'rename_session', arguments: { title: 'First name' } } },
+		{ type: 'tool.execution_start', data: { toolName: 'rename_session', arguments: { title: 'Fix nightly build' } } },
+	]));
+	assert.equal(renamed.title, 'Fix nightly build', 'the last rename wins over the first message');
+});
+
+test('resolveSessionAttributes: a discovered-but-unhandled session uses the adapter\'s workspace (e.g. Copilot CLI events.jsonl)', async () => {
+	const file = makeRepoWithFile();
+	const repoRoot = path.dirname(path.dirname(file));
+	const eventsFile = path.join(repoRoot, 'session-state', 'abc', 'events.jsonl');
+	const eco = {
+		handles: () => false,
+		getWorkspacePathForDiscoveredPath: async (f: string) => (f === eventsFile ? repoRoot : undefined),
+	} as unknown as IEcosystemAdapter;
+	// No referenced files at all: only the discovered workspace can name the repository.
+	const content = JSON.stringify({ type: 'user.message', data: { content: 'hello' } });
+	const attrs = await resolveSessionAttributes([eco], eventsFile, content);
+	assert.equal(attrs?.repository, REMOTE);
+	assert.equal(attrs?.title, 'hello');
+});

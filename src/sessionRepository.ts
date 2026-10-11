@@ -9,7 +9,7 @@
  */
 import * as fs from 'fs';
 
-import type { IEcosystemAdapter } from './ecosystemAdapter';
+import { findWorkspacePathForDiscoveredPath, type IEcosystemAdapter } from './ecosystemAdapter';
 import { isJsonlContent, isUuidPointerFile, reconstructJsonlStateAsync } from './tokenEstimation';
 import {
 	extractRepositoryFromContentReferences,
@@ -41,13 +41,42 @@ export function toolArgumentPathReferences(args: unknown): ContentReferences {
 	return refs;
 }
 
-function cliEventReferences(line: string): ContentReferences {
-	try {
-		const event = JSON.parse(line);
-		return event?.type === 'tool.execution_start' ? toolArgumentPathReferences(event.data?.arguments) : [];
-	} catch {
-		return [];
+/** A session title from its first user message, as the extension's metadata scan shortens it. */
+function titleFromFirstMessage(message: string): string {
+	const trimmed = message.trim();
+	return trimmed.length > 60 ? trimmed.slice(0, 60) + '…' : trimmed;
+}
+
+/**
+ * References and title of a Copilot CLI events log, one parse per line. The title follows the
+ * extension's metadata scan: the last `rename_session` title, else the first user message.
+ */
+function scanCliEvents(lines: string[]): { refs: ContentReferences; title?: string } {
+	const refs: ContentReferences = [];
+	let renamed: string | undefined;
+	let firstMessage: string | undefined;
+	for (const line of lines) {
+		const event = parseCliEvent(line);
+		if (!event) { continue; }
+		refs.push(...(event.type === 'tool.execution_start' ? toolArgumentPathReferences(event.data?.arguments) : []));
+		renamed = renameSessionTitle(event) ?? renamed;
+		if (firstMessage === undefined && event.type === 'user.message') { firstMessage = nonEmptyString(event.data?.content); }
 	}
+	const title = renamed ?? (firstMessage ? titleFromFirstMessage(firstMessage) : undefined);
+	return title ? { refs, title } : { refs };
+}
+
+type CliEvent = { type?: unknown; data?: { toolName?: unknown; arguments?: { title?: unknown }; content?: unknown } };
+
+function parseCliEvent(line: string): CliEvent | undefined {
+	try { return JSON.parse(line) as CliEvent; } catch { return undefined; }
+}
+
+/** The title a `rename_session` tool call sets, as the extension's metadata scan reads it. */
+function renameSessionTitle(event: CliEvent): string | undefined {
+	return event.type === 'tool.execution_start' && event.data?.toolName === 'rename_session'
+		? nonEmptyString(event.data.arguments?.title)
+		: undefined;
 }
 
 function nonEmptyString(value: unknown): string | undefined {
@@ -60,9 +89,10 @@ function nonEmptyString(value: unknown): string | undefined {
  * The format is decided by the first line: a delta-based (VS Code Chat) log is rebuilt once by
  * reconstructJsonlStateAsync(); a Copilot CLI log is read line by line, keeping only references.
  */
-export async function scanSessionContent(content: string, parsedJson?: unknown): Promise<SessionContentScan> {
+export async function scanSessionContent(content: string, parsedJson?: unknown, sessionFile?: string): Promise<SessionContentScan> {
 	if (isUuidPointerFile(content)) { return { refs: [] }; }
-	if (isJsonlContent(content)) { return scanJsonlContent(content); }
+	// A `.jsonl` file is JSONL even when it holds a single line, as the extension's analyzer treats it.
+	if (sessionFile?.endsWith('.jsonl') || isJsonlContent(content)) { return scanJsonlContent(content); }
 	try {
 		return scanRequestsHolder((parsedJson ?? JSON.parse(content)) as RequestsHolder | undefined);
 	} catch {
@@ -86,7 +116,7 @@ async function scanJsonlContent(content: string): Promise<SessionContentScan> {
 	const lines = content.trim().split('\n').filter(l => l.trim());
 	let isDelta = false;
 	try { isDelta = typeof JSON.parse(lines[0] ?? '')?.kind === 'number'; } catch { /* not delta */ }
-	if (!isDelta) { return { refs: lines.flatMap(cliEventReferences) }; }
+	if (!isDelta) { return scanCliEvents(lines); }
 	const { sessionState } = await reconstructJsonlStateAsync(lines);
 	return scanRequestsHolder(sessionState as RequestsHolder | undefined);
 }
@@ -158,8 +188,11 @@ export async function resolveSessionAttributes(ecosystems: IEcosystemAdapter[], 
 			return { repository: repository ?? '', ...(meta.title ? { title: meta.title } : {}) };
 		}
 		const fileContent = content ?? await fs.promises.readFile(sessionFile, 'utf8');
-		const { refs, title } = await scanSessionContent(fileContent);
-		const workspace = resolveWorkspaceFolderWithFallback(sessionFile, new Map());
+		const { refs, title } = await scanSessionContent(fileContent, undefined, sessionFile);
+		// workspaceStorage first, then an adapter that discovers this file without handling it
+		// (e.g. a Copilot CLI events.jsonl next to its workspace.yaml) — the extension's order.
+		const workspace = resolveWorkspaceFolderWithFallback(sessionFile, new Map())
+			?? await findWorkspacePathForDiscoveredPath(ecosystems, sessionFile);
 		const repository = await extractWorkspaceRepository(refs, workspace);
 		return { repository: repository ?? '', ...(title ? { title } : {}) };
 	} catch {
