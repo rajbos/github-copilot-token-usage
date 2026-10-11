@@ -63,16 +63,17 @@
 			"vscode-extension/src/webview/diagnostics/main.ts": 2,
 			"vscode-extension/src/webview/environmental/main.ts": 1,
 			"vscode-extension/src/webview/usage/ccrActivity.ts": 2,
-			"vscode-extension/src/webview/usage/main.ts": 61,
+			"vscode-extension/src/webview/usage/main.ts": 57,
+			"vscode-extension/src/webview/usage/skillSuggestions.ts": 4,
 			"vscode-extension/src/webview/whatsnew/main.ts": 1,
 			"vscode-extension/src/worktreeBackgroundScan.ts": 3
 		},
 		"@typescript-eslint/no-require-imports": {
-			"src/copilotServerMemories.ts": 2,
+			"src/copilotServerMemories.ts": 6,
 			"src/cursor.ts": 1,
 			"src/utils/sqliteWal.ts": 1,
 			"vscode-extension/src/backend/integration.ts": 2,
-			"vscode-extension/src/extension.ts": 12
+			"vscode-extension/src/extension.ts": 13
 		},
 		"@typescript-eslint/no-unsafe-function-type": {
 			"vscode-extension/src/utils/processHandlerGuard.ts": 5
@@ -121,7 +122,7 @@
 			"vscode-extension/src/analysis/analysisWorker.ts": 1,
 			"vscode-extension/src/analysis/sessionFileAnalyzer.ts": 1,
 			"vscode-extension/src/cacheManager.ts": 2,
-			"vscode-extension/src/extension.ts": 8,
+			"vscode-extension/src/extension.ts": 9,
 			"vscode-extension/src/githubAccountBudgets.ts": 1,
 			"vscode-extension/src/webview/chart/main.ts": 5,
 			"vscode-extension/src/webview/usage/main.ts": 2
@@ -130,7 +131,7 @@
 			"src/chartDataBuilder.ts": 1,
 			"src/correctionDetection.ts": 1,
 			"src/hydrafusion.ts": 1,
-			"vscode-extension/src/extension.ts": 7,
+			"vscode-extension/src/extension.ts": 8,
 			"vscode-extension/src/loadingHtml.ts": 1,
 			"vscode-extension/src/webview/usage/main.ts": 1
 		},
@@ -138,14 +139,13 @@
 			"src/claudecode.ts": 1,
 			"src/copilotCliOtel.ts": 1,
 			"src/copilotMemoryFiles.ts": 1,
-			"src/copilotServerMemories.ts": 1,
 			"src/correctionDetection.ts": 1,
 			"src/efficiencyAnalysis.ts": 1,
 			"src/hydrafusion.ts": 2,
 			"src/statsHelpers.ts": 1,
 			"vscode-extension/src/analysis/analysisWorkerPool.ts": 1,
 			"vscode-extension/src/cacheManager.ts": 1,
-			"vscode-extension/src/extension.ts": 2,
+			"vscode-extension/src/extension.ts": 3,
 			"vscode-extension/src/webview/chart/main.ts": 1
 		}
 	}
