@@ -460,12 +460,21 @@ async function loadViewStats(): Promise<ViewStats> {
     expireCachesOnDateChange();
     while (!cachedViewStats) {
         await computeForCurrentFiles(
-            // The walk can run for minutes on a large history, on this main process. Once the
-            // user has left Chart and Efficiency nobody is waiting for it, so it stops between
-            // files and throws (ViewStatsCancelledError): nothing partial is cached, and the
-            // throw also ends computeForCurrentFiles()'s retry loop. Reopening either view
-            // starts a fresh walk, which reuses the session cache the first one filled.
-            files => calculateViewStats(files, false, undefined, { isCancelled: () => !VIEW_STATS_PANELS.has(currentPanel) }),
+            // The walk can run for minutes on a large history, on this main process, so it stops
+            // between files and throws (ViewStatsCancelledError) as soon as nobody needs it:
+            //  - the user left Chart and Efficiency; reopening either starts a fresh walk, which
+            //    reuses the session cache this one filled;
+            //  - a refresh replaced the data it was computed for (dataGeneration moved). The
+            //    refreshed navigation owns the walk for the new data; without this the old walk
+            //    kept going and computeForCurrentFiles() then retried it, so two ran at once.
+            // Nothing partial is cached, and the throw also ends computeForCurrentFiles()'s retry
+            // loop for the obsolete caller.
+            files => {
+                const generation = dataGeneration;
+                return calculateViewStats(files, false, undefined, {
+                    isCancelled: () => generation !== dataGeneration || !VIEW_STATS_PANELS.has(currentPanel),
+                });
+            },
             (viewStats) => { cachedViewStats ??= viewStats; },
         );
     }

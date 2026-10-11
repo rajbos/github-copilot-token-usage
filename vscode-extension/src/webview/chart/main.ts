@@ -8,7 +8,7 @@ import { createPeriodSelector, PERIOD_LABELS } from '../shared/periodSelector';
 import { getCurrentPeriodFraction, computeProjectionExtra } from './projectionUtils';
 import { createViewStateManager } from '../shared/viewState';
 import { applyWebviewLocale } from '../shared/webviewLocale';
-import type { ChartDataPayload, ChartPeriodData as SharedChartPeriodData, ChartTimeWindow } from '../../../../src/types';
+import type { ChartDataPayload, ChartDataset, ChartPeriodData, ChartTimeWindow } from '../../../../src/types';
 import { filterPeriodByTimeWindow } from './timeWindowFilter';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
@@ -23,27 +23,20 @@ type ChartConstructor = ChartModule['default'];
 type ChartInstance = InstanceType<ChartConstructor>;
 type ChartConfig = import('chart.js').ChartConfiguration<'bar' | 'line', number[], string>;
 
-type ModelDataset = { label: string; data: number[]; backgroundColor: string; borderColor: string; borderWidth: number };
-type EditorDataset = ModelDataset;
-type RepositoryDataset = ModelDataset & { fullRepo?: string };
-
 /**
- * The shared payload types (src/types.ts) with their untyped `object[]` datasets narrowed to
- * the dataset shape this view draws. Deriving from the shared types — rather than keeping a
- * local copy — means a field this view starts relying on has to be added to the shared
- * payload, which the one shared builder (`buildChartData`) every host calls must then emit.
- * A field missing from the payload is a compile error, not a blank Chart view (#2304, #2316).
+ * The dataset and payload shapes come straight from the shared types (src/types.ts) that the
+ * one shared builder (`buildChartData`) every host calls must satisfy. A field this view starts
+ * relying on has to be added there, and the builder must then emit it — a missing field is a
+ * compile error in every host, not a blank Chart view (#2304, #2316).
  */
-type WithTypedDatasets<T> = {
-	[K in keyof T]: Exclude<T[K], undefined> extends object[] ? RepositoryDataset[] : T[K];
-};
-
-type ChartPeriodData = WithTypedDatasets<SharedChartPeriodData>;
+type ModelDataset = ChartDataset;
+type EditorDataset = ChartDataset;
+type RepositoryDataset = ChartDataset;
 
 type ChartPeriod = import('./projectionUtils').ChartPeriod;
 
 /** The shared payload plus the host-specific view settings the extension layers on top. */
-type InitialChartData = WithTypedDatasets<Omit<ChartDataPayload, 'periods' | 'backendConfigured'>> & {
+type InitialChartData = Omit<ChartDataPayload, 'periods' | 'backendConfigured'> & {
 	backendConfigured?: boolean;
 	monthlyCostBudget?: number;
 	initialPeriod?: ChartPeriod;

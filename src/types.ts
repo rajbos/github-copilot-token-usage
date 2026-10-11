@@ -243,15 +243,31 @@ export interface DailyModelEfficiency {
 export type ChartTimeWindow = 'today' | 'last7' | 'last30' | 'last90' | 'currentMonth' | 'allTime';
 
 /** Aggregated data for one time window (day/week/month) in the chart. */
+/**
+ * One Chart.js dataset the chart webview draws. Every dataset the shared builder
+ * (src/chartDataBuilder.ts) emits has this shape, and the webview reads it from the same
+ * type, so a field it relies on cannot go missing in one host without a compile error.
+ */
+export interface ChartDataset {
+  label: string;
+  /** One value per bar, aligned with the period's `labels`. */
+  data: number[];
+  backgroundColor: string;
+  borderColor: string;
+  borderWidth: number;
+  /** Repository datasets: the full repository URL behind the display `label`. */
+  fullRepo?: string;
+}
+
 export interface ChartPeriodData {
   labels: string[];
   /** ISO date keys for each bar, used for time-window filtering. Day=YYYY-MM-DD, week=Monday YYYY-MM-DD, month=YYYY-MM. */
   periodKeys: string[];
   tokensData: number[];
   sessionsData: number[];
-  modelDatasets: object[];
-  editorDatasets: object[];
-  repositoryDatasets: object[];
+  modelDatasets: ChartDataset[];
+  editorDatasets: ChartDataset[];
+  repositoryDatasets: ChartDataset[];
   /** Number of bars / data points in this period. */
   periodCount: number;
   totalTokens: number;
@@ -267,9 +283,9 @@ export interface ChartPeriodData {
   locData?: number[];
   linesAddedData?: number[];
   linesRemovedData?: number[];
-  languageDatasets?: object[];
-  locEditorDatasets?: object[];
-  locRepositoryDatasets?: object[];
+  languageDatasets?: ChartDataset[];
+  locEditorDatasets?: ChartDataset[];
+  locRepositoryDatasets?: ChartDataset[];
   totalLinesAdded?: number;
   totalLinesRemoved?: number;
   avgLocPerPeriod?: number;
@@ -278,36 +294,36 @@ export interface ChartPeriodData {
    * Each dataset's `data` array aligns with `labels`; values are estimated costs in USD.
    * Computed from per-day `editorModelUsage` using the appropriate pricing source for each editor.
    */
-  editorCostDatasets?: object[];
+  editorCostDatasets?: ChartDataset[];
   /**
    * Cost datasets split by billing provider — one dataset per provider group.
    * Groups: "GitHub Copilot" (all Copilot surfaces), "Anthropic" (Claude Code, etc.),
    * "Google" (Gemini CLI, etc.), "Mistral AI", "OpenAI", etc.
    * Copilot group uses AI-Credit pricing; all others use direct provider pricing.
    */
-  billingGroupCostDatasets?: object[];
+  billingGroupCostDatasets?: ChartDataset[];
   /** Token datasets split by task category (e.g. "Coding", "Debugging", "Testing") — one stacked-bar dataset per category. */
-  taskCategoryDatasets?: object[];
+  taskCategoryDatasets?: ChartDataset[];
   /** Task-token datasets split by category. */
-  taskCategoryTokenDatasets?: object[];
+  taskCategoryTokenDatasets?: ChartDataset[];
   /** Task-session datasets split by category. */
-  taskCategorySessionDatasets?: object[];
+  taskCategorySessionDatasets?: ChartDataset[];
   /** Task-cost datasets split by category. */
-  taskCategoryCostDatasets?: object[];
+  taskCategoryCostDatasets?: ChartDataset[];
   /**
    * Cost datasets split by model — one dataset per top model (by total cost), plus an
    * "Other models" dataset for the remainder. Each model's usage is priced using the
    * correct pricing source per editor it was used from.
    */
-  modelCostDatasets?: object[];
+  modelCostDatasets?: ChartDataset[];
   /** Session-count datasets split by model — one stacked-bar dataset per model. */
-  modelSessionsDatasets?: object[];
+  modelSessionsDatasets?: ChartDataset[];
   /** Session-count datasets split by editor — one stacked-bar dataset per editor. */
-  editorSessionsDatasets?: object[];
+  editorSessionsDatasets?: ChartDataset[];
   /** Session-count datasets split by billing provider — one stacked-bar dataset per provider group. */
-  providerSessionsDatasets?: object[];
+  providerSessionsDatasets?: ChartDataset[];
   /** Token datasets split by billing provider — one stacked-bar dataset per provider group. */
-  providerTokensDatasets?: object[];
+  providerTokensDatasets?: ChartDataset[];
 }
 
 /** Shape of the data payload sent to the chart webview (via window.__INITIAL_CHART__ or postMessage). */
@@ -315,12 +331,12 @@ export interface ChartDataPayload {
   labels: string[];
   tokensData: number[];
   sessionsData: number[];
-  modelDatasets: object[];
-  editorDatasets: object[];
+  modelDatasets: ChartDataset[];
+  editorDatasets: ChartDataset[];
   editorTotalsMap: Record<string, number>;
-  repositoryDatasets: object[];
+  repositoryDatasets: ChartDataset[];
   repositoryTotalsMap: Record<string, number>;
-  taskCategoryDatasets?: object[];
+  taskCategoryDatasets?: ChartDataset[];
   dailyCount: number;
   totalTokens: number;
   avgTokensPerDay: number;
