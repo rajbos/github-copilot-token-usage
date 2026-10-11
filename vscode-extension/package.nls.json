@@ -497,6 +497,7 @@
   "serverMemories.draftBlocked": "Not drafting a prompt: {0} is not a regular file inside this checkout.",
   "serverMemories.draftNoTarget": "Not drafting a prompt: no safe instruction file was found in this checkout.",
   "serverMemories.draftContextChanged": "Not drafting a prompt: the workspace now points at a different repository than these memories were read for. The section will refresh.",
+  "serverMemories.openContextChanged": "Not opening the file: the workspace now points at a different repository than these memories were read for. The section will refresh.",
   "serverMemories.draftRowChanged": "Not drafting a prompt: the repository memories changed since this list was shown. The section has been refreshed.",
   "serverMemories.draftNoLiveSource": "Not drafting a prompt: none of this memory's cited files exists in this checkout any more. The section will refresh.",
   "serverMemories.openRefused": "Not opening {0}: it is no longer a cited file inside this checkout.",

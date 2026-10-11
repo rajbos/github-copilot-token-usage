@@ -1321,11 +1321,13 @@ test('l10n: server-memory draft refusals resolve in English and zh-cn', () => {
 	assert.equal(t('serverMemories.draftBlocked', 'AGENTS.md'), 'Not drafting a prompt: AGENTS.md is not a regular file inside this checkout.');
 	assert.equal(t('serverMemories.draftNoTarget'), 'Not drafting a prompt: no safe instruction file was found in this checkout.');
 	assert.equal(t('serverMemories.draftNoLiveSource'), "Not drafting a prompt: none of this memory's cited files exists in this checkout any more. The section will refresh.");
+	assert.equal(t('serverMemories.openContextChanged'), "Not opening the file: the workspace now points at a different repository than these memories were read for. The section will refresh.");
 	assert.equal(t('serverMemories.draftContextChanged'), 'Not drafting a prompt: the workspace now points at a different repository than these memories were read for. The section will refresh.');
 	mock.setLanguage('zh-cn');
 	try {
 		assert.equal(t('serverMemories.draftBlocked', 'AGENTS.md'), '未起草提示：AGENTS.md 不是此检出中的常规文件。');
 		assert.equal(t('serverMemories.draftNoLiveSource'), "未起草提示：此记忆引用的文件在此检出中均已不存在。该板块将刷新。");
+		assert.equal(t('serverMemories.openContextChanged'), "未打开文件：工作区现在指向的仓库与读取这些记忆时的仓库不同。该板块将刷新。");
 		assert.equal(t('serverMemories.draftContextChanged'), '未起草提示：工作区现在指向的仓库与读取这些记忆时的仓库不同。该板块将刷新。');
 		assert.equal(t('serverMemories.draftNoTarget'), '未起草提示：在此检出中未找到安全的指令文件。');
 	} finally {

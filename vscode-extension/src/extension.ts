@@ -7582,9 +7582,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Whether the cached analysis still belongs to the workspace's repository and checkout. If
 	 * not, warn, drop the stale analysis and re-render so the old buttons disappear.
 	 */
-	private ensureServerMemoriesContextCurrent(repoRoot: string): boolean {
+	private ensureServerMemoriesContextCurrent(repoRoot: string, action: 'draft' | 'open'): boolean {
 		if (serverMemoriesDraftContextMatches({ repo: this._serverMemoriesRepo, repoRoot }, this.resolveWorkspaceRepoSlug())) { return true; }
-		void vscode.window.showWarningMessage(l10n.t('serverMemories.draftContextChanged'));
+		// The message names the action the user asked for; the invalidation is the same for both.
+		void vscode.window.showWarningMessage(l10n.t(action === 'open' ? 'serverMemories.openContextChanged' : 'serverMemories.draftContextChanged'));
 		this.invalidateServerMemoriesCache();
 		return false;
 	}
@@ -7598,7 +7599,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private async openServerMemoryCitation(repoRelativePath: string): Promise<void> {
 		const analysis = this.currentServerMemoriesAnalysis();
 		const repoRoot = this._serverMemoriesRepoRoot;
-		if (!analysis || !repoRoot || !this.ensureServerMemoriesContextCurrent(repoRoot)) { return; }
+		if (!analysis || !repoRoot || !this.ensureServerMemoriesContextCurrent(repoRoot, 'open')) { return; }
 		if (!_isOpenableCitedDocument(analysis, repoRelativePath, _createRepoRegularFileCheck(repoRoot))) {
 			void vscode.window.showWarningMessage(l10n.t('serverMemories.openRefused', repoRelativePath));
 			return;
@@ -7621,7 +7622,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const repoRoot = this._serverMemoriesRepoRoot;
 		// Re-resolve the workspace's repository now, not just the target file: the button may
 		// have been rendered before the workspace folders (or their trust) changed.
-		if (!analysis || !repoRoot || !this.ensureServerMemoriesContextCurrent(repoRoot)) { return; }
+		if (!analysis || !repoRoot || !this.ensureServerMemoriesContextCurrent(repoRoot, 'draft')) { return; }
 		// The group's sources can be many (it aggregates every record on the subject), so they are
 		// probed asynchronously, not with a synchronous checker on the extension host. The target is
 		// two paths and is probed synchronously inside the builder.
@@ -7633,7 +7634,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// clicked row against what the host holds now.
 		const currentAnalysis = this.currentServerMemoriesAnalysis();
 		const currentRoot = this._serverMemoriesRepoRoot;
-		if (!currentAnalysis || currentRoot !== repoRoot || !this.ensureServerMemoriesContextCurrent(currentRoot)) { return; }
+		if (!currentAnalysis || currentRoot !== repoRoot || !this.ensureServerMemoriesContextCurrent(currentRoot, 'draft')) { return; }
 		const result = _buildPromotionPromptForSubject(currentAnalysis, subject, fingerprint, _createPromotionTargetProbe(currentRoot),
 			(filePath) => statuses.get(filePath)?.regularFile ?? false);
 		if ('prompt' in result) {

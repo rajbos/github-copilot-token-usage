@@ -1662,7 +1662,8 @@ test('a promotion row whose content changed under it is refused, not silently re
 });
 
 test('promotionGroupFingerprint changes with the fact or citations, not with repeat count', () => {
-	const base = { subject: 's', representativeFact: 'f', citations: ['a.ts:1'] };
+	const base = { subject: 's', displaySubject: 'S', representativeFact: 'f', citations: ['a.ts:1'] };
+	assert.notEqual(promotionGroupFingerprint(base), promotionGroupFingerprint({ ...base, displaySubject: 's!' }), 'the displayed subject is part of the fingerprint');
 	assert.equal(promotionGroupFingerprint(base), promotionGroupFingerprint({ ...base }));
 	assert.notEqual(promotionGroupFingerprint(base), promotionGroupFingerprint({ ...base, representativeFact: 'g' }));
 	assert.notEqual(promotionGroupFingerprint(base), promotionGroupFingerprint({ ...base, citations: ['b.ts:1'] }));
@@ -2063,4 +2064,16 @@ test('unverifiable status is tracked per record, so a repeated id with one user-
 		memories: [memory({ id: 'dup', citations: ['src/a.ts:1'] }), memory({ id: 'dup', citations: ['User input: tabs'] })],
 	}, alwaysExists);
 	assert.equal(analysis.unverifiableCount, 1);
+});
+
+test('a refresh that changes only the displayed subject is caught by the row fingerprint', () => {
+	const make = (subject: string) => analyzeServerMemories({ repo: 'o/n', enabled: true, memories: [memory({ id: '1', subject, citations: ['src/a.ts:1'] })] },
+		{ fileExists: () => true, promotionTargetStatus: () => 'exists' });
+	const before = make('Usage tab groups');
+	const after = make('usage-tab-groups');
+	assert.equal(before.promotionGroups[0].subject, after.promotionGroups[0].subject, 'same normalized key');
+	const row = toServerMemoriesAnalysisView(before)?.topPromotionGroups[0];
+	assert.ok(row?.subject && row.fingerprint);
+	assert.deepEqual(buildPromotionPromptForSubject(after, row.subject, row.fingerprint, () => 'exists'), { reason: 'row-changed' });
+	assert.notEqual(serverMemoriesAnalysisSignature(before), serverMemoriesAnalysisSignature(after), 'and the section re-renders');
 });
