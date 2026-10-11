@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { SESSION_MAX_AGE_SECONDS } from './config.js';
 
-/** Insecure fallback used outside production only. Public in the source, so it must never sign a production cookie. */
+/** Insecure fallback, used only when NODE_ENV is explicitly `development` or `test`. Public in the source, so it must never sign a real cookie. */
 export const DEV_SESSION_SECRET = 'dev-secret-change-me-in-production';
 export const MIN_SESSION_SECRET_LENGTH = 32;
 /**
@@ -64,7 +64,7 @@ export function resetDevSecretWarningForTests(): void {
 	devSecretWarned = false;
 }
 
-/** Resolve the signing secret; outside production falls back to the dev default with a one-time warning. */
+/** Resolve the signing secret; falls back to the dev default (one-time warning) only when NODE_ENV is explicitly `development` or `test`. */
 function getSessionSecret(): string {
 	assertSessionSecretConfigured();
 	const secret = process.env.SESSION_SECRET;
