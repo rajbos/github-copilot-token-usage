@@ -145,7 +145,8 @@ the five-citation cap can never hide the only verifiable source.
 
 The button sends the group's subject key and a fingerprint of the row it was
 rendered from (subject, fact, citations — `promotionGroupFingerprint()`) as
-`draftServerMemoryPromotion`; never prompt text. Renders do no filesystem checks:
+`draftServerMemoryPromotion`; never prompt text. Renders do no citation or target probing (only the existing repository lookup
+reads the checkout's git config):
 they show the cached analysis, which a throttled background re-check refreshes at
 most once a minute (see below). The click handler is therefore the authorization
 step: it re-checks the group's live sources at that moment with asynchronous,

@@ -1355,7 +1355,9 @@ const PROMPT_CITATION_LIMIT = 5;
 
 /**
  * Build the Copilot Chat prompt asking the agent to move one promotion group into the
- * repository's instruction file. Shared so the CLI prints exactly what the extension drafts.
+ * repository's instruction file. Used by the VS Code extension's Ask Copilot action (through
+ * {@link buildPromotionPromptForSubject}); the CLI does not print prompts — `--promote` emits
+ * {@link renderPromotionMarkdown}, which shares the same sanitizing and live-first citation order.
  *
  * The memory text is agent-written and therefore untrusted, and this prompt goes to an agent
  * with edit access. Every server-supplied field is flattened to one line, so a fact cannot

@@ -7500,7 +7500,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private buildServerMemoriesView(): ServerMemoriesAnalysisView | null {
 		this.scheduleServerMemoriesRefresh();
 		const repoRoot = this._serverMemoriesRepoRoot;
-		// No filesystem checks on this path. The analysis shown is the cached one: eligibility, live
+		// No citation or target probing on this path (the repository lookup in
+		// scheduleServerMemoriesRefresh() above still reads the checkout's git config, as before).
+		// The analysis shown is the cached one: eligibility, live
 		// evidence, missing docs and the target are refreshed only by the throttled background
 		// re-check (async, yielding, at most once per SERVER_MEMORIES_RECHECK_MS), so a render
 		// within that window can show a stale state. The click handlers re-check the exact paths
@@ -7512,7 +7514,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// checkout it resolved the repository from and how many folders it chose among.
 			repoRoot,
 			workspaceFolderCount: vscode.workspace.workspaceFolders?.length ?? 0,
-			// No filesystem I/O here: the async analysis already recorded which cited documentation
+			// No probing here: the async analysis already recorded which cited documentation
 			// files are missing or not regular files inside the checkout, and those rows get no
 			// "Open file" button. This only decides whether to show the button;
 			// openServerMemoryCitation() re-validates synchronously on click.
@@ -7525,7 +7527,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * on the extension host. The hour-long cache covers only the network read; the
 	 * checkout-dependent part (eligibility, live evidence, missing docs) is recomputed from the raw
 	 * read by an asynchronous, yielding background re-check ({@link scheduleServerMemoriesRecheck}),
-	 * which also re-resolves the promotion target. A render does no filesystem I/O at all; the
+	 * which also re-resolves the promotion target. A render does no citation or target probing
+	 * (only the existing repository lookup reads the git config); the
 	 * click handlers re-check the exact paths they act on (target, live sources, opened file).
 	 */
 	private currentServerMemoriesAnalysis(): ServerMemoriesAnalysis | null {
