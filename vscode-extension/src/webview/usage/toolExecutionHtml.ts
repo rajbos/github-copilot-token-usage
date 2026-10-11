@@ -14,6 +14,7 @@
  * without completion events, orphaned starts and streaming re-logs. Every
  * section degrades to an explanatory empty state when its map is absent.
  */
+import { renderDataTable, type DataTableColumn, type DataTableSortValue } from '../shared/dataTable';
 import { escapeHtml, formatNumber, formatCompact } from '../shared/formatUtils';
 import { localize, localizeFormat } from '../shared/localization';
 import type { LatencyHistogram, McpToolUsage, ToolCallUsage } from '../shared/types';
@@ -100,12 +101,43 @@ function legendSwatch(cssClass: string, label: string): string {
 	return `<span><svg width="12" height="12" aria-hidden="true"><rect class="${cssClass}" width="12" height="12" rx="2"/></svg>${escapeHtml(label)}</span>`;
 }
 
-/** The collapsed data table that accompanies every chart; `columns` are localization keys, cells are pre-escaped. */
-function dataTableHtml(columnKeys: readonly string[], rows: readonly (readonly string[])[]): string {
-	const head = columnKeys.map(key => `<th>${escapeHtml(localize(key))}</th>`).join('');
-	const body = rows.map(cells => `<tr>${cells.map((cell, i) => `<td${i === 0 ? '' : ' class="tool-exec-num"'}>${cell}</td>`).join('')}</tr>`).join('');
-	return `<details class="tool-exec-table"><summary>${escapeHtml(localize('usage.toolExec.table.show'))}</summary><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></details>`;
+interface ToolExecColumn<Row> {
+	/** Localization key of the header; its last segment is the column id. */
+	key: string;
+	numeric?: boolean;
+	sortValue: (row: Row) => DataTableSortValue;
+	/** Plain text; the table escapes it. */
+	render: (row: Row) => string;
 }
+
+/** The collapsed data table that accompanies every chart, sorted by completed calls like the chart. */
+function toolExecTableHtml<Row>(tableId: string, titleKey: string, columns: readonly ToolExecColumn<Row>[], rows: readonly Row[]): string {
+	const table = renderDataTable<Row>({
+		tableId: `tool-exec-${tableId}`,
+		ariaLabel: localize(titleKey),
+		rows,
+		columns: columns.map((column): DataTableColumn<Row> => ({
+			id: column.key.split('.').pop() ?? column.key,
+			label: localize(column.key),
+			align: column.numeric ? 'right' : undefined,
+			className: column.numeric ? 'tool-exec-num' : undefined,
+			sortValue: column.sortValue,
+			render: row => column.render(row),
+		})),
+		initialSort: { columnId: 'completed', direction: 'desc' },
+		className: 'data-table--compact',
+	});
+	return `<details class="tool-exec-table"><summary>${escapeHtml(localize('usage.toolExec.table.show'))}</summary>${table}</details>`;
+}
+
+const TOOL_COLUMN: ToolExecColumn<{ name: string }> = { key: 'usage.toolExec.col.tool', sortValue: r => r.name, render: r => r.name };
+const COMPLETED_COLUMN: ToolExecColumn<{ completed: number }> = { key: 'usage.toolExec.col.completed', numeric: true, sortValue: r => r.completed, render: r => formatNumber(r.completed) };
+const FAILED_COLUMN: ToolExecColumn<{ failures: number }> = { key: 'usage.toolExec.col.failed', numeric: true, sortValue: r => r.failures, render: r => formatNumber(r.failures) };
+const FAIL_RATE_COLUMN: ToolExecColumn<{ completed: number; failures: number }> = {
+	key: 'usage.toolExec.col.failRate', numeric: true,
+	sortValue: r => r.completed > 0 ? r.failures / r.completed : 0,
+	render: r => formatFailShare(r.failures, r.completed),
+};
 
 // ── Reliability ────────────────────────────────────────────────────────────────
 
@@ -144,10 +176,7 @@ function buildReliabilityChart(rows: ReliabilityRow[]): string {
 }
 
 function reliabilityTable(rows: ReliabilityRow[]): string {
-	return dataTableHtml(
-		['usage.toolExec.col.tool', 'usage.toolExec.col.completed', 'usage.toolExec.col.failed', 'usage.toolExec.col.failRate'],
-		rows.map(r => [escapeHtml(r.name), formatNumber(r.completed), formatNumber(r.failures), formatFailShare(r.failures, r.completed)]),
-	);
+	return toolExecTableHtml<ReliabilityRow>('reliability', 'usage.toolExec.reliability.title', [TOOL_COLUMN, COMPLETED_COLUMN, FAILED_COLUMN, FAIL_RATE_COLUMN], rows);
 }
 
 export function buildToolReliabilitySectionHtml(input: ToolExecutionSectionsInput): string {
@@ -201,10 +230,12 @@ function buildLatencyChart(rows: LatencyRow[]): string {
 }
 
 function latencyTable(rows: LatencyRow[]): string {
-	return dataTableHtml(
-		['usage.toolExec.col.tool', 'usage.toolExec.col.completed', 'usage.toolExec.col.p50', 'usage.toolExec.col.p95'],
-		rows.map(r => [escapeHtml(r.name), formatNumber(r.count), formatLatencyMs(r.p50), formatLatencyMs(r.p95)]),
-	);
+	return toolExecTableHtml<LatencyRow>('latency', 'usage.toolExec.latency.title', [
+		TOOL_COLUMN,
+		{ key: 'usage.toolExec.col.completed', numeric: true, sortValue: r => r.count, render: r => formatNumber(r.count) },
+		{ key: 'usage.toolExec.col.p50', numeric: true, sortValue: r => r.p50, render: r => formatLatencyMs(r.p50) },
+		{ key: 'usage.toolExec.col.p95', numeric: true, sortValue: r => r.p95, render: r => formatLatencyMs(r.p95) },
+	], rows);
 }
 
 export function buildToolLatencySectionHtml(input: ToolExecutionSectionsInput): string {
@@ -247,10 +278,10 @@ function buildMcpHealthChart(rows: McpRow[]): string {
 }
 
 function mcpTable(rows: McpRow[]): string {
-	return dataTableHtml(
-		['usage.toolExec.col.server', 'usage.toolExec.col.completed', 'usage.toolExec.col.failed', 'usage.toolExec.col.failRate'],
-		rows.map(r => [escapeHtml(r.server), formatNumber(r.completed), formatNumber(r.failures), formatFailShare(r.failures, r.completed)]),
-	);
+	return toolExecTableHtml<McpRow>('mcp', 'usage.toolExec.mcp.title', [
+		{ key: 'usage.toolExec.col.server', sortValue: r => r.server, render: r => r.server },
+		COMPLETED_COLUMN, FAILED_COLUMN, FAIL_RATE_COLUMN,
+	], rows);
 }
 
 export function buildMcpHealthSectionHtml(input: ToolExecutionSectionsInput): string {
@@ -318,10 +349,13 @@ function buildCostSpeedChart(rows: CostSpeedRow[]): string {
 }
 
 function costSpeedTable(rows: CostSpeedRow[]): string {
-	return dataTableHtml(
-		['usage.toolExec.col.tool', 'usage.toolExec.col.kind', 'usage.toolExec.col.completed', 'usage.toolExec.col.p50', 'usage.toolExec.col.tokensPerCall'],
-		rows.map(r => [escapeHtml(r.name), escapeHtml(localize(`usage.toolExec.kind.${r.kind}`)), formatNumber(r.completed), formatLatencyMs(r.p50), formatNumber(Math.round(r.tokensPerCall))]),
-	);
+	return toolExecTableHtml<CostSpeedRow>('cost-speed', 'usage.toolExec.costSpeed.title', [
+		TOOL_COLUMN,
+		{ key: 'usage.toolExec.col.kind', sortValue: r => localize(`usage.toolExec.kind.${r.kind}`), render: r => localize(`usage.toolExec.kind.${r.kind}`) },
+		COMPLETED_COLUMN,
+		{ key: 'usage.toolExec.col.p50', numeric: true, sortValue: r => r.p50, render: r => formatLatencyMs(r.p50) },
+		{ key: 'usage.toolExec.col.tokensPerCall', numeric: true, sortValue: r => r.tokensPerCall, render: r => formatNumber(Math.round(r.tokensPerCall)) },
+	], rows);
 }
 
 /**

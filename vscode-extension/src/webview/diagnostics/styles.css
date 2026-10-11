@@ -508,48 +508,6 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .share-btn-mastodon { 
 	font-size: 11px;
 }
 
-.table-container {
-	overflow: auto;
-	max-height: 500px;
-}
-
-.session-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 12px;
-}
-
-.session-table th,
-.session-table td {
-	padding: 8px 10px;
-	text-align: left;
-	border-bottom: 1px solid var(--border-color);
-}
-
-.session-table th {
-	background: var(--bg-tertiary);
-	color: var(--text-primary);
-	font-weight: 600;
-	position: sticky;
-	top: 0;
-}
-
-.session-table th.sortable,
-.session-table th.tool-sortable {
-	cursor: pointer;
-	user-select: none;
-}
-
-.session-table th.sortable:hover,
-.session-table th.tool-sortable:hover {
-	background: var(--list-hover-bg);
-	color: var(--link-color);
-}
-
-.sort-hint {
-	opacity: 0.4;
-}
-
 .tool-family-section {
 	margin-bottom: 20px;
 }
@@ -660,72 +618,18 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .share-btn-mastodon { 
 }
 
 
-.session-table tr:hover {
-	background: var(--list-hover-bg);
+/* Diagnostics table cells (tables themselves are styled by the shared dataTable.css). */
+.diag-path-cell {
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-size: 12px;
 }
 
-/* Candidate/scanned paths table: force long paths to wrap within the
-   panel instead of growing the table wider than its container. */
-.candidate-paths-table .session-table {
-	table-layout: fixed;
+.candidate-path-missing {
+	opacity: 0.5;
 }
 
-.candidate-paths-table .session-table th:first-child,
-.candidate-paths-table .session-table td:first-child {
-	width: 60px;
-}
-
-.candidate-paths-table .session-table th:nth-child(2),
-.candidate-paths-table .session-table td:nth-child(2) {
-	width: 140px;
-}
-
-.candidate-paths-table .session-table th:last-child,
-.candidate-paths-table .session-table td:last-child {
-	word-break: break-all;
-	overflow-wrap: anywhere;
-	white-space: normal;
-}
-
-.candidate-paths-table .session-table td:nth-child(2) .editor-badge {
-	white-space: normal;
-	word-break: break-word;
-}
-
-/* Main Session Folders table: same treatment as the candidate paths table
-   so long folder paths wrap instead of forcing the table (and page) wider
-   than the panel. */
-.session-folders-table .session-table {
-	table-layout: fixed;
-}
-
-.session-folders-table .session-table th:first-child,
-.session-folders-table .session-table td:first-child {
-	word-break: break-all;
-	overflow-wrap: anywhere;
-	white-space: normal;
-}
-
-.session-folders-table .session-table th:nth-child(2),
-.session-folders-table .session-table td:nth-child(2) {
-	width: 150px;
-}
-
-.session-folders-table .session-table td:nth-child(2) .editor-badge {
-	white-space: normal;
-	word-break: break-word;
-}
-
-.session-folders-table .session-table th:nth-child(3),
-.session-folders-table .session-table td:nth-child(3) {
-	width: 110px;
-}
-
-.session-folders-table .session-table th:last-child,
-.session-folders-table .session-table td:last-child {
-	width: 150px;
-	white-space: normal;
-	overflow-wrap: anywhere;
+.folder-file-empty {
+	opacity: 0.45;
 }
 
 .editor-badge {
@@ -735,6 +639,13 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .share-btn-mastodon { 
 	font-size: 10px;
 	color: var(--list-active-fg);
 	white-space: nowrap;
+}
+
+/* Let editor badges wrap inside the fixed-width Source / Editor columns. */
+.candidate-paths-table .editor-badge,
+.session-folders-table .editor-badge {
+	white-space: normal;
+	word-break: break-word;
 }
 
 /* MS Scout: Microsoft brand blue on dark navy */

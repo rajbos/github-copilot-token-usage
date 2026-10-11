@@ -3,7 +3,7 @@ import * as assert from 'node:assert/strict';
 
 import type { AvailableToolEntry, ToolCurationAnalysis } from '../../../src/types';
 import { initializeWebviewLocalization } from '../../src/webview/shared/localization';
-import { getPagedTablePage, setPagedTableFilter, type PagedTableColumn } from '../../src/webview/usage/pagedTable';
+import { getDataTablePage, setDataTableFilter, type DataTableColumn } from '../../src/webview/shared/dataTable';
 import {
 	buildBuiltinToolsHtml,
 	buildUnusedMcpHtml,
@@ -41,23 +41,23 @@ test('toolCurationTables: MCP default order preserves the zero, partial, full us
 		{ server: 'not-connected', availableToolCount: 0, usedToolCount: 0 },
 	];
 	buildUnusedMcpHtml(servers, { totalTokens: 0, byServer: {} }, 30);
-	setPagedTableFilter('mcp', 'hideWithUsage', false);
+	setDataTableFilter('mcp', 'hideWithUsage', false);
 	const html = buildUnusedMcpHtml(servers, { totalTokens: 0, byServer: {} }, 30);
 	const order = ['zero-b', 'zero-a', 'not-connected', 'partial', 'full'].map(name => html.indexOf(`>${name}</td>`));
 	assert.ok(order.every(index => index >= 0));
 	assert.deepEqual(order, [...order].sort((a, b) => a - b));
 	assert.match(html, /MCP Servers in Last 30 Days \(5\)/);
 	assert.match(html, /3 with no usage · 2 with usage/);
-	assert.match(html, /data-paged-table-filter="hideWithUsage"/);
-	assert.doesNotMatch(html, /data-paged-table-filter="hideWithUsage" checked/);
+	assert.match(html, /data-table-filter="hideWithUsage"/);
+	assert.doesNotMatch(html, /data-table-filter="hideWithUsage" checked/);
 });
 
 test('toolCurationTables: disconnected numeric values remain last in either sort direction', () => {
 	const values = [{ name: 'connected', count: 2 }, { name: 'disconnected', count: null }, { name: 'small', count: 1 }];
 	type NumericRow = typeof values[number];
-	const column: PagedTableColumn<NumericRow>[] = [{ id: 'count', label: 'Count', sortValue: row => row.count, render: row => row.name }];
+	const column: DataTableColumn<NumericRow>[] = [{ id: 'count', label: 'Count', sortValue: row => row.count, render: row => row.name }];
 	for (const direction of ['asc', 'desc'] as const) {
-		const page = getPagedTablePage(values, column, {
+		const page = getDataTablePage(values, column, {
 			sortColumn: 'count',
 			sortDirection: direction,
 			page: 1,
@@ -74,13 +74,13 @@ test('toolCurationTables: hide-with-usage filtering happens before pagination', 
 		usedToolCount: index % 2,
 	}));
 	type Server = typeof servers[number];
-	const columns: PagedTableColumn<Server>[] = [{ id: 'name', label: 'Name', sortValue: server => server.server, render: server => server.server }];
-	const filtered = getPagedTablePage(servers, columns, {
+	const columns: DataTableColumn<Server>[] = [{ id: 'name', label: 'Name', sortValue: server => server.server, render: server => server.server }];
+	const filtered = getDataTablePage(servers, columns, {
 		sortColumn: 'name',
 		sortDirection: 'asc',
 		page: 1,
 		filters: { hideWithUsage: true },
-	}, (server, filters) => !filters.hideWithUsage || server.usedToolCount === 0);
+	}, { filterRows: (server, filters) => !filters.hideWithUsage || server.usedToolCount === 0 });
 	assert.equal(filtered.filteredCount, 13);
 	assert.equal(filtered.pageCount, 2);
 	assert.ok(filtered.rows.every(server => server.usedToolCount === 0));
@@ -111,7 +111,7 @@ test('toolCurationTables: unused skills default to overhead and keep action meta
 	assert.match(html, /data-command="openAgentPlugins" data-plugin-name="sample-plugin"/);
 	assert.match(html, /data-command="openFile" data-path="\.github\/skills\/example\/SKILL\.md"/);
 	assert.match(html, /data-command="openFile" data-path="\.copilot\/plugins\/sample\/SKILL\.md"/);
-	assert.match(html, /class="paged-table-sort"[^>]*data-paged-sort="overhead"/);
+	assert.match(html, /class="data-table-sort"[^>]*data-table-sort="overhead"/);
 });
 
 test('toolCurationTables: source labels cover workspace, user, and plugin skills', () => {

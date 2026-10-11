@@ -38,6 +38,7 @@ Per-component guides and READMEs.
 | [vscode-extension/DESIGN.md](vscode-extension/DESIGN.md) | VS Code extension UI design system (DESIGN.md spec) |
 | [vscode-extension/WEBVIEW-MESSAGING.md](vscode-extension/WEBVIEW-MESSAGING.md) | How data reaches a webview panel: trust model, readiness/replay, diagnostics, companion-extension impact |
 | [vscode-extension/VIEW-HIERARCHY.md](vscode-extension/VIEW-HIERARCHY.md) | View → sub-view → content-block map of every webview panel, and the rules for grouping them |
+| [vscode-extension/DATA-TABLE.md](vscode-extension/DATA-TABLE.md) | The shared `renderDataTable` component every webview table uses: layout, CSS, sorting, pagination, filters |
 | [visual-studio/](visual-studio/README.md) | Visual Studio extension guide |
 | [sharing-server/](sharing-server/README.md) | Sharing server setup, personal dashboard and Team Insights |
 | [Sharing server data separation contract](../sharing-server/AGENTS.md) | Authoritative server privacy, comparison semantics and coding/testing requirements |
@@ -90,6 +91,7 @@ Detailed documentation for individual features.
 | [features/CLOUD-AGENT-COST.md](features/CLOUD-AGENT-COST.md) | Cloud Agent tab — per-repository AI credits, and the hourly cached snapshot behind it |
 | [features/AGENTIC-ENGINEERING-SIGNALS.md](features/AGENTIC-ENGINEERING-SIGNALS.md) | Agentic Engineering System signals — rework per repository, quality alongside adoption, reverted agent PRs, participation modes and anti-pattern insights |
 | [features/DARK-FACTORY-READINESS.md](features/DARK-FACTORY-READINESS.md) | Dark Factory Readiness — per-repository governance control scan on the Fluency Score view |
+| [features/WORKSPACE-GROUPING.md](features/WORKSPACE-GROUPING.md) | Workspace grouping — folding worktrees, clones and remote spellings of one repository into one workspace, shared by the extension and the CLI |
 | [features/TTFT-TRENDS.md](features/TTFT-TRENDS.md) | Research > TTFT diagnostics tab — time-to-first-token averages and per-model trendlines from VS Code Chat's debug log |
 | [features/WHATS-NEW.md](features/WHATS-NEW.md) | What's New view and the one-a-day new-feature notification — the release catalog, view-visit tracking, and the pacing rules |
 

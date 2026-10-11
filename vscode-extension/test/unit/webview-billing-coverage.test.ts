@@ -103,4 +103,18 @@ describe('billingExtGroupCostsHtml', () => {
 		assert.ok(html.includes('GitHub Copilot - local sessions'), 'expected the local Copilot row');
 		assert.ok(html.includes('$6.00'), 'expected the total to equal the local cost only');
 	});
+
+	test('the other-sessions row sits muted under the local Copilot row, with the total in the footer', () => {
+		const html = billingExtGroupCostsHtml({ 'Claude Code': 9, 'GitHub Copilot': 6 }, makeApi(1000));
+		const body = html.match(/<tbody>(.*?)<\/tbody>/s)?.[1] ?? '';
+		const labels = [...body.matchAll(/<tr[^>]*><td>([^<]*)<\/td>/g)].map(m => m[1]);
+		assert.deepEqual(labels, [
+			'Claude Code',
+			'GitHub Copilot - local sessions',
+			'GitHub Copilot - other sessions (remote or different environment)',
+		], 'providers by cost, the API gap directly under the local Copilot row');
+		assert.match(body, /<tr class="data-table-muted"><td>GitHub Copilot - other sessions/);
+		assert.match(html, /<tfoot><tr class="data-table-footer-row"><td>Total<\/td><td class="data-table-align-right">\$19\.00<\/td><\/tr><\/tfoot>/);
+		assert.ok(!html.includes('data-table-sort='), 'a bounded summary with a meaningful row order is not sortable');
+	});
 });

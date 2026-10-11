@@ -4,6 +4,7 @@ import {
     calculateFluencyScoreForTeamMember,
     calculateMaturityScores,
     getFluencyLevelData,
+    topReposMissingCustomization,
 } from '../../../src/maturityScoring';
 import type { UsageAnalysisStats, UsageAnalysisPeriod, WorkspaceCustomizationMatrix } from '../../../src/types';
 
@@ -1314,4 +1315,25 @@ test('fmt: formats numbers with thousand separators in evidence', async () => {
     const result = await calculateMaturityScores(undefined, async () => stats);
     const ce = result.categories.find(c => c.category === 'Context Engineering')!;
     assert.ok(ce.evidence.some(e => e.includes('1,500')), 'evidence should format 1500 as 1,500');
+});
+
+test('topReposMissingCustomization: only rows whose known statuses are all missing, most active first', () => {
+    const row = (name: string, interactions: number, typeStatuses: Record<string, '✅' | '⚠️' | '❌'>, workspacePath = `/code/${name}`) =>
+        ({ workspacePath, workspaceName: name, sessionCount: 1, interactionCount: interactions, typeStatuses });
+    const matrix: WorkspaceCustomizationMatrix = {
+        customizationTypes: [{ id: 'instructions', icon: '📋', label: 'Instructions' }],
+        workspaces: [
+            row('customized', 900, { instructions: '✅' }),
+            row('no-data', 800, {}), // unknown, not missing: never recommended
+            row('missing-busy', 500, { instructions: '❌' }),
+            row('missing-quiet', 10, { instructions: '❌', agents: '❌' }),
+            row('stale', 400, { instructions: '⚠️' }),
+            row('unresolved', 999, { instructions: '❌' }, '<unresolved:abc>'),
+        ],
+        totalWorkspaces: 6,
+        workspacesWithIssues: 2,
+    };
+    assert.deepEqual(topReposMissingCustomization(matrix).map(r => r.workspaceName), ['missing-busy', 'missing-quiet']);
+    assert.deepEqual(topReposMissingCustomization(matrix, 1).map(r => r.workspaceName), ['missing-busy']);
+    assert.deepEqual(topReposMissingCustomization(undefined), []);
 });

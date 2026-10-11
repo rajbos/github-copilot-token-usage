@@ -9,8 +9,11 @@
  * `docs/features/COPILOT-SERVER-MEMORIES.md` for why it is analyzed rather than just listed.
  */
 import type { ServerMemoriesAnalysisView } from '../../../../src/types';
+import { renderDataTable, type DataTableColumn } from '../shared/dataTable';
 import { escapeHtml, formatNumber } from '../shared/formatUtils';
 import { localize, localizeFormat } from '../shared/localization';
+
+export const SERVER_MEMORIES_TABLE_ID = 'server-memories-promotion';
 
 /**
  * Normalize the optional server-memories projection so rendering never throws on a partial
@@ -83,32 +86,33 @@ export function buildServerMemoriesSectionHtml(analysis: ServerMemoriesAnalysisV
 		}
 
 		const warn = 'var(--vscode-editorWarning-foreground, #cca700)';
-		const rows = analysis.topPromotionGroups.map(group => {
-			// Only a repeat is worth calling out — a badge reading "re-learned 1x" would add
-			// noise to every single-sighting row without saying anything.
-			const badge = group.repeatCount > 1
-				? ` <span style="color:${warn}; font-size:11px;">(${escapeHtml(localizeFormat('serverMemories.repeatBadge', group.repeatCount))})</span>`
-				: '';
-			return `<tr style="border-bottom:1px solid var(--border-color);">
-				<td style="padding:5px 8px; color:var(--text-primary); white-space:nowrap;">${escapeHtml(group.displaySubject)}${badge}</td>
-				<td style="padding:5px 8px; color:var(--text-primary);">${escapeHtml(group.representativeFact)}</td>
-				<td style="padding:5px 8px; text-align:right; color:var(--text-primary);">${group.citationCount}</td>
-			</tr>`;
-		}).join('');
+		type PromotionGroup = ServerMemoriesAnalysisView['topPromotionGroups'][number];
+		const columns: DataTableColumn<PromotionGroup>[] = [
+			{
+				id: 'subject', label: localize('serverMemories.table.subject'), sortValue: group => group.displaySubject,
+				render: group => {
+					// Only a repeat is worth calling out — a badge reading "re-learned 1x" would add
+					// noise to every single-sighting row without saying anything.
+					const badge = group.repeatCount > 1
+						? ` <span style="color:${warn}; font-size:11px;">(${escapeHtml(localizeFormat('serverMemories.repeatBadge', group.repeatCount))})</span>`
+						: '';
+					return { html: `<span style="white-space:nowrap;">${escapeHtml(group.displaySubject)}${badge}</span>` };
+				},
+			},
+			{ id: 'fact', label: localize('serverMemories.table.fact'), sortValue: group => group.representativeFact, render: group => group.representativeFact },
+			{ id: 'sources', label: localize('serverMemories.table.sources'), align: 'right', sortValue: group => group.citationCount, render: group => String(group.citationCount) },
+		];
 
+		// No initialSort: the host already ranks the groups by how worth promoting they are.
 		const promoteBlock = analysis.topPromotionGroups.length === 0 ? '' : `
 			<div style="margin-top:10px; font-size:13px; font-weight:600; color:var(--text-primary);">${escapeHtml(localize('serverMemories.promoteHeading'))}</div>
 			<div style="margin-bottom:8px; font-size:12px; color:var(--text-secondary);">${escapeHtml(localize('serverMemories.promoteHint'))}</div>
-			<div style="overflow-x:auto;">
-				<table style="width:100%; border-collapse:collapse; font-size:12px;">
-					<thead><tr style="border-bottom:1px solid var(--border-color);">
-						<th style="padding:5px 8px; text-align:left; color:var(--text-primary); font-weight:600;">${escapeHtml(localize('serverMemories.table.subject'))}</th>
-						<th style="padding:5px 8px; text-align:left; color:var(--text-primary); font-weight:600;">${escapeHtml(localize('serverMemories.table.fact'))}</th>
-						<th style="padding:5px 8px; text-align:right; color:var(--text-primary); font-weight:600;">${escapeHtml(localize('serverMemories.table.sources'))}</th>
-					</tr></thead>
-					<tbody>${rows}</tbody>
-				</table>
-			</div>`;
+			${renderDataTable({
+				tableId: SERVER_MEMORIES_TABLE_ID,
+				ariaLabel: localize('serverMemories.promoteHeading'),
+				rows: analysis.topPromotionGroups,
+				columns,
+			})}`;
 
 		return `
 			<!-- Server Memories Section -->

@@ -459,13 +459,13 @@ jobs:
           ARGS+=(--datasetId "$AZURE_DATASET_ID")
           ARGS+=(--startDate "$START_DATE")
           ARGS+=(--endDate "$END_DATE")
+          # --output keeps the per-row dataset (user, machine and workspace
+          # identifiers) out of the Actions log; only counts go to stderr.
           ARGS+=(--output ./usage-data/usage-agg-daily.json)
 
-          # Use shared key if available, otherwise rely on Entra ID (DefaultAzureCredential)
-          if [ -n "$AZURE_STORAGE_KEY" ]; then
-            ARGS+=(--sharedKey "$AZURE_STORAGE_KEY")
-          fi
-
+          # The loader reads the shared key from AZURE_STORAGE_KEY (set in env
+          # above) so it never appears on the command line. When it is empty the
+          # loader falls back to Entra ID (DefaultAzureCredential).
           node .github/skills/azure-storage-loader/load-table-data.js "${ARGS[@]}" || {
             echo "⚠️ Failed to download aggregated usage data, continuing without it"
             exit 0

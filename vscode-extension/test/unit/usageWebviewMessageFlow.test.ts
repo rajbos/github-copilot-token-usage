@@ -303,6 +303,42 @@ test('renders repository PR results delivered after the layout exists', async ()
 	);
 });
 
+test('a host refresh of the Repository PRs panel keeps a pending or answered CCR check', async () => {
+	const harness = await bootWebview(buildStats());
+	const payload = (): Record<string, unknown> => {
+		const data = repoPrPayload();
+		(data.repos as Array<Record<string, unknown>>)[0].aiDetails = [
+			{ number: 42, title: 'Add tables', url: 'https://github.com/rajbos/ai-engineering-fluency/pull/42', aiType: 'copilot', role: 'reviewer-requested' },
+		];
+		return data;
+	};
+	harness.post({ command: 'repoPrStatsLoaded', data: payload() });
+	const doc = harness.window.document;
+	const button = (): any => doc.querySelector('.btn-check-ccr[data-pr="42"]');
+	const result = (): string => doc.querySelector('[data-ccr-result="rajbos/ai-engineering-fluency#42"]')?.textContent ?? '';
+	assert.ok(button(), 'expects a CCR check button for the reviewer-requested Copilot PR');
+
+	button().click();
+	const requests = (): number => harness.posted.filter((m) => m.command === 'checkCcrActivity').length;
+	assert.equal(requests(), 1);
+	const checking = result();
+	assert.ok(checking.length > 0, 'shows a checking state while the lookup runs');
+
+	// Host refresh while the lookup is pending: the rebuilt button stays disabled.
+	harness.post({ command: 'repoPrStatsLoaded', data: payload() });
+	assert.equal(button().hasAttribute('disabled'), true, 'a pending check must not be submittable twice');
+	assert.equal(result(), checking);
+
+	harness.post({ command: 'ccrActivityResult', owner: 'rajbos', repo: 'ai-engineering-fluency', prNumber: 42, reviews: [], requests: [] });
+	const answered = result();
+	assert.ok(answered.length > 0 && answered !== checking);
+
+	// Host refresh after the answer: the result is still shown.
+	harness.post({ command: 'repoPrStatsLoaded', data: payload() });
+	assert.equal(result(), answered);
+	assert.equal(button().hasAttribute('disabled'), false);
+});
+
 test('repository PR results delivered before any layout exists still reach the panel', async () => {
 	// The webview announces readiness at module-evaluation time, so the host replays buffered
 	// state into a DOM that has no `#repos-pr-content` yet. Without a re-announce + restore
@@ -804,7 +840,8 @@ test('marks HydraFusion sessions in the recent sessions list', async () => {
 	assert.match(row.textContent, /1\.5M/);
 	assert.match(row.textContent, /\$12\.35/);
 	const costCell = [...row.cells].find(cell => cell.textContent === '$12.35');
-	assert.equal(costCell?.title, '$12.3450');
+	// The table has no per-cell attributes, so the tooltip sits on the cell's content.
+	assert.equal(costCell?.querySelector('[title]')?.title, '$12.3450');
 });
 
 test('Recent Sessions Duration column falls back to wall-clock time when activeDurationMs is zero', async () => {
@@ -973,7 +1010,7 @@ test('a preset-forced column survives the saved column settings restored by boot
 
 	assert.equal(doc.querySelector('#sessions-columns-menu input[data-column="contextFill"]')?.checked, true,
 		'the preset\'s column must survive the saved settings restored after it arrived');
-	const headers = [...doc.querySelectorAll('.sessions-table thead th')].map((th: any) => th.textContent.replace(/[▼▲]/g, '').trim());
+	const headers = [...doc.querySelectorAll('.sessions-table thead th')].map((th: any) => th.textContent.replace(/[↑↓]/g, '').trim());
 	assert.ok(headers.includes('Context'), `the Context column is visible; got ${headers.join(', ')}`);
 });
 
@@ -1040,14 +1077,89 @@ test('remembers the "Other models" open state across a leaderboard re-render', a
 	details.open = true;
 	details.dispatchEvent(new harness.window.Event('toggle'));
 
-	// Sorting re-renders just the leaderboard content, recreating the <details> element from
-	// scratch; without persisted state it would always snap back to collapsed.
-	const modelHeader = harness.window.document.querySelector('th[data-eff-sort="model"]');
-	modelHeader.click();
+	// Switching the chart metric re-renders the whole leaderboard content, recreating the
+	// <details> element from scratch; without persisted state it would snap back to collapsed.
+	harness.window.document.querySelector('button[data-eff-metric="outputTokens"]').click();
 
-	const detailsAfterSort = harness.window.document.getElementById('model-leaderboard-other');
-	assert.ok(detailsAfterSort, 'expects the "Other models" group to still exist after sorting');
-	assert.equal(detailsAfterSort.open, true, 'the open state must survive the re-render');
+	const detailsAfterRender = harness.window.document.getElementById('model-leaderboard-other');
+	assert.notEqual(detailsAfterRender, details, 'the metric switch must have rebuilt the group');
+	assert.equal(detailsAfterRender.open, true, 'the open state must survive the re-render');
+});
+
+test('sorting the model leaderboard sorts both tables in place and leaves "Other models" open', async () => {
+	const harness = await bootWebview(buildStatsWithLongTailModelEfficiency());
+	const doc = harness.window.document;
+	const details = doc.getElementById('model-leaderboard-other');
+	details.open = true;
+	details.dispatchEvent(new harness.window.Event('toggle'));
+	const modelSort = (tableId: string) => doc.querySelector(`#data-table-root-${tableId} [data-table-sort="model"]`)?.closest('th')?.getAttribute('aria-sort');
+
+	doc.querySelector('#data-table-root-model-leaderboard [data-table-sort="model"]').click();
+
+	assert.equal(modelSort('model-leaderboard'), 'ascending');
+	assert.equal(modelSort('model-leaderboard-other'), 'ascending', 'the "Other models" table follows the main table\'s sort');
+	assert.equal(doc.getElementById('model-leaderboard-other'), details, 'a sort re-renders only the table, not the section');
+	assert.equal(details.open, true);
+	const otherRows = [...details.querySelectorAll('tbody tr')];
+	assert.equal(otherRows.length, 3, 'sorting keeps every long-tail model');
+	assert.ok(otherRows.every((row: any) => /--model-color:/.test(row.getAttribute('style') ?? '')), 'rows keep their model colour');
+});
+
+test('Recent Sessions sorts from its headers and title links still open the session after a re-sort', async () => {
+	const stats = buildStats();
+	const baseSession = {
+		toolCalls: 5, inputTokens: 1000, outputTokens: 500, thinkingTokens: 0, cachedTokens: 0, totalTokens: 1500,
+		estimatedCost: 0.5, lastActivity: '2026-09-06T11:00:00.000Z', editor: 'VS Code', models: ['gpt-5.6-terra'],
+	};
+	stats.todaySessions = [
+		{ ...baseSession, title: 'Alpha', filePath: 'alpha.jsonl', interactions: 5 },
+		{ ...baseSession, title: 'Charlie', filePath: 'charlie.jsonl', interactions: 9 },
+		{ ...baseSession, title: 'Bravo', filePath: 'bravo.jsonl', interactions: 3 },
+	];
+	const harness = await bootWebview(stats);
+	const doc = harness.window.document;
+	const titles = () => [...doc.querySelectorAll('.sessions-table tbody tr .session-title-link')].map((a: any) => a.textContent);
+	const ranks = () => [...doc.querySelectorAll('.sessions-table tbody tr td.session-col-rank')].map((td: any) => td.textContent);
+
+	assert.deepEqual(titles(), ['Charlie', 'Alpha', 'Bravo'], 'most active first by default');
+	doc.querySelector('.sessions-table [data-table-sort="title"]').click();
+	assert.deepEqual(titles(), ['Alpha', 'Bravo', 'Charlie']);
+	assert.deepEqual(ranks(), ['1', '2', '3'], 'the # column numbers the sorted rows');
+	assert.equal(doc.querySelector('.sessions-table th[aria-sort="ascending"]')?.textContent.replace(/[↑↓]/g, '').trim(), 'Title');
+
+	harness.posted.length = 0;
+	doc.querySelector('.sessions-table .session-title-link').click();
+	const opened = harness.posted.find((m) => m.command === 'openSessionFile');
+	assert.equal(opened?.file, 'alpha.jsonl', 'the delegated title-link handler must survive the table re-rendering itself');
+});
+
+test('worktree repositories expand into a per-worktree table that moves with its row when sorted', async () => {
+	const harness = await bootWebview(buildStats());
+	const doc = harness.window.document;
+	const worktree = (path: string, repoLabel: string, bytes: number) => ({
+		command: 'worktreeFound',
+		worktree: { path, repoLabel, branch: 'b', lastCommit: 'abc', lastCommitDate: null, pushed: 'yes', files: 1, folders: 1, bytes },
+	});
+	harness.post(worktree('C:\\wt\\a1', 'alpha', 10));
+	harness.post(worktree('C:\\wt\\b1', 'beta', 20));
+	harness.post(worktree('C:\\wt\\b2', 'beta', 30));
+	await new Promise((resolve) => setTimeout(resolve, 50));
+	const repoOrder = () => [...doc.querySelectorAll('#data-table-root-worktree-repos tr.worktree-repo-row')].map((row: any) => row.getAttribute('data-repo'));
+
+	assert.deepEqual(repoOrder(), ['beta', 'alpha'], 'most worktrees first by default');
+	doc.querySelector('tr.worktree-repo-row[data-repo="alpha"] td').click();
+	assert.equal(doc.querySelector('tr.worktree-repo-row[data-repo="alpha"]')?.getAttribute('aria-expanded'), 'true');
+
+	doc.querySelector('#data-table-root-worktree-repos [data-table-sort="repo"]').click();
+	assert.deepEqual(repoOrder(), ['alpha', 'beta']);
+	const details = doc.querySelector('tr.worktree-repo-details[data-repo="alpha"]');
+	assert.ok(details, 'the expansion survives the sort');
+	assert.equal(details.previousElementSibling?.getAttribute('data-repo'), 'alpha', 'the details row follows its repository');
+	assert.ok(details.querySelector('#data-table-root-worktree-details-alpha'), 'the nested table has its own stable id');
+
+	harness.posted.length = 0;
+	details.querySelector('.worktree-delete-link').click();
+	assert.ok(harness.posted.some((m) => m.command === 'deleteWorktree' && m.path === 'C:\\wt\\a1'), 'nested action links keep working');
 });
 
 /** Which leaf tab is marked active, and which panel is the only visible one. */
@@ -1283,14 +1395,17 @@ test('collapses context-reference kinds with no recent usage into a closed "Othe
 
 	const otherRows = details.querySelectorAll('tbody tr');
 	assert.ok(otherRows.length > 0, 'the unused kinds must still be rendered, just collapsed');
+	// The long tail is paged like any data list; its pager reports the full row count.
+	const otherRowCount = Number(details.querySelector('.data-table-page-info, .data-table-summary')?.textContent.match(/of (\d+)\s*$/)?.[1]);
+	assert.ok(otherRowCount >= otherRows.length, `expects the pager to count every hidden kind; got ${otherRowCount}`);
 	assert.match(
 		details.querySelector('summary').textContent,
-		new RegExp(`Other references \\(${otherRows.length},`),
+		new RegExp(`Other references \\(${otherRowCount},`),
 		'the summary count must match the rows it hides',
 	);
 
 	// Every descriptor still renders somewhere: collapsing the tail must never drop a kind.
-	assert.equal(mainRows.length + otherRows.length, 21, 'expects all 21 reference kinds accounted for');
+	assert.equal(mainRows.length + otherRowCount, 21, 'expects all 21 reference kinds accounted for');
 });
 
 test('remembers the "Other references" open state across a re-render', async () => {
@@ -1637,6 +1752,94 @@ test('a deep link that never landed is dropped when the user navigates away', as
 	await harness.settleScroll();
 
 	assert.deepEqual(harness.scrolledTo, [], 'a stale deep link must not aim a later render');
+});
+
+test('a section deep link that never landed is dropped when the user navigates away', async () => {
+	// A conditional section (here one that is never rendered) leaves its anchor in
+	// pendingTabAnchor; a later render must not scroll there once the user picked another tab.
+	const harness = await bootWebview(buildStatsWithInsights());
+
+	harness.post({ command: 'switchTab', tab: 'activity', anchor: 'section-not-rendered-yet' });
+	harness.window.document.querySelector('.tab-button[data-tab="sessions"]')?.click();
+	harness.scrolledTo.length = 0;
+
+	const late = harness.window.document.createElement('div');
+	late.id = 'section-not-rendered-yet';
+	harness.window.document.body.append(late);
+	harness.post({ command: 'updateStats', data: buildStatsWithInsights() });
+	await harness.settleScroll();
+
+	assert.deepEqual(harness.scrolledTo, [], 'a stale section anchor must not aim a later render');
+});
+
+test('cancelPendingNavigation drops a deep link still waiting for its section', async () => {
+	const harness = await bootWebview(buildStatsWithInsights());
+
+	harness.post({ command: 'switchTab', tab: 'activity', anchor: 'section-not-rendered-yet' });
+	harness.post({ command: 'cancelPendingNavigation' });
+	harness.scrolledTo.length = 0;
+
+	const late = harness.window.document.createElement('div');
+	late.id = 'section-not-rendered-yet';
+	harness.window.document.body.append(late);
+	harness.post({ command: 'updateStats', data: buildStatsWithInsights() });
+	await harness.settleScroll();
+
+	assert.deepEqual(harness.scrolledTo, []);
+});
+
+test('a section deep link that never landed expires after 60 seconds', async () => {
+	const harness = await bootWebview(buildStatsWithInsights());
+
+	harness.post({ command: 'switchTab', tab: 'activity', anchor: 'section-shows-up-much-later' });
+	harness.scrolledTo.length = 0;
+	// The bundle runs inside jsdom's window, so its clock is that window's Date.
+	const webviewDate = (harness.window as unknown as { Date: DateConstructor }).Date;
+	const realNow = webviewDate.now;
+	webviewDate.now = () => realNow() + 61_000;
+	try {
+		const late = harness.window.document.createElement('div');
+		late.id = 'section-shows-up-much-later';
+		harness.window.document.body.append(late);
+		harness.post({ command: 'updateStats', data: buildStatsWithInsights() });
+		await harness.settleScroll();
+	} finally {
+		webviewDate.now = realNow;
+	}
+
+	assert.deepEqual(harness.scrolledTo, [], 'an expired deep link must not scroll a much later render');
+});
+
+test('a section scroll still in its paint delay is cancelled by navigation and by cancelPendingNavigation', async () => {
+	// The section exists, so the scroll is already scheduled; acting inside its 50 ms defer
+	// must still stop it.
+	const byClick = await bootWebview(buildStatsWithInsights());
+	byClick.post({ command: 'switchTab', tab: 'activity', anchor: 'section-interaction-modes' });
+	byClick.window.document.querySelector('.tab-button[data-tab="sessions"]')?.click();
+	await byClick.settleScroll();
+	assert.deepEqual(byClick.scrolledTo, [], 'a tab click inside the defer cancels the section scroll');
+
+	const byHost = await bootWebview(buildStatsWithInsights());
+	byHost.post({ command: 'switchTab', tab: 'activity', anchor: 'section-interaction-modes' });
+	byHost.post({ command: 'cancelPendingNavigation' });
+	await byHost.settleScroll();
+	assert.deepEqual(byHost.scrolledTo, [], 'the host cancel inside the defer stops the section scroll');
+});
+
+test('a second switchTab inside the paint delay replaces the first scroll', async () => {
+	const harness = await bootWebview(buildStatsWithInsights());
+	harness.post({ command: 'switchTab', tab: 'activity', anchor: 'section-interaction-modes' });
+	harness.post({ command: 'switchTab', tab: 'activity', anchor: 'section-sessions-summary' });
+	await harness.settleScroll();
+	assert.deepEqual(harness.scrolledTo, ['section-sessions-summary'], 'only the newer deep link may scroll');
+});
+
+test('a newer switchTab whose section is not rendered yet still cancels the older queued scroll', async () => {
+	const harness = await bootWebview(buildStatsWithInsights());
+	harness.post({ command: 'switchTab', tab: 'activity', anchor: 'section-interaction-modes' });
+	harness.post({ command: 'switchTab', tab: 'activity', anchor: 'section-not-rendered-yet' });
+	await harness.settleScroll();
+	assert.deepEqual(harness.scrolledTo, []);
 });
 
 test('switchTab still honours a static section anchor', async () => {

@@ -8,7 +8,12 @@
  * Usage:
  *   node render-views.js --out <dir> [--view <id>] [--theme dark|light|both]
  *                        [--dist <dir>] [--repo-root <dir>] [--allow-missing]
- *                        [--config <views.config.json>]
+ *                        [--config <views.config.json>] [--concurrency <n>]
+ *
+ * `--concurrency` is how many pages render at once (default 4). Each target
+ * gets its own page and browser context, so they cannot see each other; the
+ * report and the log summary are ordered by view, state and theme regardless
+ * of which page finished first.
  *
  * `--config` renders from another registry than the skill's own — the visual
  * diff passes a registry merged with the base commit's, so a view or state the
@@ -42,10 +47,13 @@ const {
 	REPO_ROOT,
 	buildPageHtml,
 	loadFixture,
+	anchorFor,
+	resolveInside,
 } = require('./lib/harness');
-const { loadChromium } = require('./lib/browser');
-const { parseArgs, readConfig, selectViews } = require('./lib/config');
+const { blockNetwork, loadChromium } = require('./lib/browser');
+const { parseArgs, parseThemes, readConfig, selectViews } = require('./lib/config');
 const { applySteps, isShowing } = require('./lib/steps');
+const { parseConcurrency, runPool } = require('./lib/pool');
 
 /** How long a responsive chart gets to redraw after the viewport is grown. */
 const RESIZE_SETTLE_MS = 750;
@@ -90,7 +98,14 @@ function renderTargets(view) {
 
 async function renderView({ browser, view, state, theme, outDir, tmpDir, defaults, distDir, repoRoot }) {
 	const id = state ? `${view.id}--${state.id}` : view.id;
-	const bundlePath = path.join(distDir, `${view.bundle}.js`);
+	let bundlePath;
+	try {
+		// The checkout being rendered (the baseline worktree or the working
+		// tree) is the trusted anchor; nothing below it may be a link.
+		bundlePath = resolveInside(distDir, `${view.bundle}.js`, 'bundle', anchorFor(distDir, [repoRoot, REPO_ROOT]));
+	} catch (error) {
+		return { view: view.id, state: state ? state.id : null, theme, status: 'error', error: String(error && error.message || error) };
+	}
 	if (!fs.existsSync(bundlePath)) {
 		return {
 			view: view.id,
@@ -105,8 +120,14 @@ async function renderView({ browser, view, state, theme, outDir, tmpDir, default
 	// A registry from baselineRegistry() pins each view to the fixture directory
 	// of the commit that declared it, so a base view renders with the base
 	// commit's fixture even when the current tree renamed or deleted it.
-	const fixturePath = path.join(view.fixtureDir || path.join(__dirname, 'fixtures'), path.basename(String(view.fixture || '')));
-	if (!view.fixture || !fs.existsSync(fixturePath)) {
+	let fixturePath;
+	try {
+		const fixtureDir = view.fixtureDir || path.join(__dirname, 'fixtures');
+		fixturePath = resolveInside(fixtureDir, view.fixture, 'fixture', anchorFor(fixtureDir, [repoRoot, REPO_ROOT]));
+	} catch (error) {
+		return { view: view.id, state: state ? state.id : null, theme, status: 'error', error: String(error && error.message || error) };
+	}
+	if (!fs.existsSync(fixturePath)) {
 		return { view: view.id, state: state ? state.id : null, theme, status: 'error', missing: true, error: `Missing fixture ${view.fixture}` };
 	}
 
@@ -148,6 +169,7 @@ async function renderView({ browser, view, state, theme, outDir, tmpDir, default
 	page.on('pageerror', (err) => { consoleErrors.push(String(err && err.stack || err)); });
 
 	try {
+		await blockNetwork(page);
 		// `setFixedTime` pins Date/Date.now but leaves timers running, so the
 		// settle waits and Chart.js's own scheduling behave as before.
 		await page.clock.setFixedTime(new Date(FROZEN_NOW));
@@ -238,8 +260,9 @@ async function main() {
 	const distDir = path.resolve(args.dist || path.join(repoRoot, 'vscode-extension', 'dist', 'webview'));
 	const config = readConfig(__dirname, typeof args.config === 'string' ? path.resolve(args.config) : undefined);
 	const views = selectViews(config, args.view);
-	const themes = args.theme === 'both' ? ['dark', 'light'] : [args.theme || 'dark'];
+	const themes = parseThemes(args.theme);
 	const allowMissing = args['allow-missing'] === true;
+	const concurrency = parseConcurrency(args.concurrency);
 
 	if (views.length === 0) {
 		console.error(`No enabled views matched${args.view ? ` "${args.view}"` : ''}.`);
@@ -251,34 +274,35 @@ async function main() {
 
 	const chromium = loadChromium();
 	const browser = await chromium.launch();
-	const results = [];
+	const targets = views.flatMap((view) => renderTargets(view)
+		.flatMap((state) => themes.map((theme) => ({ view, state, theme }))));
+	const startedAt = Date.now();
+	let results;
 	try {
-		for (const view of views) {
-			for (const state of renderTargets(view)) {
-				for (const theme of themes) {
-					let result = await renderView({ browser, view, state, theme, outDir, tmpDir, defaults: config.defaults, distDir, repoRoot });
-					const currentOnly = Boolean(view.currentOnly || (state && state.currentOnly));
-					if (allowMissing && result.status === 'error' && currentOnly) {
-						// The baseline simply does not have this yet. Leaving no
-						// screenshot behind is what lets the diff call the current
-						// one "added" instead of the whole run failing. A target both
-						// registries declare is never skipped: its failure is real.
-						// A render that got as far as the capture and then failed the
-						// empty-root check has written its PNG already; drop it, or
-						// the diff would compare against a blank baseline.
-						const { file, ...rest } = result;
-						if (file) { fs.rmSync(path.join(outDir, file), { force: true }); }
-						result = { ...rest, status: 'skipped' };
-					}
-					results.push(result);
-					const icon = { ok: '✅', warn: '⚠️ ', skipped: '⏭️ ' }[result.status] || '❌';
-					const detail = result.status === 'ok'
-						? `${result.bodyTextLength} chars of text`
-						: (result.error || (result.errors || []).join(' | '));
-					console.log(`${icon} ${state ? `${view.id}--${state.id}` : view.id} (${theme}) — ${detail}`);
-				}
+		results = await runPool(targets, concurrency, async ({ view, state, theme }) => {
+			let result = await renderView({ browser, view, state, theme, outDir, tmpDir, defaults: config.defaults, distDir, repoRoot });
+			const currentOnly = Boolean(view.currentOnly || (state && state.currentOnly));
+			if (allowMissing && result.status === 'error' && currentOnly) {
+				// The baseline simply does not have this yet. Leaving no
+				// screenshot behind is what lets the diff call the current
+				// one "added" instead of the whole run failing. A target both
+				// registries declare is never skipped: its failure is real.
+				// A render that got as far as the capture and then failed the
+				// empty-root check has written its PNG already; drop it, or
+				// the diff would compare against a blank baseline.
+				const { file, ...rest } = result;
+				if (file) { fs.rmSync(path.join(outDir, file), { force: true }); }
+				result = { ...rest, status: 'skipped' };
 			}
-		}
+			// Logged as each render finishes, so the order here follows timing;
+			// render-report.json keeps the deterministic order.
+			const icon = { ok: '✅', warn: '⚠️ ', skipped: '⏭️ ' }[result.status] || '❌';
+			const detail = result.status === 'ok'
+				? `${result.bodyTextLength} chars of text`
+				: (result.error || (result.errors || []).join(' | '));
+			console.log(`${icon} ${state ? `${view.id}--${state.id}` : view.id} (${theme}) — ${detail}`);
+			return result;
+		});
 	} finally {
 		await browser.close();
 		fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -292,7 +316,8 @@ async function main() {
 	const failed = results.filter((r) => r.status === 'error');
 	const skipped = results.filter((r) => r.status === 'skipped');
 	const skippedNote = skipped.length ? ` (${skipped.length} not in this build, skipped)` : '';
-	console.log(`\n${results.length - failed.length - skipped.length}/${results.length} renders succeeded${skippedNote} → ${path.relative(process.cwd(), outDir) || outDir}`);
+	const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+	console.log(`\n${results.length - failed.length - skipped.length}/${results.length} renders succeeded${skippedNote} in ${seconds}s (${concurrency} at a time) → ${path.relative(process.cwd(), outDir) || outDir}`);
 	if (failed.length > 0) {
 		process.exitCode = 1;
 	}

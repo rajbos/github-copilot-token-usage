@@ -434,3 +434,160 @@ test('a switchTab message naming an unknown tab is ignored rather than breaking 
 	const doc = harness.window.document;
 	assert.ok(doc.querySelector('.tab[data-tab="report"]')?.classList.contains('active'), 'expected the default report tab to remain active');
 });
+
+// --- Shared data tables -------------------------------------------------------------------
+
+function diagSession(file: string, hoursAgo: number, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+	const at = new Date(Date.now() - hoursAgo * 60 * 60 * 1000).toISOString();
+	return {
+		file, size: 100, modified: at, interactions: 2, tokens: 1_000, contextReferences: {},
+		firstInteraction: at, lastInteraction: at, editorSource: 'VS Code', title: file, ...overrides,
+	};
+}
+
+function tableRows(harness: Harness, tableId: string): any[] {
+	return Array.from(harness.window.document.querySelectorAll(`#data-table-root-${tableId} tbody tr`));
+}
+
+function cellTexts(harness: Harness, tableId: string, column: number): string[] {
+	return tableRows(harness, tableId).map((row) => row.children[column]?.textContent.replace(/\s+/g, ' ').trim());
+}
+
+/** The last posted message, copied out of the jsdom realm so deepEqual compares plain objects. */
+function lastPosted(harness: Harness): Record<string, unknown> {
+	return { ...harness.posted.at(-1) };
+}
+
+function clickSort(harness: Harness, tableId: string, columnId: string): void {
+	const button = harness.window.document.querySelector(`[data-table-id="${tableId}"][data-table-sort="${columnId}"]`);
+	assert.ok(button, `expected a sort button for ${tableId}/${columnId}`);
+	(button as HTMLButtonElement).click();
+}
+
+test('session table: newest first, children follow their parent in every sort order, and titles are escaped', async () => {
+	await preloadBundle();
+	const xssTitle = '<img src=x onerror=alert(1)>';
+	const harness = bootWebviewUnsettled(buildInitialData({
+		detailedSessionFiles: [
+			diagSession('other.json', 2, { tokens: 1_000, title: xssTitle }),
+			diagSession('child.json', 3, { tokens: 5_000, title: 'Child', parentInfo: { uuid: 'p', name: 'Parent', sessionFile: 'parent.json' } }),
+			diagSession('parent.json', 1, { tokens: 100, title: 'Parent', childInfo: [{ uuid: 'c', name: 'Child', sessionFile: 'child.json' }], totalChildCount: 1 }),
+		],
+	}));
+	await harness.settle();
+	const tableId = 'diagnostics-sessions';
+
+	const titles = () => tableRows(harness, tableId).map((row) => row.querySelector('a.session-file-link:not(.hierarchy-parent)')?.getAttribute('data-file'));
+	assert.deepEqual(titles(), ['parent.json', 'child.json', 'other.json'], 'default order is newest first, child kept under its parent');
+	assert.ok(tableRows(harness, tableId)[1].classList.contains('child-session-row'));
+	assert.deepEqual(cellTexts(harness, tableId, 0), ['1', '2', '3']);
+
+	clickSort(harness, tableId, 'tokens');
+	assert.deepEqual(titles(), ['other.json', 'parent.json', 'child.json'], 'a child sorts with its parent, not by its own tokens');
+	clickSort(harness, tableId, 'tokens');
+	assert.deepEqual(titles(), ['parent.json', 'child.json', 'other.json']);
+
+	const root = harness.window.document.getElementById(`data-table-root-${tableId}`);
+	assert.equal(root.querySelector('img'), null, 'a session title must never become markup');
+	assert.ok(root.textContent.includes(xssTitle));
+
+	// Links keep working after the table re-rendered itself for the sort.
+	(tableRows(harness, tableId)[0].querySelector('a.session-file-link') as HTMLAnchorElement).click();
+	assert.deepEqual(lastPosted(harness), { command: 'openSessionFile', file: 'parent.json' });
+	(tableRows(harness, tableId)[2].querySelector('a.view-formatted-link') as HTMLAnchorElement).click();
+	assert.deepEqual(lastPosted(harness), { command: 'openFormattedJsonlFile', file: 'other.json' });
+	(tableRows(harness, tableId)[1].querySelector('a.hierarchy-parent') as HTMLAnchorElement).click();
+	assert.deepEqual(lastPosted(harness), { command: 'openSessionFile', file: 'parent.json' });
+});
+
+test('session table pages its rows and a filter change returns to the first page', async () => {
+	await preloadBundle();
+	const files = Array.from({ length: 12 }, (_, i) => diagSession(`s${i + 1}.json`, i + 1, { editorSource: i < 11 ? 'VS Code' : 'Cursor' }));
+	const harness = bootWebviewUnsettled(buildInitialData({ detailedSessionFiles: files }));
+	await harness.settle();
+	const tableId = 'diagnostics-sessions';
+	const doc = harness.window.document;
+
+	assert.equal(tableRows(harness, tableId).length, 10);
+	(doc.querySelector(`[data-table-id="${tableId}"][data-table-direction="next"]`) as HTMLButtonElement).click();
+	assert.deepEqual(cellTexts(harness, tableId, 0), ['11', '12']);
+
+	(doc.querySelector('.editor-panel[data-editor="VS Code"]') as HTMLElement).click();
+	assert.equal(tableRows(harness, tableId).length, 10, 'filtering starts again at page 1');
+	assert.match(doc.querySelector(`#data-table-root-${tableId} .data-table-page-info`)?.textContent ?? '', /1.*2/);
+});
+
+test('tool analysis tables sort by average tokens per call by default and escape tool names', async () => {
+	await preloadBundle();
+	const harness = bootWebviewUnsettled(buildInitialData({
+		toolCallStats: {
+			total: 13,
+			byTool: { read: 10, grep: 1, '<b>x</b>': 2 },
+			outputTokensByTool: { read: 100, grep: 500, '<b>x</b>': 40 },
+		},
+	}));
+	await harness.settle();
+	const tableId = 'diagnostics-tool-other';
+	const toolNames = () => tableRows(harness, tableId).map((row) => row.children[0].firstChild?.textContent.trim());
+
+	assert.deepEqual(toolNames(), ['grep', '<b>x</b>', 'read'], 'default order is avg tokens / call, highest first');
+	assert.equal(harness.window.document.querySelector(`#data-table-root-${tableId} td b`), null);
+
+	clickSort(harness, tableId, 'calls');
+	assert.deepEqual(toolNames(), ['read', '<b>x</b>', 'grep']);
+	clickSort(harness, tableId, 'tool');
+	clickSort(harness, tableId, 'tool');
+	assert.deepEqual(toolNames(), ['read', 'grep', '<b>x</b>'], 'second click on Tool sorts descending');
+});
+
+test('session folders table: most sessions first, a total footer, and links that survive a re-sort', async () => {
+	await preloadBundle();
+	const harness = bootWebviewUnsettled(buildInitialData({
+		report: 'Report',
+		sessionFolders: [
+			{ dir: '/a', count: 2, editorName: 'VS Code' },
+			{ dir: '/b<i>', count: 5 },
+		],
+	}));
+	await harness.settle();
+	const tableId = 'diagnostics-session-folders';
+	const doc = harness.window.document;
+
+	assert.deepEqual(cellTexts(harness, tableId, 0), ['/b<i>', '/a']);
+	assert.equal(doc.querySelector(`#data-table-root-${tableId} tbody i`), null);
+	assert.equal(doc.querySelector(`#data-table-root-${tableId} tfoot`)?.textContent.replace(/\s+/g, ''), 'Total:7');
+	assert.ok(tableRows(harness, tableId)[0].querySelector('.report-editor-link'), 'an unknown editor folder can be reported');
+
+	clickSort(harness, tableId, 'folder');
+	assert.deepEqual(cellTexts(harness, tableId, 0), ['/a', '/b<i>']);
+	(tableRows(harness, tableId)[1].querySelector('.reveal-link') as HTMLAnchorElement).click();
+	assert.deepEqual(lastPosted(harness), { command: 'revealPath', path: '/b<i>' });
+	(tableRows(harness, tableId)[1].querySelector('.report-editor-link') as HTMLAnchorElement).click();
+	assert.deepEqual(lastPosted(harness), { command: 'reportNewEditorPath', path: '/b<i>' });
+});
+
+test('Azure configuration details render as an unpaged key/value table', async () => {
+	await preloadBundle();
+	const harness = bootWebviewUnsettled(buildInitialData({ backendStorageInfo: configuredBackendStorageInfo() }));
+	await harness.settle();
+	const root = harness.window.document.getElementById('data-table-root-diagnostics-azure-config');
+
+	assert.ok(root, 'expected the Azure configuration table');
+	assert.equal(root.querySelector('thead'), null, 'key/value tables have no header row');
+	assert.equal(root.querySelector('.data-table-pager, .data-table-summary'), null, 'key/value tables are not paged');
+	const pairs = Array.from(root.querySelectorAll('tbody tr')).map((row: any) => [row.querySelector('th[scope="row"]')?.textContent, row.querySelector('td')?.textContent]);
+	assert.deepEqual(pairs[0], ['Storage Account', 'myuniquestorageaccount']);
+	assert.equal(pairs.length, 5);
+});
+
+test('skill usage table lists the most-invoked skills first', async () => {
+	await preloadBundle();
+	const harness = bootWebviewUnsettled(buildInitialData({
+		skillCallStats: { total: 6, byName: { alpha: 1, beta: 5 } },
+		skillDescriptions: { beta: 'Beta skill' },
+	}));
+	await harness.settle();
+
+	assert.deepEqual(cellTexts(harness, 'diagnostics-skill-usage', 0), ['beta', 'alpha']);
+	assert.deepEqual(cellTexts(harness, 'diagnostics-skill-usage', 1), ['Beta skill', '—']);
+});

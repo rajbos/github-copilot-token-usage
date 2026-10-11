@@ -46,7 +46,9 @@ async function main() {
     platform: "node",
     target: "node18",
     sourcemap: true,
-    external: ["vscode"],
+    // The package's own `/session` subpath is loaded from the built dist/ at runtime by the
+    // library smoke test, through the package.json `exports` map — never bundled.
+    external: ["vscode", "@rajbos/ai-engineering-fluency/session"],
     // The tests bundle shared sources from ../vscode-extension/src, so tell esbuild
     // to resolve package imports from the CLI's own node_modules as well.
     nodePaths: [path.join(__dirname, "node_modules")],

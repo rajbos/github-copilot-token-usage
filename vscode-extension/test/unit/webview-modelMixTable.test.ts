@@ -4,7 +4,8 @@ import * as assert from 'node:assert/strict';
 import type { ModelMixShift } from '../../../src/efficiencyAnalysis';
 import { setFormatLocale } from '../../src/webview/shared/formatUtils';
 import { initializeWebviewLocalization } from '../../src/webview/shared/localization';
-import { renderModelMixTable } from '../../src/webview/efficiency/modelMixTable';
+import { resetDataTableState, setDataTableState } from '../../src/webview/shared/dataTable';
+import { MODEL_MIX_TABLE_ID, renderModelMixTable } from '../../src/webview/efficiency/modelMixTable';
 
 // Pin the locale so decimal separators are deterministic regardless of the
 // machine running the suite (the webview itself sets this from the host).
@@ -73,18 +74,50 @@ test('modelMixTable: shows every comparison value with signed point shifts', () 
 test('modelMixTable: uses compact period headers with the range as a sub-label', () => {
 	initializeWebviewLocalization({});
 	const html = renderModelMixTable([shift('gpt-4o', 0.31, 0.2)], WINDOWS);
-	assert.match(html, /<th scope="col" class="num">Previous<span class="th-sub">Jan 12, 2026–Feb 8, 2026<\/span><\/th>/);
-	assert.match(html, /<th scope="col" class="num">Current<span class="th-sub">Feb 9, 2026–Mar 8, 2026<\/span><\/th>/);
+	assert.match(html, /<span class="data-table-sort-label">Previous<span class="th-sub">Jan 12, 2026–Feb 8, 2026<\/span><\/span>/);
+	assert.match(html, /<span class="data-table-sort-label">Current<span class="th-sub">Feb 9, 2026–Mar 8, 2026<\/span><\/span>/);
+	// The sort button's accessible name carries the range too, not just the bare label.
+	assert.match(html, /data-table-sort="previous"[^>]*aria-label="Previous Jan 12, 2026–Feb 8, 2026"/);
+	assert.match(html, /data-table-sort="current"[^>]*aria-label="Current Feb 9, 2026–Mar 8, 2026"/);
 });
 
-test('modelMixTable: is a semantic, scrollable table for assistive technology', () => {
+test('modelMixTable: is a semantic, width-capped shared data table', () => {
 	initializeWebviewLocalization({});
 	const html = renderModelMixTable([shift('gpt-4o', 0.31, 0.2)], WINDOWS);
-	assert.match(html, /<div class="attr-shift-scroll" role="region" tabindex="0" aria-labelledby="attr-shift-heading">/);
+	// The heading id is the What's New nav anchor (viewIndex.ts).
 	assert.match(html, /<h3 id="attr-shift-heading">/);
-	assert.match(html, /<caption class="attr-shift-sr">Token share per model, Jan 12, 2026–Feb 8, 2026 compared with Feb 9, 2026–Mar 8, 2026<\/caption>/);
+	assert.match(html, /<div class="data-table-root attr-model-mix-root" id="data-table-root-efficiency-model-mix"/);
+	assert.match(html, /<table class="data-table data-table--fixed attr-model-mix" aria-label="Token share per model, Jan 12, 2026–Feb 8, 2026 compared with Feb 9, 2026–Mar 8, 2026">/);
+	assert.match(html, /<colgroup><col style="width:40%"><col style="width:20%"><col style="width:20%"><col style="width:20%"><\/colgroup>/);
 	assert.match(html, /<th scope="row" class="attr-shift-model">/);
 	assert.equal((html.match(/scope="col"/g) ?? []).length, 4);
+	assert.match(html, /<td class="data-table-align-right share-down">/);
+});
+
+test('modelMixTable: never pages — the analytics layer already caps the rows', () => {
+	initializeWebviewLocalization({});
+	const shifts = Array.from({ length: 12 }, (_, i) => shift(`model-${i}`, 0.01 * i, 0.02 * i));
+	const html = renderModelMixTable(shifts, WINDOWS);
+	assert.equal((html.match(/<th scope="row"/g) ?? []).length, 12);
+	assert.doesNotMatch(html, /data-table-pager|data-table-summary/);
+});
+
+test('modelMixTable: every column sorts by its numeric value', () => {
+	initializeWebviewLocalization({});
+	const shifts = [shift('model-b', 0.3, 0.1), shift('model-a', 0.1, 0.5), shift('model-c', 0.2, 0.25)];
+	const orderOf = (html: string): string[] => [...html.matchAll(/title="(model-[abc])"/g)].map(m => m[1]);
+	try {
+		setDataTableState(MODEL_MIX_TABLE_ID, { sortColumn: 'shift', sortDirection: 'desc' });
+		assert.deepEqual(orderOf(renderModelMixTable(shifts, WINDOWS)), ['model-a', 'model-c', 'model-b']);
+		setDataTableState(MODEL_MIX_TABLE_ID, { sortColumn: 'previous', sortDirection: 'asc' });
+		assert.deepEqual(orderOf(renderModelMixTable(shifts, WINDOWS)), ['model-a', 'model-c', 'model-b']);
+		setDataTableState(MODEL_MIX_TABLE_ID, { sortColumn: 'current', sortDirection: 'desc' });
+		assert.deepEqual(orderOf(renderModelMixTable(shifts, WINDOWS)), ['model-a', 'model-c', 'model-b']);
+		setDataTableState(MODEL_MIX_TABLE_ID, { sortColumn: 'model', sortDirection: 'asc' });
+		assert.deepEqual(orderOf(renderModelMixTable(shifts, WINDOWS)), ['model-a', 'model-b', 'model-c']);
+	} finally {
+		resetDataTableState(MODEL_MIX_TABLE_ID);
+	}
 });
 
 test('modelMixTable: renders translated labels when a zh-cn payload is supplied', () => {

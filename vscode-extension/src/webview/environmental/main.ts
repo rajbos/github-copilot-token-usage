@@ -5,11 +5,13 @@ import { formatFixed, formatNumber, formatCompact, setCompactNumbers } from '../
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
+import dataTableStyles from '../shared/dataTable.css';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
 import { registerMessageHandler } from '../shared/messageHandler';
 import { localize } from '../shared/localization';
 import { applyWebviewLocale } from '../shared/webviewLocale';
+import { installSurfaceNavigation } from '../shared/surfaceNavigation';
 
 // --- Analogy constants ---
 /** Average EU petrol car CO₂ emissions per km (grams) */
@@ -63,6 +65,7 @@ declare function acquireVsCodeApi<TState = unknown>(): {
 type VSCodeApi = ReturnType<typeof acquireVsCodeApi>;
 
 const vscode: VSCodeApi = acquireVsCodeApi();
+installSurfaceNavigation(vscode, 'environmental');
 const initialData = getWindowData<EnvironmentalStats & { localization?: Record<string, string> }>('__INITIAL_ENVIRONMENTAL__');
 
 // Initialize localization for webview
@@ -138,7 +141,7 @@ function render(stats: EnvironmentalStats): void {
 	root.replaceChildren();
 
 	const themeStyle = document.createElement('style');
-	themeStyle.textContent = themeStyles;
+	themeStyle.textContent = `${themeStyles}\n${dataTableStyles}`;
 	const style = document.createElement('style');
 	style.textContent = styles;
 
@@ -202,6 +205,7 @@ function buildImpactCards(
 	projectedTrees: number
 ): HTMLElement {
 	const section = el('div', 'section');
+	section.id = 'section-impact';
 	const heading = iconHeading('h3', 'globe', 'Impact at a Glance');
 	section.append(heading);
 
@@ -251,6 +255,7 @@ function buildImpactCards(
 
 function buildEstimatesSection(): HTMLElement {
 	const section = el('div', 'section');
+	section.id = 'section-methodology';
 	const heading = iconHeading('h3', 'lightbulb', localize('environmental.methodology.heading'));
 	section.append(heading);
 

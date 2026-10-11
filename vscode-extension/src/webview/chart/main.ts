@@ -12,9 +12,11 @@ import type { ChartTimeWindow } from '../../../../src/types';
 import { filterPeriodByTimeWindow } from './timeWindowFilter';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
+import dataTableStyles from '../shared/dataTable.css';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
 import { registerMessageHandler } from '../shared/messageHandler';
+import { installSurfaceNavigation } from '../shared/surfaceNavigation';
 
 type ChartModule = typeof import('chart.js/auto');
 type ChartConstructor = ChartModule['default'];
@@ -108,6 +110,7 @@ declare function acquireVsCodeApi<TState = unknown>(): {
 type VSCodeApi = ReturnType<typeof acquireVsCodeApi>;
 
 const vscode: VSCodeApi = acquireVsCodeApi();
+installSurfaceNavigation(vscode, 'chart');
 const initialData = getWindowData<InitialChartData & { localization?: Record<string, string> }>('__INITIAL_CHART__');
 
 // Initialize localization for webview
@@ -426,7 +429,7 @@ function renderLayout(data: InitialChartData): void {
 	const root = document.getElementById('root');
 	if (!root) { return; }
 	root.replaceChildren();
-	const themeStyle = document.createElement('style'); themeStyle.textContent = themeStyles;
+	const themeStyle = document.createElement('style'); themeStyle.textContent = `${themeStyles}\n${dataTableStyles}`;
 	const style = document.createElement('style'); style.textContent = styles;
 	const periodData = getActivePeriodData(data);
 	const periodMeta = PERIOD_LABELS[currentPeriod];

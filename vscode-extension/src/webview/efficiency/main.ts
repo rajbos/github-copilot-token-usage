@@ -10,6 +10,7 @@ import { escapeHtml, formatCompact, formatCost, formatNumber, formatSignedCostCo
 import type { CacheBreakCause } from '../../../../src/cacheBreakage';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
 import themeStyles from '../shared/theme.css';
+import dataTableStyles from '../shared/dataTable.css';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
 import type {
@@ -75,7 +76,9 @@ import { applyWebviewLocale } from '../shared/webviewLocale';
 import { registerMessageHandler } from '../shared/messageHandler';
 import { createEfficiencyWebviewReadyNotifier, isValueSignalsPayload } from './valueUpdate';
 import { renderModelMixTable } from './modelMixTable';
+import { fmtValue, renderModelComparisonTable, renderSkillImpactTable } from './efficiencyTables';
 import { buildAttributionTooltip } from './attributionText';
+import { installSurfaceNavigation } from '../shared/surfaceNavigation';
 
 // Minimal structural types for the dynamically imported Chart.js bundle —
 // a `typeof import('chart.js/auto')` type-import trips TS1542 under CJS resolution.
@@ -89,6 +92,7 @@ declare function acquireVsCodeApi<TState = unknown>(): {
 };
 
 const vscode = acquireVsCodeApi();
+installSurfaceNavigation(vscode, 'efficiency');
 const notifyEfficiencyWebviewReady = createEfficiencyWebviewReadyNotifier(
 	(message) => vscode.postMessage(message),
 );
@@ -422,17 +426,6 @@ function cssVar(name: string, fallback: string): string {
 	return v || fallback;
 }
 
-function fmtValue(v: number | null, unit: EfficiencyDelta['unit']): string {
-	if (v === null) { return '—'; }
-	switch (unit) {
-		case 'percent': return `${(v * 100).toFixed(1)}%`;
-		case 'minutes': return `${v.toFixed(1)} min`;
-		case 'tokens': return formatCompact(Math.round(v));
-		case 'currency': return `$${v.toFixed(2)}`;
-		case 'ratio': return v.toFixed(1);
-	}
-}
-
 /**
  * Signed dollar amount for on-bar and summary display. Two decimals normally,
  * four when a non-zero effect would otherwise round away to "$0.00" — the
@@ -654,36 +647,11 @@ function renderAttributionTab(d: EfficiencyViewData): string {
 }
 
 function skillImpactCard(impact: SkillImpact): string {
-	const rows = impact.metrics.map(m => {
-		const fmt = (v: number | null): string => {
-			if (v === null) { return '—'; }
-			if (m.id === 'retry-rate') { return `${(v * 100).toFixed(0)}%`; }
-			if (m.id === 'tokens') { return formatCompact(Math.round(v)); }
-			if (m.id === 'active-minutes') { return `${v.toFixed(0)} min`; }
-			return v.toFixed(1);
-		};
-		let delta = '<span class="delta-na">—</span>';
-		if (m.deltaPct !== null) {
-			const cls = m.favorable === null ? 'flat' : m.favorable ? 'good' : 'bad';
-			const arrow = m.deltaPct > 0 ? '↑' : m.deltaPct < 0 ? '↓' : '→';
-			delta = `<span class="delta-change ${cls}">${arrow} ${Math.abs(m.deltaPct).toFixed(0)}%</span>`;
-		}
-		return `
-			<tr>
-				<td>${escapeHtml(m.label)}</td>
-				<td class="num">${fmt(m.withSkill)}</td>
-				<td class="num">${fmt(m.withoutSkill)}</td>
-				<td class="num">${delta}</td>
-			</tr>`;
-	}).join('');
 	return `
 		<div class="skill-impact-card">
 			<h3>🛠️ ${escapeHtml(impact.skill)}</h3>
 			<div class="skill-impact-sub">${impact.withSkill.sessions} sessions with · ${impact.withoutSkill.sessions} without · ${impact.totalCalls} invocations</div>
-			<table class="attr-shift-table">
-				<thead><tr><th>Metric</th><th class="num">With</th><th class="num">Without</th><th class="num">Difference</th></tr></thead>
-				<tbody>${rows}</tbody>
-			</table>
+			${renderSkillImpactTable(impact)}
 		</div>`;
 }
 
@@ -1105,47 +1073,9 @@ function sideSummary(m: ModelPeriodMetrics, side: 'A' | 'B'): string {
 		</div>`;
 }
 
-/** The "B vs A" cell: percentage change coloured by which side it favours. */
-function comparisonDeltaCell(r: ModelComparisonRow): string {
-	if (r.deltaPct === null) { return '<span class="delta-na">—</span>'; }
-	const cls = r.winner === 'b' ? 'good' : r.winner === 'a' ? 'bad' : 'flat';
-	const arrow = r.deltaPct > 0 ? '↑' : r.deltaPct < 0 ? '↓' : '→';
-	return `<span class="delta-change ${cls}">${arrow} ${Math.abs(r.deltaPct).toFixed(0)}%</span>`;
-}
-
-/** The "Better" cell — only decisive wins get a chip, so ties read as ties. */
-function comparisonWinnerCell(r: ModelComparisonRow): string {
-	if (r.significant && (r.winner === 'a' || r.winner === 'b')) {
-		return `<span class="model-win-chip">${r.winner.toUpperCase()}</span>`;
-	}
-	return r.winner === 'tie' ? '<span class="model-win-chip tie">tie</span>' : '';
-}
-
-function comparisonRowHtml(r: ModelComparisonRow): string {
-	const unavailable = r.a === null || r.b === null ? ' class="model-row-muted"' : '';
-	return `
-			<tr${unavailable}>
-				<td title="${escapeHtml(r.description)}">${escapeHtml(r.label)}</td>
-				<td class="num">${fmtValue(r.a, r.unit)}</td>
-				<td class="num">${fmtValue(r.b, r.unit)}</td>
-				<td class="num">${comparisonDeltaCell(r)}</td>
-				<td class="num">${comparisonWinnerCell(r)}</td>
-			</tr>`;
-}
-
 function comparisonTableHtml(cmp: ModelComparison): string {
-	const rows = cmp.rows.map(comparisonRowHtml).join('');
-	return `
-		<table class="attr-shift-table model-compare-table">
-			<thead><tr>
-				<th>Metric</th>
-				<th class="num">A · ${escapeHtml(cmp.a.displayName)}<br><span class="th-sub">${escapeHtml(cmp.a.periodLabel)}</span></th>
-				<th class="num">B · ${escapeHtml(cmp.b.displayName)}<br><span class="th-sub">${escapeHtml(cmp.b.periodLabel)}</span></th>
-				<th class="num">B vs A</th>
-				<th class="num">Better</th>
-			</tr></thead>
-			<tbody>${rows}</tbody>
-		</table>`;
+	const modeKey = modelState.mode === 'periods' ? 'efficiency.models.mode.periods' : 'efficiency.models.mode.models';
+	return renderModelComparisonTable(cmp, localize(modeKey));
 }
 
 function verdictHtml(cmp: ModelComparison): string {
@@ -1665,7 +1595,7 @@ function render(): void {
 	const scoped = computeScopedData(data);
 	const verdict = computeVerdict(data);
 	setHtml(root, `
-		<style>${themeStyles}</style>
+		<style>${themeStyles}</style><style>${dataTableStyles}</style>
 		<style>${styles}</style>
 		<div class="efficiency-root">
 			<div class="button-row">${navButtonsHtml('btn-efficiency', !!data.backendConfigured)}</div>

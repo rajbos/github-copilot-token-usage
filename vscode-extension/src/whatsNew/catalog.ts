@@ -124,6 +124,13 @@ export const WHATS_NEW_RELEASES: readonly WhatsNewRelease[] = [
 				kind: 'section',
 				surface: { view: 'usage', tab: 'tools', anchor: 'section-tool-reliability' },
 			},
+			{
+				id: 'whatsnew.view-index',
+				titleKey: 'whatsNew.feature.whatsnew.view-index.title',
+				descriptionKey: 'whatsNew.feature.whatsnew.view-index.description',
+				kind: 'tab',
+				surface: { view: 'whatsnew', tab: 'index' },
+			},
 		],
 	},
 	{

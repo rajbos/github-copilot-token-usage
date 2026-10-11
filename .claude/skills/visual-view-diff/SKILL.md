@@ -64,10 +64,19 @@ This builds the webviews at the merge base with `origin/main` in a temporary
 `git worktree`, builds the working tree, renders both, and compares. Your
 checkout is never touched — no stashing, no branch switching.
 
+Both sides render at the same time, each with `--concurrency` pages open at
+once (default 4). Every target still gets its own page and browser context, and
+file names and reports are ordered by view, state and theme, not by which page
+finished first. The run ends by printing how long each phase took (checkout,
+builds, renders, compare) and writes the same table to
+`visual-output/timings.md`, which CI appends to the job summary.
+
 ```bash
 # Compare against something else, or render both themes
 node .github/skills/visual-view-diff/visual-diff.js --base origin/main --theme both
 node .github/skills/visual-view-diff/visual-diff.js --view details,chart
+# Fewer pages at once, e.g. on a small machine or to rule out load-related noise
+node .github/skills/visual-view-diff/visual-diff.js --concurrency 1
 ```
 
 Output lands in `visual-output/` (git-ignored):
@@ -76,7 +85,8 @@ Output lands in `visual-output/` (git-ignored):
 visual-output/
 ├── baseline/   <view>.<theme>.png     — before
 ├── current/    <view>.<theme>.png     — after
-└── diff/       <view>.<theme>.diff.png, report.md, report.json
+├── diff/       <view>.<theme>.diff.png, report.md, report.json
+└── timings.md  — how long each phase took
 ```
 
 A view rendered in one of its declared states (a tab, a mode) is named

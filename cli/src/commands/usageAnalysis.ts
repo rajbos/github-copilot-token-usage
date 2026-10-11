@@ -9,6 +9,7 @@ import { createEmptyUsageAnalysisPayload, createUsageAnalysisPayload } from './p
 export const usageAnalysisCommand = new Command('usage-analysis')
 	.description('Output usage analysis stats for the usage analysis webview')
 	.option('--json', 'Output raw JSON (for machine consumption)')
+	.option('--repeated-tasks', 'Include the repeated-task (Skill Suggestions) report, which carries prompt text')
 	.action(async (options) => {
 		if (!shouldOutputJson(options)) {
 			process.stderr.write('Use --json flag for usage analysis data output\n');
@@ -22,7 +23,7 @@ export const usageAnalysisCommand = new Command('usage-analysis')
 			return;
 		}
 
-		const stats = await calculateUsageAnalysisStats(files);
+		const stats = await calculateUsageAnalysisStats(files, { includeRepeatedTasks: Boolean(options.repeatedTasks) });
 		const payload = createUsageAnalysisPayload(stats, now);
 		process.stdout.write(JSON.stringify(payload));
 	});

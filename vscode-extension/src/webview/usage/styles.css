@@ -60,18 +60,6 @@ body {
 	box-shadow: 0 2px 6px var(--shadow-color);
 }
 
-.paged-table-status {
-	position: absolute;
-	width: 1px;
-	height: 1px;
-	padding: 0;
-	margin: -1px;
-	overflow: hidden;
-	clip-path: inset(50%);
-	white-space: nowrap;
-	border: 0;
-}
-
 /* Heading that opens a band of related .section cards inside one tab, so a long stack
    reads as grouped rather than as one flat list with leftovers at the bottom. */
 .section-group-heading {
@@ -190,59 +178,30 @@ body {
 
 .ctx-ref-table-wrap {
 	margin-bottom: 16px;
-	overflow-x: auto;
-	border: 1px solid var(--border-color);
-	border-radius: 6px;
+}
+
+.ctx-ref-table-wrap .data-table-scroll {
 	box-shadow: 0 2px 4px var(--shadow-color);
 }
 
-.ctx-ref-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 13px;
-}
-
-.ctx-ref-table th,
-.ctx-ref-table td {
-	padding: 8px 14px;
-	text-align: left;
-	border-bottom: 1px solid var(--border-subtle);
-}
-
-.ctx-ref-table thead th {
-	background: var(--bg-tertiary);
-	color: var(--text-secondary);
-	font-size: 11px;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.4px;
-	position: sticky;
-	top: 0;
-}
-
-.ctx-ref-table tbody tr:hover {
-	background: var(--list-hover-bg);
-}
-
 .ctx-ref-table .ctx-ref-name {
-	color: var(--text-primary);
 	white-space: nowrap;
 }
 
 .ctx-ref-table .ctx-ref-num {
-	text-align: right;
-	font-variant-numeric: tabular-nums;
-	font-weight: 600;
-	color: var(--text-primary);
 	width: 110px;
 }
 
-.ctx-ref-table .ctx-ref-zero {
+.ctx-ref-table td.ctx-ref-num {
+	font-weight: 600;
+}
+
+.ctx-ref-table td.ctx-ref-zero {
 	color: var(--text-muted);
 	font-weight: 400;
 }
 
-.ctx-ref-table .ctx-ref-today-active {
+.ctx-ref-table td.ctx-ref-today-active {
 	color: var(--link-color);
 }
 
@@ -250,20 +209,12 @@ body {
 	background: var(--list-active-bg);
 	color: var(--list-active-fg);
 	font-weight: 700;
-	border-bottom: none;
 	border-top: 2px solid var(--border-color);
-}
-
-.ctx-ref-table tfoot .ctx-ref-total .ctx-ref-num {
-	color: var(--list-active-fg);
 }
 
 .ctx-ref-table .ctx-ref-spark {
 	width: 68px;
-	text-align: center;
 	padding: 4px 8px;
-	vertical-align: middle;
-	color: var(--text-primary);
 }
 
 /* Collapsed long tail of reference kinds with no usage today or in the last 30 days.
@@ -537,83 +488,19 @@ body {
 	font-size: 11px;
 }
 
-.paged-table {
-	width: 100%;
-	border-collapse: collapse;
-}
-
-.paged-table thead th {
-	border-bottom: 1px solid var(--border-subtle);
-}
-
-.paged-table-truncate {
-	display: block;
-	max-width: 320px;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.model-leaderboard-table-wrap {
-	overflow-x: auto;
-	border: 1px solid var(--border-color);
-	border-radius: 6px;
-}
-
-.model-leaderboard-table {
-	width: 100%;
+.data-table.model-leaderboard-table {
 	min-width: 940px;
-	border-collapse: collapse;
-	font-size: 12px;
-	font-variant-numeric: tabular-nums;
 }
 
-.model-leaderboard-table th,
 .model-leaderboard-table td {
-	padding: 8px 10px;
-	text-align: right;
-	border-bottom: 1px solid var(--border-subtle);
 	white-space: nowrap;
 }
 
-.model-leaderboard-table th:first-child,
-.model-leaderboard-table td:first-child,
-.model-leaderboard-table th:nth-child(2),
-.model-leaderboard-table td:nth-child(2) {
-	text-align: left;
-}
-
-.model-leaderboard-table th {
-	color: var(--text-secondary);
-	background: var(--bg-tertiary);
-	font-size: 11px;
+.model-leaderboard-table td.model-leaderboard-model {
 	font-weight: 600;
 }
 
-.model-leaderboard-table th.sortable {
-	cursor: pointer;
-	user-select: none;
-}
-
-.model-leaderboard-table th.sortable:hover {
-	color: var(--link-color);
-	background: var(--list-hover-bg);
-}
-
-.model-leaderboard-table tbody tr:last-child td {
-	border-bottom: 0;
-}
-
-.model-leaderboard-table tbody tr:hover td {
-	background: var(--list-hover-bg);
-}
-
-.model-leaderboard-table td:first-child {
-	color: var(--text-primary);
-	font-weight: 600;
-}
-
-.model-leaderboard-table td:first-child::before {
+.model-leaderboard-table td.model-leaderboard-model::before {
 	content: "";
 	display: inline-block;
 	width: 7px;
@@ -729,27 +616,10 @@ body {
 	max-width: 100%;
 }
 
-.customization-matrix {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 12px;
-	color: var(--text-primary);
-}
 
-.customization-matrix th {
-	background: var(--list-hover-bg);
-	color: var(--text-primary);
-	font-weight: 600;
-	font-size: 11px;
-	white-space: nowrap;
-}
-
-.customization-matrix td {
-	background: var(--bg-tertiary);
-}
-
-.customization-matrix tbody tr:hover td {
-	background: var(--list-hover-bg);
+.customization-workspace-name {
+	font-family: 'Courier New', monospace;
+	overflow-wrap: anywhere;
 }
 
 .stale-warning {
@@ -777,6 +647,49 @@ body {
 
 .three-column > div > .list {
 	flex: 1;
+}
+
+/* Tools & Integrations: tool × period tables (toolPeriodTable.ts); the tables themselves are .data-table */
+.tool-period-id {
+	margin-left: 6px;
+	font-size: 11px;
+	font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.tool-period-toggle {
+	display: inline-flex;
+	gap: 2px;
+	margin-bottom: 8px;
+	border-bottom: 1px solid var(--border-color);
+}
+
+.tool-period-toggle-btn {
+	background: transparent;
+	border: none;
+	border-bottom: 3px solid transparent;
+	color: var(--text-secondary);
+	padding: 6px 12px;
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+	border-radius: 4px 4px 0 0;
+	margin-bottom: -1px;
+	font-family: inherit;
+}
+
+.tool-period-toggle-btn:hover {
+	color: var(--text-primary);
+	background: var(--list-hover-bg);
+}
+
+.tool-period-toggle-btn.active {
+	color: var(--text-primary);
+	border-bottom-color: var(--link-color);
+	background: var(--bg-tertiary);
+}
+
+.tool-period-view[hidden] {
+	display: none;
 }
 
 .info-box {
@@ -841,6 +754,16 @@ body {
 
 .repo-hygiene-pane-body {
 	display: block;
+}
+
+/* The pane already frames the repository list table. */
+.repo-hygiene-pane-body .data-table-scroll {
+	border: 0;
+}
+
+.repo-hygiene-pane-body .data-table-summary,
+.repo-hygiene-pane-body .data-table-pager {
+	margin-bottom: 8px;
 }
 
 .repo-hygiene-pane-collapsed {
@@ -968,20 +891,40 @@ background: var(--bg-tertiary);
 	line-height: 1.4;
 }
 
-/* Sortable table headers */
-.sessions-table th.sortable {
-	cursor: pointer;
-	user-select: none;
-	transition: background 0.1s ease, color 0.1s ease;
+/* Recent Sessions table cells */
+.data-table.sessions-table {
+	min-width: 1050px;
 }
 
-.sessions-table th.sortable:hover {
-	background: var(--list-hover-bg);
-	color: var(--link-color);
+.sessions-table td.session-col-rank {
+	color: var(--text-secondary);
 }
 
-.sessions-table tr:hover td {
-	background: var(--list-hover-bg);
+.sessions-table td.session-col-title {
+	max-width: 200px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.sessions-table td.session-col-workspace,
+.sessions-table td.session-col-models {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.sessions-table td.session-col-workspace {
+	max-width: 140px;
+}
+
+.sessions-table td.session-col-models {
+	max-width: 180px;
+	font-size: 11px;
+}
+
+.sessions-table td.session-col-nowrap {
+	white-space: nowrap;
 }
 
 /* Recent Sessions pill filter bar (Editor / Vendor / Model / HydraFusion) */
@@ -1084,41 +1027,6 @@ background: var(--bg-tertiary);
 	color: var(--text-primary);
 }
 
-.table-container {
-	overflow: auto;
-	max-height: 500px;
-}
-
-.session-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 12px;
-}
-
-.session-table th,
-.session-table td {
-	padding: 8px 10px;
-	text-align: left;
-	border-bottom: 1px solid var(--border-color);
-}
-
-.session-table th {
-	background: var(--bg-tertiary);
-	color: var(--text-primary);
-	font-weight: 600;
-	position: sticky;
-	top: 0;
-}
-
-.session-table th.sortable {
-	cursor: pointer;
-	user-select: none;
-}
-
-.session-table th.sortable:hover {
-	background: var(--list-hover-bg);
-	color: var(--link-color);
-}
 
 .button {
 	background: var(--button-secondary-bg);
@@ -1241,12 +1149,22 @@ background: var(--bg-tertiary);
 	font-weight: 600;
 }
 
-.worktree-repo-row:hover {
+.worktree-repo-row.expanded > td {
 	background: var(--bg-tertiary);
 }
 
-.worktree-repo-row.expanded {
-	background: var(--bg-tertiary);
+/* The expanded details row is a container for the nested table, not a data row to highlight. */
+.data-table.worktree-repo-table tbody tr.worktree-repo-details:hover > td {
+	background: none;
+}
+
+.worktree-repo-table td.worktree-path-cell {
+	max-width: 380px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-size: 11px;
 }
 
 .worktree-delete-link {
@@ -1288,10 +1206,9 @@ background: var(--bg-tertiary);
 	opacity: 0.8;
 }
 
-/* The details row's cell wraps the per-worktree table; trim its padding so the
-   nested table aligns with the parent columns. */
-.worktree-repo-details > td {
-	padding: 0 0 12px;
+/* The details row's cell wraps the per-worktree table; indent it under its repository. */
+.worktree-repo-table .worktree-repo-details > td {
+	padding: 4px 0 12px 24px;
 }
 
 .worktree-cleanup-card {
@@ -2014,29 +1931,10 @@ background: var(--bg-tertiary);
 	user-select: none;
 }
 
-.tool-exec-table table {
-	width: 100%;
-	border-collapse: collapse;
+.tool-exec-table .data-table-root {
 	margin-top: 6px;
 }
 
-.tool-exec-table th,
-.tool-exec-table td {
-	padding: 4px 8px;
-	border-bottom: 1px solid var(--border-subtle);
-	text-align: left;
-}
-
-.tool-exec-table th {
-	color: var(--text-secondary);
-	font-weight: 600;
-}
-
-.tool-exec-table td {
-	color: var(--text-primary);
-}
-
 .tool-exec-table .tool-exec-num {
-	text-align: right;
 	white-space: nowrap;
 }

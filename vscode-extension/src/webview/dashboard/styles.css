@@ -221,8 +221,7 @@ body {
 	border-bottom: 0;
 }
 
-.model-item:hover,
-.leaderboard-table tbody tr:hover {
+.model-item:hover {
 	background: var(--list-hover-bg);
 }
 
@@ -240,72 +239,25 @@ body {
 
 .leaderboard {
 	margin-top: 18px;
-	overflow-x: auto;
 }
 
-.leaderboard-table {
-	width: 100%;
+/* 13 columns: keep them readable and let the table's own scroll container scroll sideways. */
+.data-table.leaderboard-table {
 	min-width: 1000px;
-	border-collapse: collapse;
-	background: var(--bg-tertiary);
-	font-size: 12px;
 }
 
-.leaderboard-table th,
-.leaderboard-table td {
-	padding: 8px 10px;
-	border-bottom: 1px solid var(--border-subtle);
-	text-align: left;
-}
-
-.leaderboard-table th {
-	color: var(--text-secondary);
-	font-size: 11px;
-	font-weight: 600;
-	white-space: nowrap;
-}
-
-.leaderboard-table td {
-	color: var(--text-primary);
-}
-
-.leaderboard-table tr.current-user {
+.leaderboard-row.current-user > td {
 	background: var(--list-inactive-bg);
-}
-
-.leaderboard-table tr.current-user td {
 	font-weight: 600;
 }
 
-.rank-cell,
-.number-cell {
-	font-variant-numeric: tabular-nums;
-}
-
-.rank-cell,
-.rank-header,
-.fluency-cell,
-.action-cell {
-	text-align: center !important;
-}
-
-.rank-cell {
+.leaderboard-table td.rank-cell {
 	width: 40px;
 	font-weight: 700;
 }
 
-.number-cell,
-.number-header {
-	text-align: right !important;
-}
-
-.dataset-cell {
-	color: var(--text-secondary) !important;
-}
-
-.action-header,
-.action-cell {
-	width: 44px;
+.leaderboard-table td.dataset-cell {
+	color: var(--text-secondary);
 }
 
 .delete-row-btn {
@@ -336,7 +288,7 @@ body {
 	display: none;
 }
 
-.detail-row td.detail-cell {
+.leaderboard-table .detail-row > td.detail-cell {
 	padding: 0;
 	background: var(--bg-secondary);
 }
@@ -531,7 +483,6 @@ body[data-vscode-theme-kind^="vscode-high-contrast"] .header {
 body[data-vscode-theme-kind^="vscode-high-contrast"] .section,
 body[data-vscode-theme-kind^="vscode-high-contrast"] .stat-card,
 body[data-vscode-theme-kind^="vscode-high-contrast"] .model-list,
-body[data-vscode-theme-kind^="vscode-high-contrast"] .leaderboard-table,
 body[data-vscode-theme-kind^="vscode-high-contrast"] .dashboard-failure,
 body[data-vscode-theme-kind^="vscode-high-contrast"] .team-server-card {
 	background: transparent;

@@ -1,7 +1,7 @@
 // Import shared utilities
 import { getModelDisplayName, isCustomProviderGroup } from '../../../../src/webview/shared/modelUtils';
-import { getCharsPerToken, formatFixed, formatPercent, formatNumber, formatCost, formatCompact, setCompactNumbers } from '../shared/formatUtils';
-import { el, createButton, iconHeading } from '../shared/domUtils';
+import { getCharsPerToken, formatFixed, formatPercent, formatNumber, formatCost, formatCompact, setCompactNumbers, escapeHtml } from '../shared/formatUtils';
+import { el, createButton, iconHeading, setHtml } from '../shared/domUtils';
 import { getNavButtons } from '../shared/buttonConfig';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
 import { localize } from '../shared/localization';
@@ -9,12 +9,15 @@ import { buildEditorLogo, syncLogoTheme } from '../shared/editorLogos';
 import { applyWebviewLocale } from '../shared/webviewLocale';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
+import dataTableStyles from '../shared/dataTable.css';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
 import { registerMessageHandler } from '../shared/messageHandler';
 import type { ModelUsage } from '../shared/types';
 import { getBillingGroup } from '../../../../src/chartDataBuilder';
 import { ALL_PERIODS, getAllProviders, getFilterableProviders, getActiveExcludedProviders } from './providerFilter';
+import { installSurfaceNavigation } from '../shared/surfaceNavigation';
+import { renderDataTable, rerenderDataTable, setDataTableState, type DataTableColumn, type DataTableOptions, type DataTableRowOptions, type DataTableState } from '../shared/dataTable';
 
 type EditorUsage = Record<string, { tokens: number; sessions: number }>;
 type TableSortKey = 'name' | 'today' | 'last30Days' | 'month' | 'lastMonth' | 'projected';
@@ -114,17 +117,34 @@ declare global {
 }
 
 const vscode: VSCodeApi = acquireVsCodeApi();
+installSurfaceNavigation(vscode, 'details');
 const initialData = getWindowData<DetailedStats & { localization?: Record<string, string> }>('__INITIAL_DETAILS__');
 console.log('[CopilotTokenTracker] details webview loaded');
 
 // Initialize localization for webview
 applyWebviewLocale(initialData);
 
+const TABLE_SORT_KEYS: readonly TableSortKey[] = ['name', 'today', 'last30Days', 'month', 'lastMonth', 'projected'];
+const METRICS_TABLE_ID = 'details-key-metrics';
+const EDITOR_TABLE_ID = 'details-editor-usage';
+const MODEL_TABLE_ID = 'details-model-usage';
+
+function toSortKey(value: string | null | undefined): TableSortKey {
+return TABLE_SORT_KEYS.find(key => key === value) ?? 'name';
+}
+
+function toSortDir(value: string | null | undefined): SortDir {
+return value === 'desc' ? 'desc' : 'asc';
+}
+
 const _initSort = initialData?.sortSettings;
-let editorSortKey: TableSortKey = (_initSort?.editor?.key as TableSortKey) ?? 'name';
-let editorSortDir: SortDir = (_initSort?.editor?.dir as SortDir) ?? 'asc';
-let modelSortKey: TableSortKey = (_initSort?.model?.key as TableSortKey) ?? 'name';
-let modelSortDir: SortDir = (_initSort?.model?.dir as SortDir) ?? 'asc';
+let editorSortKey: TableSortKey = toSortKey(_initSort?.editor?.key);
+let editorSortDir: SortDir = toSortDir(_initSort?.editor?.dir);
+let modelSortKey: TableSortKey = toSortKey(_initSort?.model?.key);
+let modelSortDir: SortDir = toSortDir(_initSort?.model?.dir);
+// Restore the persisted sort before the tables first render; the tables own it from then on.
+setDataTableState(EDITOR_TABLE_ID, { sortColumn: editorSortKey, sortDirection: editorSortDir });
+setDataTableState(MODEL_TABLE_ID, { sortColumn: modelSortKey, sortDirection: modelSortDir });
 let modelOtherExpanded: boolean = (_initSort?.modelOtherExpanded) ?? false;
 let editorOtherExpanded: boolean = (_initSort?.editorOtherExpanded) ?? false;
 let editorSectionCollapsed: boolean = (_initSort?.editorSectionCollapsed) ?? false;
@@ -143,100 +163,92 @@ return (last30DaysValue / 30) * daysInYear;
 }
 
 // ---------------------------------------------------------------------------
-// Small DOM helpers
+// Table helpers
 // ---------------------------------------------------------------------------
 
+type PeriodKey = Exclude<TableSortKey, 'name'>;
+
+/** The period columns shared by the Key Metrics, Editor and Model tables. */
+const PERIOD_COLUMNS: ReadonlyArray<{ key: PeriodKey; icon: string; text: string }> = [
+{ key: 'today', icon: '📅', text: 'Today' },
+{ key: 'last30Days', icon: '📈', text: 'Last 30 Days' },
+{ key: 'month', icon: '🗓️', text: 'Current Month' },
+{ key: 'lastMonth', icon: '📆', text: 'Previous Month' },
+{ key: 'projected', icon: '🌍', text: 'Projected Year' },
+];
+
+function columnHeaderHtml(icon: string, text: string): string {
+return `<span aria-hidden="true">${icon}</span> ${escapeHtml(text)}`;
+}
+
+/** Header, alignment and id of a right-aligned period column. */
+function periodColumnBase(key: PeriodKey): { id: string; label: string; headerHtml: string; align: 'right' } {
+const def = PERIOD_COLUMNS.find(column => column.key === key) ?? PERIOD_COLUMNS[0];
+return { id: key, label: def.text, headerHtml: columnHeaderHtml(def.icon, def.text), align: 'right' };
+}
+
+/** A right-aligned value with an optional muted sub-text line. */
+function valueCellHtml(mainValue: string, subText?: string): string {
+return escapeHtml(mainValue) + (subText === undefined ? '' : `<div class="muted">${escapeHtml(subText)}</div>`);
+}
+
+/** An icon + label cell, with an optional colour for the icon and an optional tooltip hint. */
+function metricLabelHtml(icon: string, label: string, color?: string, tooltip?: string): string {
+const iconStyle = color ? ` style="color:${escapeHtml(color)}"` : '';
+const labelAttrs = tooltip ? ` class="metric-label metric-label-help" title="${escapeHtml(tooltip)}"` : ' class="metric-label"';
+const hint = tooltip ? '<span class="metric-hint"> ℹ️</span>' : '';
+return `<span${labelAttrs}><span${iconStyle}>${escapeHtml(icon)}</span><span>${escapeHtml(label)}${hint}</span></span>`;
+}
+
+/** Re-registers a table with freshly computed options and re-renders it in place, keeping focus. */
+function refreshDataTable<Row>(options: DataTableOptions<Row>): void {
+renderDataTable(options);
+rerenderDataTable(options.tableId);
+}
+
+/** Copies a table's sort into the persisted editor/model sort; returns whether it changed. */
+function applyTableSort(table: 'editor' | 'model', state: Readonly<DataTableState>): boolean {
+const key = toSortKey(state.sortColumn);
+const dir = state.sortDirection;
+if (table === 'editor') {
+if (key === editorSortKey && dir === editorSortDir) { return false; }
+editorSortKey = key;
+editorSortDir = dir;
+return true;
+}
+if (key === modelSortKey && dir === modelSortDir) { return false; }
+modelSortKey = key;
+modelSortDir = dir;
+return true;
+}
+
 /**
- * Creates a right-aligned value cell with an optional muted sub-text line.
+ * Renders a top-N usage table into `container`. Its rows depend on the sort (which items are
+ * "top N" and how the "Other" children are ordered), so `buildOptions` recomputes them; a click
+ * on the "Other" row (`data-other-toggle`) shows or hides the items it groups.
  */
-function buildValueCell(mainValue: string, subText?: string): HTMLTableCellElement {
-const td = document.createElement('td');
-td.className = 'value-right align-right';
-td.textContent = mainValue;
-if (subText !== undefined) {
-td.append(el('div', 'muted', subText));
-}
-return td;
-}
-
-/**
- * Creates a label cell containing an icon span and a text span, with an
- * optional colour applied to the icon and an optional tooltip hint.
- */
-function buildMetricLabelCell(icon: string, label: string, color?: string, tooltip?: string): HTMLTableCellElement {
-const td = document.createElement('td');
-const labelWrapper = document.createElement('span');
-labelWrapper.className = 'metric-label';
-
-const iconSpan = document.createElement('span');
-iconSpan.textContent = icon;
-if (color) { iconSpan.style.color = color; }
-
-const textSpan = document.createElement('span');
-textSpan.textContent = label;
-
-if (tooltip) {
-labelWrapper.title = tooltip;
-labelWrapper.style.cursor = 'help';
-const hintSpan = document.createElement('span');
-hintSpan.textContent = ' ℹ️';
-hintSpan.style.cssText = 'font-size:0.75em; opacity:0.6;';
-textSpan.append(hintSpan);
-}
-
-labelWrapper.append(iconSpan, textSpan);
-td.append(labelWrapper);
-return td;
-}
-
-/** Column definition used by buildSortableTableHeader. */
-type ColHeader = { icon: string; text: string; key: TableSortKey };
-
-/**
- * Builds a `<thead>` with sortable column headers and returns both the element
- * and an `updateHeaders()` function that refreshes the sort indicators.
- *
- * @param columns      Column definitions (icon, display text, sort key).
- * @param getSortKey   Returns the currently active sort key.
- * @param getSortDir   Returns the currently active sort direction.
- * @param onSort       Called with the clicked column key; should update module
- *                     state, rebuild the tbody, and persist settings.
- */
-function buildSortableTableHeader(
-columns: ColHeader[],
-getSortKey: () => TableSortKey,
-getSortDir: () => SortDir,
-onSort: (key: TableSortKey) => void
-): { thead: HTMLTableSectionElement; updateHeaders: () => void } {
-const thead = document.createElement('thead');
-const headerRow = document.createElement('tr');
-const wraps: HTMLElement[] = [];
-
-function updateHeaders(): void {
-wraps.forEach((w, i) => {
-w.textContent = `${columns[i].icon} ${columns[i].text}${getSortIndicator(columns[i].key, getSortKey(), getSortDir())}`;
+function mountUsageTable<Row>(container: HTMLElement, buildOptions: () => DataTableOptions<Row>, toggleOther: () => void): void {
+setHtml(container, renderDataTable(buildOptions()));
+container.addEventListener('click', event => {
+const target = event.target instanceof Element ? event.target : null;
+if (!target?.closest('tr[data-other-toggle]')) { return; }
+toggleOther();
+saveSortSettings();
+refreshDataTable(buildOptions());
 });
 }
 
-columns.forEach((h, idx) => {
-const th = document.createElement('th');
-th.className = idx === 0 ? '' : 'align-right';
-th.style.cursor = 'pointer';
-th.style.userSelect = 'none';
-th.title = `Sort by ${h.text}`;
-const wrap = el('div', 'period-header');
-wrap.textContent = `${h.icon} ${h.text}${getSortIndicator(h.key, getSortKey(), getSortDir())}`;
-th.append(wrap);
-wraps.push(wrap);
-th.addEventListener('click', () => {
-onSort(h.key);
-updateHeaders();
-});
-headerRow.append(th);
-});
+/** "📦 Other (N …)" label with its expand/collapse chevron. */
+function otherGroupLabelHtml(label: string, expanded: boolean): string {
+return `<span class="metric-label"><span class="other-group-name">${escapeHtml(`📦 ${label}`)}</span><span class="other-group-toggle">${escapeHtml(` ${expanded ? '▲' : '▼'}`)}</span></span>`;
+}
 
-thead.append(headerRow);
-return { thead, updateHeaders };
+/** Rows of a top-N table: the top items (sortable), the "Other" summary, and its expanded items. */
+type UsageRowKind = 'top' | 'other' | 'otherChild';
+
+/** Sort value for top-N rows only; `null` keeps "Other" and its children last, in their given order. */
+function topRowSortValue<Row extends { kind: UsageRowKind }>(value: (row: Row) => string | number): (row: Row) => string | number | null {
+return row => (row.kind === 'top' ? value(row) : null);
 }
 
 // ---------------------------------------------------------------------------
@@ -290,7 +302,7 @@ root.replaceChildren();
 
 // Inject theme styles first, then component styles
 const themeStyle = document.createElement('style');
-themeStyle.textContent = themeStyles;
+themeStyle.textContent = `${themeStyles}\n${dataTableStyles}`;
 
 const style = document.createElement('style');
 style.textContent = styles;
@@ -424,60 +436,33 @@ function buildMetricsGroups(stats: DetailedStats, projections: Projections): Met
 	];
 }
 
-/** Builds a non-sortable separator row that labels a group of metric rows. */
-function buildGroupHeaderRow(label: string): HTMLTableRowElement {
-	const tr = document.createElement('tr');
-	tr.className = 'group-row';
-	const td = document.createElement('td');
-	td.colSpan = 6;
-	td.textContent = label;
-	tr.append(td);
-	return tr;
-}
-
-/** Builds a single-row, full-width placeholder for tables emptied out by the provider filter. */
-function buildNoDataRow(colSpan: number, message: string): HTMLTableRowElement {
-	const tr = document.createElement('tr');
-	tr.className = 'no-data-row';
-	const td = document.createElement('td');
-	td.colSpan = colSpan;
-	td.textContent = message;
-	tr.append(td);
-	return tr;
-}
+type MetricTableRow = MetricRow & { group: string };
 
 function buildMetricsSection(
 stats: DetailedStats,
 projections: Projections
 ): HTMLElement {
 const section = el('div', 'section');
+section.id = 'section-key-metrics';
 section.append(iconHeading('h3', 'graph', 'Key Metrics'));
-const table = document.createElement('table');
-table.className = 'stats-table';
-const thead = document.createElement('thead');
-const headerRow = document.createElement('tr');
-const HEADERS = [{ icon: '📊', text: 'Metric' }, { icon: '📅', text: 'Today' }, { icon: '📈', text: 'Last 30 Days' }, { icon: '🗓️', text: 'Current Month' }, { icon: '📆', text: 'Previous Month' }, { icon: '🌍', text: 'Projected Year' }];
-HEADERS.forEach((h, idx) => {
-const th = document.createElement('th');
-th.className = idx === 0 ? '' : 'align-right';
-const wrap = el('div', 'period-header');
-wrap.textContent = `${h.icon} ${h.text}`;
-th.append(wrap);
-headerRow.append(th);
-});
-thead.append(headerRow);
-table.append(thead);
-const tbody = document.createElement('tbody');
-buildMetricsGroups(stats, projections).forEach(group => {
-tbody.append(buildGroupHeaderRow(group.heading));
-group.rows.forEach(row => {
-const tr = document.createElement('tr');
-tr.append(buildMetricLabelCell(row.icon, row.label, row.color, row.labelTooltip), buildValueCell(row.today), buildValueCell(row.last30Days), buildValueCell(row.month), buildValueCell(row.lastMonth), buildValueCell(row.projected));
-tbody.append(tr);
-});
-});
-table.append(tbody);
-section.append(table);
+const rows: MetricTableRow[] = buildMetricsGroups(stats, projections)
+.flatMap(group => group.rows.map(row => ({ ...row, group: group.heading })));
+const columns: DataTableColumn<MetricTableRow>[] = [
+{ id: 'metric', label: 'Metric', headerHtml: columnHeaderHtml('📊', 'Metric'), render: row => ({ html: metricLabelHtml(row.icon, row.label, row.color, row.labelTooltip) }) },
+...PERIOD_COLUMNS.map(({ key }): DataTableColumn<MetricTableRow> => ({ ...periodColumnBase(key), render: row => row[key] })),
+];
+const tableContainer = el('div');
+// Not sortable: rows mix units (tokens, %, $), so only the fixed metric order is meaningful.
+setHtml(tableContainer, renderDataTable({
+tableId: METRICS_TABLE_ID,
+ariaLabel: 'Key Metrics',
+rows,
+columns,
+groupBy: { key: row => row.group, label: key => key },
+pageSize: false,
+className: 'data-table--fixed',
+}));
+section.append(tableContainer);
 return section;
 }
 
@@ -557,6 +542,7 @@ function buildProviderPanel(stats: DetailedStats): HTMLElement | null {
 	if (providersWithMonthlyCost.length === 0) { return null; }
 
 	const section = el('div', 'section');
+	section.id = 'section-cost-by-provider';
 	section.append(iconHeading('h3', 'credit-card', 'Cost by Provider'));
 	section.append(el('div', 'provider-panel-hint', 'Click a provider to hide/show it — this also filters the Editor & Model usage lists below.'));
 
@@ -565,11 +551,6 @@ function buildProviderPanel(stats: DetailedStats): HTMLElement | null {
 	providersWithMonthlyCost.forEach(provider => grid.append(buildProviderCard(stats, provider)));
 	section.append(grid);
 	return section;
-}
-
-function getSortIndicator(colKey: TableSortKey, activeKey: TableSortKey, dir: SortDir): string {
-if (colKey !== activeKey) { return ' ↕'; }
-return dir === 'asc' ? ' ↑' : ' ↓';
 }
 
 function saveSortSettings(): void {
@@ -735,100 +716,98 @@ function sortEditorsBySignificance(stats: DetailedStats, editors: string[]): str
 	});
 }
 
-function buildEditorRow(item: EditorItem, totals: { today: number; last30Days: number; month: number; lastMonth: number }, isOtherChild: boolean): HTMLTableRowElement {
-	const { editor, todayUsage, last30DaysUsage, monthUsage, lastMonthUsage, projectedTokens, projectedSessions } = item;
-	const todayPct = totals.today > 0 ? (todayUsage.tokens / totals.today) * 100 : 0;
-	const last30Pct = totals.last30Days > 0 ? (last30DaysUsage.tokens / totals.last30Days) * 100 : 0;
-	const monthPct = totals.month > 0 ? (monthUsage.tokens / totals.month) * 100 : 0;
-	const lastMonthPct = totals.lastMonth > 0 ? (lastMonthUsage.tokens / totals.lastMonth) * 100 : 0;
-	const tr = document.createElement('tr');
-	if (isOtherChild) { tr.style.opacity = '0.85'; }
-	if (editor === 'JetBrains') { tr.title = 'JetBrains: only user messages + assistant text are persisted, so token counts here are estimates of those alone. Actual API counts and thinking tokens are not available.'; }
-	if (editor === 'Antigravity') { tr.title = 'Antigravity: token counts are estimated from transcript content. Actual API counts are not stored locally.'; }
-	if (editor === 'Cursor') { tr.title = 'Cursor: token counts reflect the context window size at the last request (contextTokensUsed). Output tokens are not stored locally.'; }
-	const labelTd = document.createElement('td');
-	const labelWrapper = document.createElement('span');
-	labelWrapper.className = 'metric-label';
-	if (isOtherChild) {
-		const indentSpan = document.createElement('span');
-		indentSpan.style.cssText = 'display:inline-block;width:12px';
-		labelWrapper.append(indentSpan);
-	}
-	labelWrapper.append(buildEditorLogo(editor), document.createTextNode(` ${editor}`));
-	if (editor === 'JetBrains' || editor === 'Antigravity' || editor === 'Cursor') { labelWrapper.append(document.createTextNode(' ⓘ')); }
-	labelTd.append(labelWrapper);
-	tr.append(labelTd,
-		buildValueCell(formatCompact(todayUsage.tokens), `${formatPercent(todayPct)} · ${todayUsage.sessions} sessions`),
-		buildValueCell(formatCompact(last30DaysUsage.tokens), `${formatPercent(last30Pct)} · ${last30DaysUsage.sessions} sessions`),
-		buildValueCell(formatCompact(monthUsage.tokens), `${formatPercent(monthPct)} · ${monthUsage.sessions} sessions`),
-		buildValueCell(formatCompact(lastMonthUsage.tokens), `${formatPercent(lastMonthPct)} · ${lastMonthUsage.sessions} sessions`),
-		buildValueCell(formatCompact(projectedTokens), `${projectedSessions} sessions`));
-	return tr;
-}
+type EditorRow = EditorItem & { kind: UsageRowKind };
+type EditorTotals = { today: number; last30Days: number; month: number; lastMonth: number };
 
-function appendOtherEditors(item: EditorItem, totals: { today: number; last30Days: number; month: number; lastMonth: number }, onToggleOther: () => void, tbody: HTMLTableSectionElement, stats: DetailedStats): void {
-	const otherEditors = item.otherEditors ?? [];
-	const pct = (part: number, total: number) => (total > 0 ? (part / total) * 100 : 0);
-	const otherTr = document.createElement('tr');
-	otherTr.style.cursor = 'pointer'; otherTr.style.background = 'var(--list-hover-bg)';
-	otherTr.title = editorOtherExpanded ? 'Collapse other editors' : 'Expand other editors';
-	const otherLabelWrapper = document.createElement('span'); otherLabelWrapper.className = 'metric-label';
-	const otherNameSpan = document.createElement('span');
-	otherNameSpan.style.cssText = 'color:var(--text-secondary);font-weight:600;';
-	otherNameSpan.textContent = `📦 ${item.editor}`;
-	const otherToggleSpan = document.createElement('span');
-	otherToggleSpan.style.cssText = 'font-size:10px;color:var(--text-muted)';
-	otherToggleSpan.textContent = ` ${editorOtherExpanded ? '▲' : '▼'}`;
-	otherLabelWrapper.append(otherNameSpan, otherToggleSpan);
-	const otherLabelTd = document.createElement('td'); otherLabelTd.append(otherLabelWrapper);
-	const mkOtherTd = (usage: { tokens: number; sessions: number }, total: number) => {
-		const td = buildValueCell(formatCompact(usage.tokens));
-		td.append(el('div', 'muted', `${formatPercent(pct(usage.tokens, total))} · ${usage.sessions} sessions`));
-		return td;
-	};
-	otherTr.append(otherLabelTd,
-		mkOtherTd(item.todayUsage, totals.today), mkOtherTd(item.last30DaysUsage, totals.last30Days),
-		mkOtherTd(item.monthUsage, totals.month), mkOtherTd(item.lastMonthUsage, totals.lastMonth),
-		buildValueCell(formatCompact(item.projectedTokens), `${item.projectedSessions} sessions`));
-	otherTr.addEventListener('click', () => { editorOtherExpanded = !editorOtherExpanded; saveSortSettings(); onToggleOther(); });
-	tbody.append(otherTr);
-	if (editorOtherExpanded) {
-		const otherItems = otherEditors.map(e => toEditorItem(stats, e));
-		sortEditorItems(otherItems);
-		otherItems.forEach(childItem => tbody.append(buildEditorRow(childItem, totals, true)));
-	}
-}
+/** Editors whose token counts come with a caveat, shown as the row tooltip. */
+const EDITOR_TOOLTIPS: ReadonlyMap<string, string> = new Map([
+['JetBrains', 'JetBrains: only user messages + assistant text are persisted, so token counts here are estimates of those alone. Actual API counts and thinking tokens are not available.'],
+['Antigravity', 'Antigravity: token counts are estimated from transcript content. Actual API counts are not stored locally.'],
+['Cursor', 'Cursor: token counts reflect the context window size at the last request (contextTokensUsed). Output tokens are not stored locally.'],
+]);
 
-function buildEditorTbody(stats: DetailedStats, visibleEditors: string[], onToggleOther: () => void): HTMLTableSectionElement {
-const editors = visibleEditors;
-const totals = {
-	today: editors.reduce((s, e) => s + (stats.today.editorUsage[e]?.tokens || 0), 0),
-	last30Days: editors.reduce((s, e) => s + (stats.last30Days.editorUsage[e]?.tokens || 0), 0),
-	month: editors.reduce((s, e) => s + (stats.month.editorUsage[e]?.tokens || 0), 0),
-	lastMonth: editors.reduce((s, e) => s + (stats.lastMonth.editorUsage[e]?.tokens || 0), 0),
-};
-const tbody = document.createElement('tbody');
-if (editors.length === 0) {
-	tbody.append(buildNoDataRow(6, 'No editor usage matches the selected provider filter.'));
-	return tbody;
-}
-// Split into the top N editors for the currently selected column and an aggregated "Other" group.
-// Only the top-N rows are sorted by the user's chosen column; the "Other" row always stays last
-// so it doesn't get interleaved among the individual editors it summarizes.
+/**
+ * The top N editors for the currently selected column, then an aggregated "Other" row that always
+ * stays last (so it doesn't get interleaved among the editors it summarizes), then — when expanded —
+ * the editors it groups, sorted by the current column.
+ */
+function buildEditorRows(stats: DetailedStats, editors: string[]): EditorRow[] {
 const sortedBySignificance = sortEditorsBySignificance(stats, editors);
-const topEditors = sortedBySignificance.slice(0, TOP_N_EDITORS);
 const otherEditors = sortedBySignificance.slice(TOP_N_EDITORS);
-const items: EditorItem[] = topEditors.map(editor => toEditorItem(stats, editor));
-sortEditorItems(items);
-if (otherEditors.length > 0) { items.push(toOtherEditorItem(stats, otherEditors)); }
-items.forEach(item => {
-	if (item.otherEditors) {
-		appendOtherEditors(item, totals, onToggleOther, tbody, stats);
-	} else {
-		tbody.append(buildEditorRow(item, totals, false));
-	}
+const rows: EditorRow[] = sortedBySignificance.slice(0, TOP_N_EDITORS).map(editor => ({ ...toEditorItem(stats, editor), kind: 'top' as const }));
+if (otherEditors.length > 0) {
+rows.push({ ...toOtherEditorItem(stats, otherEditors), kind: 'other' });
+if (editorOtherExpanded) {
+const children = otherEditors.map(editor => toEditorItem(stats, editor));
+sortEditorItems(children);
+rows.push(...children.map(child => ({ ...child, kind: 'otherChild' as const })));
+}
+}
+return rows;
+}
+
+function editorNameHtml(row: EditorRow): string {
+if (row.kind === 'other') { return otherGroupLabelHtml(row.editor, editorOtherExpanded); }
+const indent = row.kind === 'otherChild' ? '<span class="other-child-indent"></span>' : '';
+const info = EDITOR_TOOLTIPS.has(row.editor) ? ' ⓘ' : '';
+return `<span class="metric-label">${indent}${buildEditorLogo(row.editor).outerHTML}${escapeHtml(` ${row.editor}${info}`)}</span>`;
+}
+
+function editorColumns(totals: EditorTotals): DataTableColumn<EditorRow>[] {
+const pct = (part: number, total: number): number => (total > 0 ? (part / total) * 100 : 0);
+const periodColumn = (key: Exclude<PeriodKey, 'projected'>, pick: (row: EditorRow) => { tokens: number; sessions: number }): DataTableColumn<EditorRow> => ({
+...periodColumnBase(key),
+sortValue: topRowSortValue((row: EditorRow) => pick(row).tokens),
+render: row => {
+const usage = pick(row);
+return { html: valueCellHtml(formatCompact(usage.tokens), `${formatPercent(pct(usage.tokens, totals[key]))} · ${usage.sessions} sessions`) };
+},
 });
-return tbody;
+return [
+{ id: 'name', label: 'Editor', headerHtml: columnHeaderHtml('📝', 'Editor'), sortValue: topRowSortValue((row: EditorRow) => row.editor), render: row => ({ html: editorNameHtml(row) }) },
+periodColumn('today', row => row.todayUsage),
+periodColumn('last30Days', row => row.last30DaysUsage),
+periodColumn('month', row => row.monthUsage),
+periodColumn('lastMonth', row => row.lastMonthUsage),
+{
+...periodColumnBase('projected'),
+sortValue: topRowSortValue((row: EditorRow) => row.projectedTokens),
+render: row => ({ html: valueCellHtml(formatCompact(row.projectedTokens), `${row.projectedSessions} sessions`) }),
+},
+];
+}
+
+function editorRowOptions(row: EditorRow): DataTableRowOptions | undefined {
+if (row.kind === 'other') {
+return { className: 'other-group-row', attributes: { 'data-other-toggle': 'editor', title: editorOtherExpanded ? 'Collapse other editors' : 'Expand other editors' } };
+}
+const tooltip = EDITOR_TOOLTIPS.get(row.editor);
+return { className: row.kind === 'otherChild' ? 'other-child-row' : undefined, attributes: tooltip ? { title: tooltip } : undefined };
+}
+
+function editorTableOptions(stats: DetailedStats, editors: string[]): DataTableOptions<EditorRow> {
+const totals: EditorTotals = {
+today: editors.reduce((s, e) => s + (stats.today.editorUsage[e]?.tokens || 0), 0),
+last30Days: editors.reduce((s, e) => s + (stats.last30Days.editorUsage[e]?.tokens || 0), 0),
+month: editors.reduce((s, e) => s + (stats.month.editorUsage[e]?.tokens || 0), 0),
+lastMonth: editors.reduce((s, e) => s + (stats.lastMonth.editorUsage[e]?.tokens || 0), 0),
+};
+return {
+tableId: EDITOR_TABLE_ID,
+ariaLabel: 'Usage by Editor',
+rows: buildEditorRows(stats, editors),
+columns: editorColumns(totals),
+initialSort: { columnId: 'name', direction: 'asc' },
+className: 'data-table--fixed',
+emptyMessage: 'No editor usage matches the selected provider filter.',
+rowOptions: editorRowOptions,
+onStateChange: state => {
+// A new sort column changes which editors are "top N", so recompute the rows.
+if (!applyTableSort('editor', state)) { return; }
+saveSortSettings();
+refreshDataTable(editorTableOptions(stats, editors));
+},
+};
 }
 
 /** Wires the collapsible "Usage by Editor" section heading: toggles the table's visibility, syncs ARIA state and the localized tooltip, and supports keyboard activation (Enter/Space) since the heading carries role="button". The collapsed state is persisted via saveSortSettings(). */
@@ -867,6 +846,7 @@ return null;
 const visibleEditors = Array.from(allEditors).filter(editor => isVisibleForProviderFilter(editorBillingGroups(stats, editor)));
 
 const section = el('div', 'section');
+section.id = 'section-editor-usage';
 const heading = iconHeading('h3', 'device-desktop', 'Usage by Editor');
 heading.classList.add('section-heading-collapsible');
 heading.setAttribute('role', 'button');
@@ -878,47 +858,13 @@ heading.title = editorSectionCollapsed ? localize('details.editorSection.show') 
 heading.append(chevron);
 section.append(heading);
 
-const table = document.createElement('table');
-table.className = 'stats-table';
-table.id = 'editor-usage-table';
+const tableContainer = el('div');
+tableContainer.id = 'editor-usage-table';
+mountUsageTable(tableContainer, () => editorTableOptions(stats, visibleEditors), () => { editorOtherExpanded = !editorOtherExpanded; });
+if (editorSectionCollapsed) { tableContainer.classList.add('hidden'); }
+section.append(tableContainer);
 
-const editorColHeaders: ColHeader[] = [
-{ icon: '📝', text: 'Editor', key: 'name' },
-{ icon: '📅', text: 'Today', key: 'today' },
-{ icon: '📈', text: 'Last 30 Days', key: 'last30Days' },
-{ icon: '🗓️', text: 'Current Month', key: 'month' },
-{ icon: '📆', text: 'Previous Month', key: 'lastMonth' },
-{ icon: '🌍', text: 'Projected Year', key: 'projected' }
-];
-
-function rebuildTbody(): void {
-	const newTbody = buildEditorTbody(stats, visibleEditors, rebuildTbody);
-	const oldTbody = table.querySelector('tbody');
-	if (oldTbody) { table.replaceChild(newTbody, oldTbody); } else { table.append(newTbody); }
-}
-
-const { thead } = buildSortableTableHeader(
-editorColHeaders,
-() => editorSortKey,
-() => editorSortDir,
-(key) => {
-if (editorSortKey === key) {
-editorSortDir = editorSortDir === 'asc' ? 'desc' : 'asc';
-} else {
-editorSortKey = key;
-editorSortDir = key === 'name' ? 'asc' : 'desc';
-}
-rebuildTbody();
-saveSortSettings();
-}
-);
-
-table.append(thead);
-rebuildTbody();
-if (editorSectionCollapsed) { table.classList.add('hidden'); }
-section.append(table);
-
-wireEditorSectionToggle(heading, table, chevron);
+wireEditorSectionToggle(heading, tableContainer, chevron);
 
 return section;
 }
@@ -1033,85 +979,75 @@ function sortModelsBySignificance(stats: DetailedStats, models: string[]): strin
 	});
 }
 
-function buildModelRowEl(item: ModelItem, isOtherChild: boolean): HTMLTableRowElement {
-	const tr = document.createElement('tr');
-	if (isOtherChild) { tr.style.opacity = '0.85'; }
-	const labelTd = document.createElement('td');
-	const labelWrapper = document.createElement('span');
-	labelWrapper.className = 'metric-label';
-	if (isOtherChild) {
-		const indentSpan = document.createElement('span');
-		indentSpan.style.cssText = 'display:inline-block;width:12px';
-		labelWrapper.append(indentSpan);
-	}
-	const charsSpan = document.createElement('span');
-	charsSpan.style.cssText = 'color:#9aa0a6;font-size:11px;font-weight:500;';
-	charsSpan.textContent = `(~${item.charsPerToken.toFixed(1)} chars/tk)`;
-	labelWrapper.append(document.createTextNode(`${getModelDisplayName(item.model)} `), charsSpan);
-	labelTd.append(labelWrapper);
-	tr.append(labelTd,
-		buildValueCell(formatCompact(item.todayTotal), `↑${formatPercent(item.todayInputPct)} ↓${formatPercent(item.todayOutputPct)}`),
-		buildValueCell(formatCompact(item.last30DaysTotal), `↑${formatPercent(item.last30DaysInputPct)} ↓${formatPercent(item.last30DaysOutputPct)}`),
-		buildValueCell(formatCompact(item.monthTotal), `↑${formatPercent(item.monthInputPct)} ↓${formatPercent(item.monthOutputPct)}`),
-		buildValueCell(formatCompact(item.lastMonthTotal), `↑${formatPercent(item.lastMonthInputPct)} ↓${formatPercent(item.lastMonthOutputPct)}`),
-		buildValueCell(formatCompact(item.projected)));
-	return tr;
+type ModelRow = ModelItem & { kind: UsageRowKind };
+
+/** Same top-N / "Other" / expanded-children layout as `buildEditorRows`. */
+function buildModelRows(stats: DetailedStats, models: string[]): ModelRow[] {
+const sortedBySignificance = sortModelsBySignificance(stats, models);
+const otherModels = sortedBySignificance.slice(TOP_N_MODELS);
+const rows: ModelRow[] = sortedBySignificance.slice(0, TOP_N_MODELS).map(model => ({ ...toModelItem(stats, model), kind: 'top' as const }));
+if (otherModels.length > 0) {
+rows.push({ ...toOtherModelItem(stats, otherModels), kind: 'other' });
+if (modelOtherExpanded) {
+const children = otherModels.map(model => toModelItem(stats, model));
+sortModelItems(children);
+rows.push(...children.map(child => ({ ...child, kind: 'otherChild' as const })));
+}
+}
+return rows;
 }
 
-function appendOtherModels(item: ModelItem, onToggleOther: () => void, tbody: HTMLTableSectionElement, stats: DetailedStats): void {
-	const otherModels = item.otherModels ?? [];
-	const pct = (part: number, total: number) => (total > 0 ? (part / total) * 100 : 0);
-	const otherTr = document.createElement('tr');
-	otherTr.style.cursor = 'pointer'; otherTr.style.background = 'var(--list-hover-bg)';
-	otherTr.title = modelOtherExpanded ? 'Collapse other models' : 'Expand other models';
-	const otherLabelWrapper = document.createElement('span'); otherLabelWrapper.className = 'metric-label';
-	const otherNameSpan = document.createElement('span');
-	otherNameSpan.style.cssText = 'color:var(--text-secondary);font-weight:600;';
-	otherNameSpan.textContent = `📦 ${item.model}`;
-	const otherToggleSpan = document.createElement('span');
-	otherToggleSpan.style.cssText = 'font-size:10px;color:var(--text-muted)';
-	otherToggleSpan.textContent = ` ${modelOtherExpanded ? '▲' : '▼'}`;
-	otherLabelWrapper.append(otherNameSpan, otherToggleSpan);
-	const otherLabelTd = document.createElement('td'); otherLabelTd.append(otherLabelWrapper);
-	const mkOtherTd = (total: number, inputPct: number, outputPct: number) => {
-		const td = buildValueCell(formatCompact(total));
-		if (total > 0) { td.append(el('div', 'muted', `↑${formatPercent(inputPct)} ↓${formatPercent(outputPct)}`)); }
-		return td;
-	};
-	otherTr.append(otherLabelTd,
-		mkOtherTd(item.todayTotal, item.todayInputPct, item.todayOutputPct),
-		mkOtherTd(item.last30DaysTotal, item.last30DaysInputPct, item.last30DaysOutputPct),
-		mkOtherTd(item.monthTotal, item.monthInputPct, item.monthOutputPct),
-		mkOtherTd(item.lastMonthTotal, item.lastMonthInputPct, item.lastMonthOutputPct),
-		buildValueCell(formatCompact(item.projected)));
-	otherTr.addEventListener('click', () => { modelOtherExpanded = !modelOtherExpanded; saveSortSettings(); onToggleOther(); });
-	tbody.append(otherTr);
-	if (modelOtherExpanded) {
-		const otherItems = otherModels.map(m => toModelItem(stats, m));
-		sortModelItems(otherItems);
-		otherItems.forEach(childItem => tbody.append(buildModelRowEl(childItem, true)));
-	}
+function modelNameHtml(row: ModelRow): string {
+if (row.kind === 'other') { return otherGroupLabelHtml(row.model, modelOtherExpanded); }
+const indent = row.kind === 'otherChild' ? '<span class="other-child-indent"></span>' : '';
+return `<span class="metric-label">${indent}${escapeHtml(`${getModelDisplayName(row.model)} `)}<span class="model-chars-per-token">${escapeHtml(`(~${row.charsPerToken.toFixed(1)} chars/tk)`)}</span></span>`;
 }
 
-function buildModelTbody(stats: DetailedStats, visibleModels: string[], onToggleOther: () => void): HTMLTableSectionElement {
-	// Split into the top N models for the currently selected column and an aggregated "Other" group.
-	// Only the top-N rows are sorted by the user's chosen column; the "Other" row always stays last
-	// so it doesn't get interleaved among the individual models it summarizes.
-	const sortedBySignificance = sortModelsBySignificance(stats, visibleModels);
-	const topModels = sortedBySignificance.slice(0, TOP_N_MODELS);
-	const otherModels = sortedBySignificance.slice(TOP_N_MODELS);
-	const items: ModelItem[] = topModels.map(m => toModelItem(stats, m));
-	sortModelItems(items);
-	if (otherModels.length > 0) { items.push(toOtherModelItem(stats, otherModels)); }
-	const tbody = document.createElement('tbody');
-	items.forEach(item => {
-		if (item.otherModels) {
-			appendOtherModels(item, onToggleOther, tbody, stats);
-		} else {
-			tbody.append(buildModelRowEl(item, false));
-		}
-	});
-	return tbody;
+function modelColumns(): DataTableColumn<ModelRow>[] {
+const periodColumn = (key: Exclude<PeriodKey, 'projected'>, pick: (row: ModelRow) => { total: number; inputPct: number; outputPct: number }): DataTableColumn<ModelRow> => ({
+...periodColumnBase(key),
+sortValue: topRowSortValue((row: ModelRow) => pick(row).total),
+render: row => {
+const { total, inputPct, outputPct } = pick(row);
+// The "Other" row omits the input/output split when the group has no tokens in the period.
+const split = row.kind === 'other' && total <= 0 ? undefined : `↑${formatPercent(inputPct)} ↓${formatPercent(outputPct)}`;
+return { html: valueCellHtml(formatCompact(total), split) };
+},
+});
+return [
+{ id: 'name', label: 'Model', headerHtml: columnHeaderHtml('🧠', 'Model'), sortValue: topRowSortValue((row: ModelRow) => row.model), render: row => ({ html: modelNameHtml(row) }) },
+periodColumn('today', row => ({ total: row.todayTotal, inputPct: row.todayInputPct, outputPct: row.todayOutputPct })),
+periodColumn('last30Days', row => ({ total: row.last30DaysTotal, inputPct: row.last30DaysInputPct, outputPct: row.last30DaysOutputPct })),
+periodColumn('month', row => ({ total: row.monthTotal, inputPct: row.monthInputPct, outputPct: row.monthOutputPct })),
+periodColumn('lastMonth', row => ({ total: row.lastMonthTotal, inputPct: row.lastMonthInputPct, outputPct: row.lastMonthOutputPct })),
+{ ...periodColumnBase('projected'), sortValue: topRowSortValue((row: ModelRow) => row.projected), render: row => ({ html: valueCellHtml(formatCompact(row.projected)) }) },
+];
+}
+
+function modelRowOptions(row: ModelRow): DataTableRowOptions | undefined {
+if (row.kind === 'other') {
+return { className: 'other-group-row', attributes: { 'data-other-toggle': 'model', title: modelOtherExpanded ? 'Collapse other models' : 'Expand other models' } };
+}
+return row.kind === 'otherChild' ? { className: 'other-child-row' } : undefined;
+}
+
+function modelTableOptions(stats: DetailedStats, models: string[]): DataTableOptions<ModelRow> {
+return {
+tableId: MODEL_TABLE_ID,
+ariaLabel: 'Model Usage (Tokens)',
+rows: buildModelRows(stats, models),
+columns: modelColumns(),
+initialSort: { columnId: 'name', direction: 'asc' },
+className: 'data-table--fixed',
+emptyMessage: 'No model usage matches the selected provider filter.',
+rowOptions: modelRowOptions,
+onStateChange: state => {
+// A new sort column changes which models are "top N", so recompute the rows.
+if (!applyTableSort('model', state)) { return; }
+saveSortSettings();
+refreshDataTable(modelTableOptions(stats, models));
+},
+};
 }
 
 function buildModelUsageSection(stats: DetailedStats): HTMLElement | null {
@@ -1129,54 +1065,13 @@ return null;
 const visibleModels = new Set(Array.from(allModels).filter(model => isVisibleForProviderFilter(modelBillingGroups(stats, model))));
 
 const section = el('div', 'section');
+section.id = 'section-model-usage';
 const heading = iconHeading('h3', 'symbol-numeric', 'Model Usage (Tokens)');
 section.append(heading);
 
-const table = document.createElement('table');
-table.className = 'stats-table';
-
-if (visibleModels.size === 0) {
-const tbody = document.createElement('tbody');
-tbody.append(buildNoDataRow(6, 'No model usage matches the selected provider filter.'));
-table.append(tbody);
-section.append(table);
-return section;
-}
-
-const modelColHeaders: ColHeader[] = [
-{ icon: '🧠', text: 'Model', key: 'name' },
-{ icon: '📅', text: 'Today', key: 'today' },
-{ icon: '📈', text: 'Last 30 Days', key: 'last30Days' },
-{ icon: '🗓️', text: 'Current Month', key: 'month' },
-{ icon: '📆', text: 'Previous Month', key: 'lastMonth' },
-{ icon: '🌍', text: 'Projected Year', key: 'projected' }
-];
-
-function rebuildTbody(): void {
-const newTbody = buildModelTbody(stats, Array.from(visibleModels), rebuildTbody);
-const oldTbody = table.querySelector('tbody');
-if (oldTbody) { table.replaceChild(newTbody, oldTbody); } else { table.append(newTbody); }
-}
-
-const { thead } = buildSortableTableHeader(
-modelColHeaders,
-() => modelSortKey,
-() => modelSortDir,
-(key) => {
-if (modelSortKey === key) {
-modelSortDir = modelSortDir === 'asc' ? 'desc' : 'asc';
-} else {
-modelSortKey = key;
-modelSortDir = key === 'name' ? 'asc' : 'desc';
-}
-rebuildTbody();
-saveSortSettings();
-}
-);
-
-table.append(thead);
-rebuildTbody();
-section.append(table);
+const tableContainer = el('div');
+mountUsageTable(tableContainer, () => modelTableOptions(stats, Array.from(visibleModels)), () => { modelOtherExpanded = !modelOtherExpanded; });
+section.append(tableContainer);
 return section;
 }
 

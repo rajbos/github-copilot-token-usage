@@ -7,6 +7,7 @@ import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
 import type { CategoryLevelData } from '../shared/types';
 import { applyWebviewLocale } from '../shared/webviewLocale';
+import { installSurfaceNavigation } from '../shared/surfaceNavigation';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -23,6 +24,7 @@ declare function acquireVsCodeApi<TState = unknown>(): {
 };
 
 const vscode = acquireVsCodeApi();
+installSurfaceNavigation(vscode, 'fluency-level-viewer');
 const initialData = getWindowData<FluencyLevelData & { localization?: Record<string, string> }>('__INITIAL_FLUENCY_LEVEL_DATA__');
 
 // Initialize localization for webview

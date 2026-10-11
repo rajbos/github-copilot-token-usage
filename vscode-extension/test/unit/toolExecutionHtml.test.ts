@@ -16,6 +16,17 @@ function escapeHtmlForTest(text: string): string {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/** Header labels of the accompanying data table, in column order. */
+function tableHeaders(html: string): string[] {
+    return [...html.matchAll(/<span class="data-table-sort-label">([^<]*)<\/span>/g)].map(m => m[1]);
+}
+
+/** Text of every body cell of each table row, in column order. */
+function rowCells(html: string): string[][] {
+    const body = html.match(/<tbody>(.*?)<\/tbody>/s)?.[1] ?? '';
+    return [...body.matchAll(/<tr[^>]*>(.*?)<\/tr>/gs)].map(row => [...row[1].matchAll(/<td[^>]*>(.*?)<\/td>/gs)].map(m => m[1]));
+}
+
 /** Histogram with `n` samples all in bucket `i` (durations in [2^i, 2^(i+1)) ms). */
 function hist(i: number, n: number, sumMs = n * 2 ** i): LatencyHistogram {
     const buckets = new Array<number>(23).fill(0);
@@ -78,8 +89,11 @@ test('reliability section: bars and table come from completed calls, not byTool 
     assert.doesNotMatch(html, /__slash__/, 'slash markers are not tool calls');
     // Accessible data table with the same numbers.
     assert.match(html, /<details class="tool-exec-table"><summary>Show as table<\/summary>/);
-    assert.match(html, /<th>Tool<\/th><th>Completed calls<\/th><th>Failed<\/th><th>Failure rate<\/th>/);
-    assert.match(html, /<td>powershell<\/td><td class="tool-exec-num">40<\/td><td class="tool-exec-num">10<\/td><td class="tool-exec-num">25%<\/td>/);
+    assert.deepEqual(tableHeaders(html), ['Tool', 'Completed calls', 'Failed', 'Failure rate']);
+    assert.deepEqual(rowCells(html).map(cells => cells[0]), ['View File', 'powershell', 'task', 'report_intent'], 'rows keep the chart order: most completed calls first');
+    assert.deepEqual(rowCells(html)[1], ['powershell', '40', '10', '25%']);
+    assert.match(html, /<td class="data-table-align-right tool-exec-num">40<\/td>/, 'numeric cells are right-aligned');
+    assert.match(html, /id="data-table-root-tool-exec-reliability"/, 'the table has a stable per-section id');
 });
 
 test('reliability section: all-success periods render bars; only missing completion data is the empty state', () => {
@@ -107,7 +121,7 @@ test('latency section: p50 bar, p95 marker, log axis ticks, localized tooltip an
     // powershell: all samples in [2048, 4096) → p50 and p95 land in that bucket
     assert.match(html, /<title>powershell: p50 [23]\.\ds, p95 [34]\.\ds, 40 calls<\/title>/);
     assert.match(html, /<title>View File: p50 \d+ms/);
-    assert.match(html, /<th>Tool<\/th><th>Completed calls<\/th><th>p50<\/th><th>p95<\/th>/);
+    assert.deepEqual(tableHeaders(html), ['Tool', 'Completed calls', 'p50', 'p95']);
 });
 
 test('latency section: empty state and hidden automatic tools', () => {
@@ -121,7 +135,7 @@ test('MCP health section: failure share over completed calls, not byServer start
     const html = buildMcpHealthSectionHtml(sampleInput());
     assert.match(html, /id="section-mcp-health"/);
     assert.match(html, /12 · 25% fail/, '3 of 12 completed — not 3 of the 20 starts in byServer');
-    assert.match(html, /<th>Server<\/th><th>Completed calls<\/th><th>Failed<\/th><th>Failure rate<\/th>/);
+    assert.deepEqual(tableHeaders(html), ['Server', 'Completed calls', 'Failed', 'Failure rate']);
     const input = sampleInput();
     delete input.mcpTools.completedByServer;
     assert.match(buildMcpHealthSectionHtml(input), /No MCP server calls with a recorded outcome/);
@@ -134,7 +148,7 @@ test('cost vs speed section: tokens per completed call, coloured by kind, with t
     assert.match(html, /tool-exec-kind-subagent/, 'task is a delegation tool');
     assert.match(html, /<title>View File \(builtin\): p50 \d+ms, 1,000 tokens per call, 100 calls<\/title>/, '100,000 tokens over 100 completed calls, not 130 starts');
     assert.match(html, /top-right = heavy &amp; slow/);
-    assert.match(html, /<th>Tool<\/th><th>Kind<\/th><th>Completed calls<\/th><th>p50<\/th><th>Tokens \/ call<\/th>/);
+    assert.deepEqual(tableHeaders(html), ['Tool', 'Kind', 'Completed calls', 'p50', 'Tokens / call']);
     assert.match(buildCostSpeedSectionHtml(sampleInput({ toolCalls: { total: 1, byTool: { view: 1 }, completedByTool: { view: 1 } } })), /No tools have both latency/);
 });
 

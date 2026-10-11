@@ -4,10 +4,15 @@ import { getNavButtons } from '../shared/buttonConfig';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
+import dataTableStyles from '../shared/dataTable.css';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
 import { applyWebviewLocale } from '../shared/webviewLocale';
 import { registerMessageHandler } from '../shared/messageHandler';
+import { buildViewIndexTab, type ViewIndexPersistedState } from './viewIndexTab';
+import { createViewStateManager } from '../shared/viewState';
+import { localize, localizeFormat } from '../shared/localization';
+import { installSurfaceNavigation } from '../shared/surfaceNavigation';
 
 /** One feature as the host projects it for rendering. Mirrors `WhatsNewFeature` plus view state. */
 type WhatsNewViewFeature = {
@@ -35,18 +40,87 @@ type WhatsNewViewData = {
 	localization?: Record<string, string>;
 };
 
+type WhatsNewTab = 'releases' | 'index';
+
+type WhatsNewWebviewState = {
+	activeTab: WhatsNewTab;
+	/** Survives the panel being hidden, which tears the webview down. */
+	index: ViewIndexPersistedState;
+};
+
 declare function acquireVsCodeApi<TState = unknown>(): {
 	postMessage: (message: any) => void;
 	setState: (newState: TState) => void;
 	getState: () => TState | undefined;
 };
 
-type VSCodeApi = ReturnType<typeof acquireVsCodeApi>;
+type VSCodeApi = ReturnType<typeof acquireVsCodeApi<WhatsNewWebviewState>>;
 
-const vscode: VSCodeApi = acquireVsCodeApi();
+const vscode: VSCodeApi = acquireVsCodeApi<WhatsNewWebviewState>();
+installSurfaceNavigation(vscode, 'whatsnew');
 const initialData = getWindowData<WhatsNewViewData>('__INITIAL_WHATSNEW__');
 
 applyWebviewLocale(initialData);
+
+const TABS: ReadonlyArray<{ id: WhatsNewTab; labelKey: string }> = [
+	{ id: 'releases', labelKey: 'whatsNew.tab.releases' },
+	{ id: 'index', labelKey: 'whatsNew.tab.index' },
+];
+
+const viewState = createViewStateManager<WhatsNewWebviewState>(vscode, { activeTab: 'releases', index: { query: '', toggled: {} } });
+let activeTab: WhatsNewTab = viewState.restore().activeTab === 'index' ? 'index' : 'releases';
+
+/** Shows one tab's panel and hides the other. The index is built once and kept, so its search survives tab switches. */
+function activateTab(tab: WhatsNewTab): void {
+	activeTab = tab;
+	viewState.patch({ activeTab: tab });
+	document.querySelectorAll<HTMLElement>('.wn-tab').forEach((button) => {
+		const isActive = button.dataset.tab === tab;
+		button.classList.toggle('active', isActive);
+		button.setAttribute('aria-selected', String(isActive));
+		button.tabIndex = isActive ? 0 : -1;
+	});
+	document.querySelectorAll<HTMLElement>('.wn-tab-panel').forEach((panel) => {
+		panel.hidden = panel.dataset.tab !== tab;
+	});
+	// Let the host record the subview so the what's-new announcer can skip tabs
+	// the user already found for themselves. Fire-and-forget.
+	vscode.postMessage({ command: 'viewTabOpened', view: 'whatsnew', tab });
+}
+
+function buildTabBar(): HTMLElement {
+	const bar = el('div', 'wn-tabs');
+	bar.setAttribute('role', 'tablist');
+	bar.setAttribute('aria-label', localize('whatsNew.tabs.label'));
+	TABS.forEach(({ id, labelKey }, index) => {
+		const button = el('button', 'wn-tab', localize(labelKey));
+		button.type = 'button';
+		button.id = `wn-tab-${id}`;
+		button.dataset.tab = id;
+		button.setAttribute('role', 'tab');
+		button.setAttribute('aria-controls', `wn-tab-panel-${id}`);
+		button.addEventListener('click', () => activateTab(id));
+		button.addEventListener('keydown', (event) => {
+			if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') { return; }
+			event.preventDefault();
+			const next = TABS[(index + (event.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
+			activateTab(next.id);
+			document.getElementById(`wn-tab-${next.id}`)?.focus();
+		});
+		bar.append(button);
+	});
+	return bar;
+}
+
+function buildTabPanel(tab: WhatsNewTab, ...content: HTMLElement[]): HTMLElement {
+	const panel = el('div', 'wn-tab-panel');
+	panel.id = `wn-tab-panel-${tab}`;
+	panel.dataset.tab = tab;
+	panel.setAttribute('role', 'tabpanel');
+	panel.setAttribute('aria-labelledby', `wn-tab-${tab}`);
+	panel.append(...content);
+	return panel;
+}
 
 /** Badge text per feature kind — what the user is being pointed at. */
 const KIND_LABEL: Record<WhatsNewViewFeature['kind'], string> = {
@@ -126,7 +200,7 @@ function render(data: WhatsNewViewData): void {
 	root.replaceChildren();
 
 	const themeStyle = document.createElement('style');
-	themeStyle.textContent = themeStyles;
+	themeStyle.textContent = `${themeStyles}\n${dataTableStyles}`;
 	const style = document.createElement('style');
 	style.textContent = styles;
 
@@ -138,27 +212,28 @@ function render(data: WhatsNewViewData): void {
 	buttonRow.append(...getNavButtons(null, !!data.backendConfigured).map((config) => createButton(config)));
 	header.append(buttonRow);
 	container.append(header);
+	container.append(buildTabBar());
 
-	container.append(
-		el(
-			'div',
-			'intro',
-			`The last ${data.releases.length} release${data.releases.length === 1 ? '' : 's'}, in plain English. ` +
-			'The extension points out at most one new thing a day, and only until you have opened it — this page is the full list whenever you want it.',
-		),
+	const intro = el(
+		'div',
+		'intro',
+		`The last ${data.releases.length} release${data.releases.length === 1 ? '' : 's'}, in plain English. ` +
+		'The extension points out at most one new thing a day, and only until you have opened it — this page is the full list whenever you want it.',
 	);
-
 	const releases = el('div', 'releases');
 	data.releases.forEach((release) => releases.append(buildRelease(release)));
-	container.append(releases);
-
-	container.append(
-		el('div', 'footer', `Running version ${data.currentVersion}. The full changelog, including fixes, ships with the extension.`),
-	);
+	const footer = el('div', 'footer', localizeFormat('whatsNew.footer', data.currentVersion));
+	container.append(buildTabPanel('releases', intro, releases, footer));
+	container.append(buildTabPanel('index', buildViewIndexTab(
+		(message) => vscode.postMessage(message),
+		viewState.restore().index,
+		(index) => viewState.patch({ index }),
+	)));
 
 	root.append(themeStyle, style, container);
 
 	wireButtons();
+	activateTab(activeTab);
 }
 
 function wireButtons(): void {

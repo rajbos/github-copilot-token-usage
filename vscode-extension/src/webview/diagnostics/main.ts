@@ -1,12 +1,14 @@
 // Diagnostics Report webview with tabbed interface
 import { navButtonsHtml } from "../shared/buttonConfig";
 import { setHtml } from "../shared/domUtils";
+import { renderDataTable, setDataTableState, type DataTableColumn, type DataTableSortValue } from "../shared/dataTable";
 import { wireExtensionPointButtons } from "../shared/extensionPoints";
 import { escapeHtml, formatFileSize, getTimeSince, getEditorIcon } from "../shared/formatUtils";
 import { createPeriodSelector, PERIOD_LABELS, type Period } from "../shared/periodSelector";
 import { createViewStateManager } from "../shared/viewState";
 // CSS imported as text via esbuild
 import themeStyles from "../shared/theme.css";
+import dataTableStyles from "../shared/dataTable.css";
 import styles from "./styles.css";
 import { getWindowData } from "../../../../src/webview/shared/dataLoader";
 import { registerMessageHandler } from "../shared/messageHandler";
@@ -16,6 +18,7 @@ import { localize, localizeFormat } from "../shared/localization";
 import type { AccountBudgetView } from "../usage/billingStatsSanitizer";
 import { shouldListAccountBudgets } from "../../githubAccountBudgets";
 import { applyWebviewLocale } from "../shared/webviewLocale";
+import { installSurfaceNavigation } from "../shared/surfaceNavigation";
 
 // Constants
 const LOADING_PLACEHOLDER = "Loading...";
@@ -235,6 +238,7 @@ declare function acquireVsCodeApi<TState = DiagnosticsViewState>(): {
 };
 
 const vscode = acquireVsCodeApi<DiagnosticsViewState>();
+installSurfaceNavigation(vscode, 'diagnostics');
 const initialData = getWindowData<DiagnosticsData & { localization?: Record<string, string> }>('__INITIAL_DIAGNOSTICS__');
 
 // Initialize localization for webview
@@ -259,17 +263,12 @@ let currentTtftScanRange: TtftScanRange = diagState.restore().ttftScanRange ?? "
 const SHARE_CARD_PERIOD_ORDER: Period[] = ["last7", "last14", "last30", "last90", "allTime"];
 let currentShareCardPeriod: Period = diagState.restore().shareCardPeriod ?? "last14";
 
-// Sorting and filtering state
-let currentSortColumn: "lastInteraction" | "size" | "tokens" | "interactions" | "contextRefs" = "lastInteraction";
-let currentSortDirection: "asc" | "desc" = "desc";
+// Session table filtering state (sorting and paging live in the shared data table)
 let currentEditorFilter: string | null = null; // null = show all
 let currentContextRefFilter: keyof ContextReferenceUsage | null = null; // null = show all
 let hideEmptySessions = true; // hide sessions with 0 interactions by default
 let showOnlyUnattributed = false; // filter to only sessions with unattributed tokens
 
-// Tool analysis table sort state
-let toolSortColumn: "tool" | "calls" | "total" | "avg" = "avg";
-let toolSortDir: "asc" | "desc" = "desc";
 let storedToolFamilies: ToolFamilyConfig[] | undefined;
 
 // Skill usage tab state
@@ -331,51 +330,53 @@ function formatTokenCount(value: number | undefined | null): string {
  */
 type CandidatePath = { path: string; exists: boolean; source: string };
 
-function buildCandidatePathRow(cp: CandidatePath, tbody: HTMLElement): void {
-  const row = document.createElement("tr");
-  if (!cp.exists) { row.style.opacity = "0.5"; }
-  const statusCell = document.createElement("td");
-  statusCell.textContent = cp.exists ? "✅" : "❌";
-  statusCell.style.textAlign = "center";
-  const sourceCell = document.createElement("td");
-  const badge = document.createElement("span");
-  badge.className = getEditorBadgeClass(cp.source);
-  badge.textContent = `${getEditorIcon(cp.source)} ${cp.source}`;
-  sourceCell.appendChild(badge);
-  const pathCell = document.createElement("td");
-  pathCell.setAttribute("title", cp.path);
-  pathCell.style.fontFamily = "var(--vscode-editor-font-family, monospace)";
-  pathCell.style.fontSize = "12px";
-  pathCell.textContent = cp.path;
-  row.append(statusCell, sourceCell, pathCell);
-  tbody.appendChild(row);
+type CandidatePathRow = { source: string; exists: boolean; paths: CandidatePath[] };
+
+const CANDIDATE_PATHS_TABLE_ID = "diagnostics-candidate-paths";
+
+/** Existing paths first, then by source; every Crush location collapses into one trailing row. */
+function buildCandidatePathRows(candidatePaths: CandidatePath[]): CandidatePathRow[] {
+  const sorted = [...candidatePaths].sort((a, b) => a.exists !== b.exists ? (a.exists ? -1 : 1) : a.source.localeCompare(b.source));
+  const crushEntries = sorted.filter((cp) => cp.source.toLowerCase().includes("crush"));
+  const rows: CandidatePathRow[] = sorted
+    .filter((cp) => !cp.source.toLowerCase().includes("crush"))
+    .map((cp) => ({ source: cp.source, exists: cp.exists, paths: [cp] }));
+  if (crushEntries.length > 0) {
+    rows.push({ source: "Crush", exists: crushEntries.some((cp) => cp.exists), paths: crushEntries });
+  }
+  return rows;
 }
 
-function buildCrushGroupRow(crushEntries: CandidatePath[], tbody: HTMLElement): void {
-  const anyExist = crushEntries.some((cp) => cp.exists);
-  const row = document.createElement("tr");
-  if (!anyExist) { row.style.opacity = "0.5"; }
-  const statusCell = document.createElement("td");
-  statusCell.textContent = anyExist ? "✅" : "❌";
-  statusCell.style.textAlign = "center";
-  const sourceCell = document.createElement("td");
-  const badge = document.createElement("span");
-  badge.className = getEditorBadgeClass("Crush");
-  badge.textContent = `${getEditorIcon("Crush")} Crush`;
-  sourceCell.appendChild(badge);
-  const pathCell = document.createElement("td");
-  pathCell.style.fontFamily = "var(--vscode-editor-font-family, monospace)";
-  pathCell.style.fontSize = "12px";
-  pathCell.style.lineHeight = "1.6";
-  for (const cp of crushEntries) {
-    const line = document.createElement("div");
-    line.style.opacity = cp.exists ? "1" : "0.5";
-    line.title = cp.path;
-    line.textContent = `${cp.exists ? "✅" : "❌"} ${cp.path}`;
-    pathCell.appendChild(line);
+function renderCandidatePathCell(row: CandidatePathRow): string {
+  if (row.paths.length === 1) {
+    const cp = row.paths[0];
+    return `<span title="${escapeHtml(cp.path)}">${escapeHtml(cp.path)}</span>`;
   }
-  row.append(statusCell, sourceCell, pathCell);
-  tbody.appendChild(row);
+  return row.paths
+    .map((cp) => `<div class="candidate-path-line${cp.exists ? "" : " candidate-path-missing"}" title="${escapeHtml(cp.path)}">${cp.exists ? "✅" : "❌"} ${escapeHtml(cp.path)}</div>`)
+    .join("");
+}
+
+function renderCandidatePathsTable(candidatePaths: CandidatePath[]): string {
+  const columns: DataTableColumn<CandidatePathRow>[] = [
+    { id: "status", label: "Status", align: "center", width: "60px", sortValue: (row) => row.exists ? 0 : 1, render: (row) => row.exists ? "✅" : "❌" },
+    {
+      id: "source",
+      label: "Source",
+      width: "140px",
+      sortValue: (row) => row.source,
+      render: (row) => ({ html: `<span class="${getEditorBadgeClass(row.source)}">${escapeHtml(`${getEditorIcon(row.source)} ${row.source}`)}</span>` }),
+    },
+    { id: "path", label: "Path", sortValue: (row) => row.paths[0]?.path, cellClassName: () => "diag-path-cell data-table-wrap-anywhere", render: (row) => ({ html: renderCandidatePathCell(row) }) },
+  ];
+  return renderDataTable({
+    tableId: CANDIDATE_PATHS_TABLE_ID,
+    ariaLabel: "Scanned Paths (all candidate locations):",
+    rows: buildCandidatePathRows(candidatePaths),
+    columns,
+    className: "data-table--fixed",
+    rowOptions: (row) => row.exists ? undefined : { className: "candidate-path-missing" },
+  });
 }
 
 function buildCandidatePathsElement(
@@ -390,26 +391,9 @@ function buildCandidatePathsElement(
   description.style.cssText = "color: #999; font-size: 12px; margin: 4px 0 8px 0;";
   description.textContent = "These are all the paths the extension checks for session files. Paths marked with ✅ exist on this system.";
   container.appendChild(description);
-  const tableContainer = document.createElement("div");
-  tableContainer.className = "table-container";
-  container.appendChild(tableContainer);
-  const table = document.createElement("table");
-  table.className = "session-table";
-  tableContainer.appendChild(table);
-  const thead = document.createElement("thead");
-  const headerRow = document.createElement("tr");
-  for (const text of ["Status", "Source", "Path"]) {
-    const th = document.createElement("th"); th.textContent = text; headerRow.appendChild(th);
-  }
-  thead.appendChild(headerRow);
-  table.appendChild(thead);
-  const tbody = document.createElement("tbody");
-  table.appendChild(tbody);
-  const sorted = [...candidatePaths].sort((a, b) => a.exists !== b.exists ? (a.exists ? -1 : 1) : a.source.localeCompare(b.source));
-  const crushEntries = sorted.filter((cp) => cp.source.toLowerCase().includes("crush"));
-  const otherEntries = sorted.filter((cp) => !cp.source.toLowerCase().includes("crush"));
-  for (const cp of otherEntries) { buildCandidatePathRow(cp, tbody); }
-  if (crushEntries.length > 0) { buildCrushGroupRow(crushEntries, tbody); }
+  const tableHost = document.createElement("div");
+  setHtml(tableHost, renderCandidatePathsTable(candidatePaths));
+  container.appendChild(tableHost);
   return container;
 }
 
@@ -500,67 +484,54 @@ function getEditorBadgeClass(editor: string): string {
 }
 
 
-function getSortValue(file: SessionFileDetails, column: typeof currentSortColumn): number {
-  switch (column) {
-    case 'size': return file.size || 0;
-    case 'tokens': return file.tokens || 0;
-    case 'interactions': return file.interactions || 0;
-    case 'contextRefs': return getTotalContextRefs(file.contextReferences);
-    default: return 0;
-  }
+const SESSION_TABLE_ID = "diagnostics-sessions";
+
+type SessionTableRows = {
+  rows: SessionFileDetails[];
+  /** Child session -> the parent row it is listed under; children sort with their parent. */
+  anchors: Map<SessionFileDetails, SessionFileDetails>;
+};
+
+function lastInteractionTime(sf: SessionFileDetails): number | null {
+  if (!sf.lastInteraction) { return null; }
+  const time = new Date(sf.lastInteraction).getTime();
+  return Number.isNaN(time) ? null : time;
 }
 
-function compareSessionFiles(a: SessionFileDetails, b: SessionFileDetails): number {
-  if (currentSortColumn === "lastInteraction") {
-    const aVal = a.lastInteraction;
-    const bVal = b.lastInteraction;
-    if (!aVal && !bVal) { return 0; }
-    if (!aVal) { return 1; }
-    if (!bVal) { return -1; }
-    const aNum = new Date(aVal).getTime();
-    const bNum = new Date(bVal).getTime();
-    return currentSortDirection === "desc" ? bNum - aNum : aNum - bNum;
+/**
+ * Orders the sessions newest first and moves every child listed in a parent's `childInfo` to
+ * directly after that parent. Each moved child is anchored to its parent, so the table sorts it by
+ * the parent's value and the stable sort keeps the family together in any sort order.
+ */
+function groupChildrenAfterParents(files: SessionFileDetails[]): SessionTableRows {
+  const newestFirst = [...files].sort((a, b) => {
+    const aTime = lastInteractionTime(a);
+    const bTime = lastInteractionTime(b);
+    if (aTime === null || bTime === null) { return aTime === bTime ? 0 : aTime === null ? 1 : -1; }
+    return bTime - aTime;
+  });
+  const byFile = new Map<string, SessionFileDetails>();
+  for (const f of newestFirst) {
+    if (!byFile.has(f.file)) { byFile.set(f.file, f); }
   }
-  const aNum = getSortValue(a, currentSortColumn);
-  const bNum = getSortValue(b, currentSortColumn);
-  if (aNum === 0 && bNum === 0) { return 0; }
-  return currentSortDirection === "desc" ? bNum - aNum : aNum - bNum;
-}
-
-function groupChildrenAfterParents(
-  sorted: SessionFileDetails[],
-  byFile: Map<string, SessionFileDetails>,
-): SessionFileDetails[] {
-  const placed = new Set<string>();
-  const result: SessionFileDetails[] = [];
-  for (const f of sorted) {
-    if (placed.has(f.file)) { continue; }
-    result.push(f);
-    placed.add(f.file);
+  const placed = new Set<SessionFileDetails>();
+  const rows: SessionFileDetails[] = [];
+  const anchors = new Map<SessionFileDetails, SessionFileDetails>();
+  for (const f of newestFirst) {
+    if (placed.has(f)) { continue; }
+    rows.push(f);
+    placed.add(f);
     for (const childRef of f.childInfo ?? []) {
       if (!childRef.sessionFile) { continue; }
-      const childDetails = byFile.get(childRef.sessionFile);
-      if (childDetails && !placed.has(childDetails.file)) {
-        result.push(childDetails);
-        placed.add(childDetails.file);
+      const child = byFile.get(childRef.sessionFile);
+      if (child && !placed.has(child)) {
+        rows.push(child);
+        placed.add(child);
+        anchors.set(child, f);
       }
     }
   }
-  return result;
-}
-
-function sortSessionFiles(files: SessionFileDetails[]): SessionFileDetails[] {
-  const sorted = [...files].sort(compareSessionFiles);
-  const byFile = new Map<string, SessionFileDetails>();
-  for (const f of sorted) { byFile.set(f.file, f); }
-  return groupChildrenAfterParents(sorted, byFile);
-}
-
-function getSortIndicator(column: typeof currentSortColumn): string {
-  if (currentSortColumn !== column) {
-    return "";
-  }
-  return currentSortDirection === "desc" ? " ▼" : " ▲";
+  return { rows, anchors };
 }
 
 function getEditorStats(files: SessionFileDetails[]): {
@@ -679,20 +650,81 @@ function buildUnattributedBadge(sf: SessionFileDetails): string {
   return ` <span title="⚠️ ${unattributed.toLocaleString()} tokens (~${pct}%) not attributed to any model — debug log events without a model field" style="color:#f59e0b; cursor:help; font-size:0.9em;">⚠️</span>`;
 }
 
-function buildSessionTableHtml(sortedFiles: SessionFileDetails[]): string {
-  const rows = sortedFiles.map((sf, idx) => {
-    const editorLabel = sf.editorName || sf.editorSource;
-    const isChild = !!sf.parentInfo;
-    const rawTitleHtml = sf.title ? `<a href="#" class="session-file-link" data-file="${encodeURIComponent(sf.file)}" title="${escapeHtml(sf.title)}">${escapeHtml(sf.title.length > 40 ? sf.title.substring(0, 40) + "..." : sf.title)}</a>` : `<a href="#" class="session-file-link empty-session-link" data-file="${encodeURIComponent(sf.file)}" title="Empty session">(Empty session)</a>`;
-    const titleHtml = isChild ? `<span class="child-title-indent">${rawTitleHtml}</span>` : rawTitleHtml;
-    const hierarchyBadges = buildHierarchyBadgesHtml(sf);
-    const repoLabel = sf.repository ? escapeHtml(getRepoDisplayName(sf.repository)) : (sf.file.includes('session-store.db') ? '<span style="color: #888; font-style: italic;">No workspace</span>' : '<span style="color: #666;">—</span>');
-    const repoTitle = sf.repository ? escapeHtml(sf.repository) : (sf.file.includes('session-store.db') ? 'Chat session — no workspace connected' : 'No repository detected');
-    const isUnknownEditor = (sf.editorName || sf.editorSource || "Unknown") === "Unknown";
-    const rowClass = isChild ? ' class="child-session-row"' : '';
-    return `<tr${rowClass}><td>${idx + 1}</td><td><span class="${getEditorBadgeClass(editorLabel)}" title="${escapeHtml(sf.editorSource)}">${getEditorIcon(editorLabel)} ${escapeHtml(editorLabel)}</span></td><td class="session-title" title="${sf.title ? escapeHtml(sf.title) : "Empty session"}">${hierarchyBadges}${titleHtml}</td><td class="repository-cell" title="${repoTitle}">${repoLabel}</td><td>${formatFileSize(sf.size)}</td><td title="${Number(sf.tokens || 0).toLocaleString()} tokens">${formatTokenCount(sf.tokens)}${buildUnattributedBadge(sf)}</td><td>${sanitizeNumber(sf.interactions)}</td><td title="${escapeHtml(getContextRefsSummary(sf.contextReferences))}">${sanitizeNumber(getTotalContextRefs(sf.contextReferences))}</td><td>${formatDate(sf.lastInteraction)}</td><td><a href="#" class="view-formatted-link" data-file="${encodeURIComponent(sf.file)}" title="View formatted JSONL file">📄 View</a>${isUnknownEditor ? ` <a href="#" class="report-editor-link" data-path="${encodeURIComponent(sf.file)}" title="Report this unknown path so we can add editor support">📢 Report</a>` : ""}</td></tr>`;
-  }).join("");
-  return `<div class="table-container"><table class="session-table"><thead><tr><th>#</th><th>Editor</th><th>Title</th><th>Repository</th><th class="sortable" data-sort="size">Size${getSortIndicator("size")}</th><th class="sortable" data-sort="tokens">Tokens${getSortIndicator("tokens")}</th><th class="sortable" data-sort="interactions">Interactions${getSortIndicator("interactions")}</th><th class="sortable" data-sort="contextRefs">Context Refs${getSortIndicator("contextRefs")}</th><th class="sortable" data-sort="lastInteraction">Last Interaction${getSortIndicator("lastInteraction")}</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+function renderSessionTitleCell(sf: SessionFileDetails): string {
+  const rawTitleHtml = sf.title ? `<a href="#" class="session-file-link" data-file="${encodeURIComponent(sf.file)}" title="${escapeHtml(sf.title)}">${escapeHtml(sf.title.length > 40 ? sf.title.substring(0, 40) + "..." : sf.title)}</a>` : `<a href="#" class="session-file-link empty-session-link" data-file="${encodeURIComponent(sf.file)}" title="Empty session">(Empty session)</a>`;
+  const titleHtml = sf.parentInfo ? `<span class="child-title-indent">${rawTitleHtml}</span>` : rawTitleHtml;
+  return `${buildHierarchyBadgesHtml(sf)}${titleHtml}`;
+}
+
+function renderSessionRepositoryCell(sf: SessionFileDetails): string {
+  const repoLabel = sf.repository ? escapeHtml(getRepoDisplayName(sf.repository)) : (sf.file.includes('session-store.db') ? '<span style="color: #888; font-style: italic;">No workspace</span>' : '<span style="color: #666;">—</span>');
+  const repoTitle = sf.repository ? escapeHtml(sf.repository) : (sf.file.includes('session-store.db') ? 'Chat session — no workspace connected' : 'No repository detected');
+  return `<span title="${repoTitle}">${repoLabel}</span>`;
+}
+
+function renderSessionActionsCell(sf: SessionFileDetails): string {
+  const isUnknownEditor = (sf.editorName || sf.editorSource || "Unknown") === "Unknown";
+  return `<a href="#" class="view-formatted-link" data-file="${encodeURIComponent(sf.file)}" title="View formatted JSONL file">📄 View</a>${isUnknownEditor ? ` <a href="#" class="report-editor-link" data-path="${encodeURIComponent(sf.file)}" title="Report this unknown path so we can add editor support">📢 Report</a>` : ""}`;
+}
+
+function buildSessionColumns(anchors: Map<SessionFileDetails, SessionFileDetails>): DataTableColumn<SessionFileDetails>[] {
+  const byFamily = (value: (sf: SessionFileDetails) => DataTableSortValue) => (sf: SessionFileDetails) => value(anchors.get(sf) ?? sf);
+  return [
+    { id: "index", label: "#", width: "40px", render: (_sf, index) => String(index + 1) },
+    {
+      id: "editor",
+      label: "Editor",
+      sortValue: byFamily((sf) => sf.editorName || sf.editorSource),
+      render: (sf) => {
+        const editorLabel = sf.editorName || sf.editorSource;
+        return { html: `<span class="${getEditorBadgeClass(editorLabel)}" title="${escapeHtml(sf.editorSource)}">${getEditorIcon(editorLabel)} ${escapeHtml(editorLabel)}</span>` };
+      },
+    },
+    { id: "title", label: "Title", sortValue: byFamily((sf) => sf.title || null), cellClassName: () => "session-title", render: (sf) => ({ html: renderSessionTitleCell(sf) }) },
+    {
+      id: "repository",
+      label: "Repository",
+      sortValue: byFamily((sf) => sf.repository ? getRepoDisplayName(sf.repository) : null),
+      cellClassName: () => "repository-cell",
+      render: (sf) => ({ html: renderSessionRepositoryCell(sf) }),
+    },
+    { id: "size", label: "Size", align: "right", sortValue: byFamily((sf) => sf.size || 0), render: (sf) => formatFileSize(sf.size) },
+    {
+      id: "tokens",
+      label: "Tokens",
+      align: "right",
+      sortValue: byFamily((sf) => sf.tokens || 0),
+      render: (sf) => ({ html: `<span title="${Number(sf.tokens || 0).toLocaleString()} tokens">${formatTokenCount(sf.tokens)}</span>${buildUnattributedBadge(sf)}` }),
+    },
+    { id: "interactions", label: "Interactions", align: "right", sortValue: byFamily((sf) => sf.interactions || 0), render: (sf) => sanitizeNumber(sf.interactions) },
+    {
+      id: "contextRefs",
+      label: "Context Refs",
+      align: "right",
+      sortValue: byFamily((sf) => getTotalContextRefs(sf.contextReferences)),
+      render: (sf) => ({ html: `<span title="${escapeHtml(getContextRefsSummary(sf.contextReferences))}">${sanitizeNumber(getTotalContextRefs(sf.contextReferences))}</span>` }),
+    },
+    {
+      id: "lastInteraction",
+      label: "Last Interaction",
+      firstSortDirection: "desc",
+      sortValue: byFamily(lastInteractionTime),
+      render: (sf) => ({ html: formatDate(sf.lastInteraction) }),
+    },
+    { id: "actions", label: "Actions", render: (sf) => ({ html: renderSessionActionsCell(sf) }) },
+  ];
+}
+
+function buildSessionTableHtml(filteredFiles: SessionFileDetails[]): string {
+  const { rows, anchors } = groupChildrenAfterParents(filteredFiles);
+  return renderDataTable({
+    tableId: SESSION_TABLE_ID,
+    ariaLabel: "Session File Analysis",
+    rows,
+    columns: buildSessionColumns(anchors),
+    initialSort: { columnId: "lastInteraction", direction: "desc" },
+    rowOptions: (sf) => sf.parentInfo ? { className: "child-session-row" } : undefined,
+  });
 }
 
 function renderSessionTable(
@@ -708,47 +740,49 @@ function renderSessionTable(
   const totalTokens = filteredFiles.reduce((sum, sf) => sum + Number(sf.tokens || 0), 0);
   const totalContextRefs = filteredFiles.reduce((sum, sf) => sum + getTotalContextRefs(sf.contextReferences), 0);
   const agg = aggregateContextRefs(filteredFiles);
-  const sortedFiles = sortSessionFiles(filteredFiles);
-  return `${buildEditorPanelsHtml(detailedFiles, editorStats, editors)}${buildSessionSummaryCardsHtml(filteredFiles, detailedFiles, totalInteractions, totalTokens, totalContextRefs, agg, zeroInteractionCount)}${buildSessionTableHtml(sortedFiles)}`;
+  return `${buildEditorPanelsHtml(detailedFiles, editorStats, editors)}${buildSessionSummaryCardsHtml(filteredFiles, detailedFiles, totalInteractions, totalTokens, totalContextRefs, agg, zeroInteractionCount)}${buildSessionTableHtml(filteredFiles)}`;
 }
 
-function counterRow(key: string, label: string, value: number): string {
-  return `
-    <tr>
-      <td style="padding: 6px 12px 6px 0; color: var(--vscode-descriptionForeground); white-space: nowrap;">${escapeHtml(label)}</td>
-      <td style="padding: 6px 8px 6px 0;">
-        <input type="number" class="debug-counter-input" data-key="${escapeHtml(key)}" value="${value}" min="0" step="1"
-          style="width:70px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 2px 6px; font-family: var(--vscode-editor-font-family, monospace);" />
-      </td>
-      <td style="padding: 6px 0;">
-        <button class="button secondary debug-counter-set" data-key="${escapeHtml(key)}" style="padding: 2px 10px; font-size: 12px;">Set</button>
-      </td>
-    </tr>`;
+type DebugStateRow =
+  | { kind: "counter"; key: string; label: string; value: number }
+  | { kind: "flag"; key: string; label: string; value: boolean }
+  | { kind: "string"; key: string; label: string; value: string };
+
+function renderDebugStateValueCell(row: DebugStateRow): string {
+  if (row.kind === "counter") {
+    return `<input type="number" class="debug-counter-input" data-key="${escapeHtml(row.key)}" value="${row.value}" min="0" step="1"
+          style="width:70px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 2px 6px; font-family: var(--vscode-editor-font-family, monospace);" />`;
+  }
+  if (row.kind === "flag") {
+    return `<input type="checkbox" class="debug-flag-input" data-key="${escapeHtml(row.key)}" ${row.value ? 'checked' : ''} />
+        <span style="margin-left:6px; font-family: var(--vscode-editor-font-family, monospace);">${row.value ? '✅ true' : '❌ false'}</span>`;
+  }
+  const display = row.value ? `✅ ${escapeHtml(row.value)}` : '❌ (not set)';
+  return `<span style="font-family: var(--vscode-editor-font-family, monospace);">${display}</span>`;
 }
 
-function stringRow(key: string, label: string, value: string): string {
-  const display = value ? `✅ ${escapeHtml(value)}` : '❌ (not set)';
-  return `
-    <tr>
-      <td style="padding: 6px 12px 6px 0; color: var(--vscode-descriptionForeground); white-space: nowrap;">${escapeHtml(label)}</td>
-      <td style="padding: 6px 8px 6px 0;" colspan="2">
-        <span style="font-family: var(--vscode-editor-font-family, monospace);">${display}</span>
-      </td>
-    </tr>`;
+function renderDebugStateActionCell(row: DebugStateRow): string {
+  if (row.kind === "string") { return ""; }
+  const buttonClass = row.kind === "counter" ? "debug-counter-set" : "debug-flag-set";
+  return `<button class="button secondary ${buttonClass}" data-key="${escapeHtml(row.key)}" style="padding: 2px 10px; font-size: 12px;">Set</button>`;
 }
 
-function flagRow(key: string, label: string, value: boolean): string {
-  return `
-    <tr>
-      <td style="padding: 6px 12px 6px 0; color: var(--vscode-descriptionForeground); white-space: nowrap;">${escapeHtml(label)}</td>
-      <td style="padding: 6px 8px 6px 0;">
-        <input type="checkbox" class="debug-flag-input" data-key="${escapeHtml(key)}" ${value ? 'checked' : ''} />
-        <span style="margin-left:6px; font-family: var(--vscode-editor-font-family, monospace);">${value ? '✅ true' : '❌ false'}</span>
-      </td>
-      <td style="padding: 6px 0;">
-        <button class="button secondary debug-flag-set" data-key="${escapeHtml(key)}" style="padding: 2px 10px; font-size: 12px;">Set</button>
-      </td>
-    </tr>`;
+const DEBUG_STATE_COLUMNS: DataTableColumn<DebugStateRow>[] = [
+  { id: "key", label: "", rowHeader: true, render: (row) => row.label },
+  { id: "value", label: "", render: (row) => ({ html: renderDebugStateValueCell(row) }) },
+  { id: "action", label: "", render: (row) => ({ html: renderDebugStateActionCell(row) }) },
+];
+
+function renderDebugStateTable(tableId: string, ariaLabel: string, rows: DebugStateRow[]): string {
+  return renderDataTable({
+    tableId,
+    ariaLabel,
+    rows,
+    columns: DEBUG_STATE_COLUMNS,
+    pageSize: false,
+    showHeader: false,
+    className: "data-table--key-value data-table--compact",
+  });
 }
 
 /** Rolling lookback (in days) for each period the Share Card period selector offers. Periods absent from
@@ -865,16 +899,16 @@ function renderDebugTab(counters: GlobalStateCounters | undefined): string {
       </div>
       <div class="cache-details">
         <h4>Notification Counters</h4>
-        <table><tbody>
-          ${counterRow('extension.openCount', 'extension.openCount (fluency banner threshold: 5)', c.openCount)}
-          ${counterRow('extension.unknownMcpOpenCount', 'extension.unknownMcpOpenCount (unknown MCP threshold: 8)', c.unknownMcpOpenCount)}
-        </tbody></table>
+        ${renderDebugStateTable("diagnostics-debug-counters", "Notification Counters", [
+          { kind: "counter", key: 'extension.openCount', label: 'extension.openCount (fluency banner threshold: 5)', value: c.openCount },
+          { kind: "counter", key: 'extension.unknownMcpOpenCount', label: 'extension.unknownMcpOpenCount (unknown MCP threshold: 8)', value: c.unknownMcpOpenCount },
+        ])}
         <h4 style="margin-top:16px;">Dismissed Flags</h4>
-        <table><tbody>
-          ${flagRow('news.fluencyScoreBanner.v1.dismissed', 'news.fluencyScoreBanner.v1.dismissed', c.fluencyBannerDismissed)}
-          ${stringRow('news.unknownMcpTools.dismissedVersion', 'news.unknownMcpTools.dismissedVersion', c.unknownMcpDismissedVersion)}
-          ${flagRow('news.efficiencyTab.v1.dismissed', 'news.efficiencyTab.v1.dismissed', c.efficiencyTabBannerDismissed)}
-        </tbody></table>
+        ${renderDebugStateTable("diagnostics-debug-flags", "Dismissed Flags", [
+          { kind: "flag", key: 'news.fluencyScoreBanner.v1.dismissed', label: 'news.fluencyScoreBanner.v1.dismissed', value: c.fluencyBannerDismissed },
+          { kind: "string", key: 'news.unknownMcpTools.dismissedVersion', label: 'news.unknownMcpTools.dismissedVersion', value: c.unknownMcpDismissedVersion },
+          { kind: "flag", key: 'news.efficiencyTab.v1.dismissed', label: 'news.efficiencyTab.v1.dismissed', value: c.efficiencyTabBannerDismissed },
+        ])}
         <div style="margin-top: 16px;">
           <button class="button secondary" id="btn-reset-debug-counters"><span>🔄</span><span>Reset All Counters &amp; Dismissed Flags</span></button>
         </div>
@@ -954,11 +988,22 @@ function getBackendStatus(isConfigured: boolean, enabled: boolean): { color: str
       : { color: "#666", icon: "⚪", text: "Disabled" };
 }
 
+type KeyValueRow = { label: string; value: string };
+
+const KEY_VALUE_COLUMNS: DataTableColumn<KeyValueRow>[] = [
+  { id: "key", label: "", rowHeader: true, render: (row) => row.label },
+  { id: "value", label: "", render: (row) => String(row.value ?? "") },
+];
+
+function renderKeyValueTable(tableId: string, ariaLabel: string, rows: KeyValueRow[]): string {
+  return renderDataTable({ tableId, ariaLabel, rows, columns: KEY_VALUE_COLUMNS, pageSize: false, showHeader: false, className: "data-table--key-value" });
+}
+
 function renderAzureDetailsSection(azureInfo: AzureStorageInfo): string {
   if (!azureInfo.isConfigured) {
     return `<div style="margin-top: 24px;"><h4 style="color: #fff; font-size: 14px; margin-bottom: 12px;">🚀 Get Started with Azure Storage</h4><p style="color: #999; font-size: 12px; margin-bottom: 16px;">To enable cloud synchronization, configure an Azure Storage account via the Backend configuration panel.</p><ul style="margin: 8px 0 16px 20px; color: #999; font-size: 12px;"><li>Azure subscription with Storage Account access</li><li>Appropriate permissions (Storage Table Data Contributor or Storage Account Key)</li><li>VS Code signed in with your Azure account (for Entra ID auth)</li></ul></div>`;
   }
-  return `<div style="margin-top: 24px;"><h4 style="color: #fff; font-size: 14px; margin-bottom: 12px;">📊 Configuration Details</h4><table class="session-table"><tbody><tr><td style="font-weight: 600; width: 200px;">Storage Account</td><td>${escapeHtml(azureInfo.storageAccount)}</td></tr><tr><td style="font-weight: 600;">Subscription ID</td><td>${escapeHtml(azureInfo.subscriptionId)}</td></tr><tr><td style="font-weight: 600;">Resource Group</td><td>${escapeHtml(azureInfo.resourceGroup)}</td></tr><tr><td style="font-weight: 600;">Aggregation Table</td><td>${escapeHtml(azureInfo.aggTable)}</td></tr><tr><td style="font-weight: 600;">Events Table</td><td>${escapeHtml(azureInfo.eventsTable)}</td></tr></tbody></table></div><div style="margin-top: 24px;"><h4 style="color: #fff; font-size: 14px; margin-bottom: 12px;">📈 Local Session Statistics</h4><div class="summary-cards"><div class="summary-card"><div class="summary-label">💻 Unique Devices</div><div class="summary-value">${escapeHtml(String(azureInfo.deviceCount))}</div><div style="font-size: 11px; color: #999; margin-top: 4px;">Based on workspace IDs</div></div><div class="summary-card"><div class="summary-label">📁 Total Sessions</div><div class="summary-value">${escapeHtml(String(azureInfo.sessionCount))}</div><div style="font-size: 11px; color: #999; margin-top: 4px;">Local session files</div></div><div class="summary-card"><div class="summary-label">☁️ Cloud Records</div><div class="summary-value">${azureInfo.recordCount !== null ? escapeHtml(String(azureInfo.recordCount)) : "—"}</div><div style="font-size: 11px; color: #999; margin-top: 4px;">Azure Storage records</div></div><div class="summary-card"><div class="summary-label">🔄 Sync Status</div><div class="summary-value" style="font-size: 14px;">${azureInfo.lastSyncTime ? formatDate(azureInfo.lastSyncTime) : "Never"}</div></div></div></div>`;
+  return `<div style="margin-top: 24px;"><h4 style="color: #fff; font-size: 14px; margin-bottom: 12px;">📊 Configuration Details</h4>${renderKeyValueTable("diagnostics-azure-config", "Configuration Details", [{ label: "Storage Account", value: azureInfo.storageAccount }, { label: "Subscription ID", value: azureInfo.subscriptionId }, { label: "Resource Group", value: azureInfo.resourceGroup }, { label: "Aggregation Table", value: azureInfo.aggTable }, { label: "Events Table", value: azureInfo.eventsTable }])}</div><div style="margin-top: 24px;"><h4 style="color: #fff; font-size: 14px; margin-bottom: 12px;">📈 Local Session Statistics</h4><div class="summary-cards"><div class="summary-card"><div class="summary-label">💻 Unique Devices</div><div class="summary-value">${escapeHtml(String(azureInfo.deviceCount))}</div><div style="font-size: 11px; color: #999; margin-top: 4px;">Based on workspace IDs</div></div><div class="summary-card"><div class="summary-label">📁 Total Sessions</div><div class="summary-value">${escapeHtml(String(azureInfo.sessionCount))}</div><div style="font-size: 11px; color: #999; margin-top: 4px;">Local session files</div></div><div class="summary-card"><div class="summary-label">☁️ Cloud Records</div><div class="summary-value">${azureInfo.recordCount !== null ? escapeHtml(String(azureInfo.recordCount)) : "—"}</div><div style="font-size: 11px; color: #999; margin-top: 4px;">Azure Storage records</div></div><div class="summary-card"><div class="summary-label">🔄 Sync Status</div><div class="summary-value" style="font-size: 14px;">${azureInfo.lastSyncTime ? formatDate(azureInfo.lastSyncTime) : "Never"}</div></div></div></div>`;
 }
 
 function renderAzureStoragePanel(azureInfo: AzureStorageInfo): string {
@@ -980,7 +1025,7 @@ function renderTeamServerDetailsSection(teamInfo: TeamServerInfo): string {
   if (!teamInfo.isConfigured) {
     return `<div style="margin-top: 24px;"><h4 style="color: #fff; font-size: 14px; margin-bottom: 12px;">🚀 Get Started with Team Server</h4><p style="color: #999; font-size: 12px; margin-bottom: 16px;">Deploy the sharing server and configure its URL in the Backend configuration panel.</p><ul style="margin: 8px 0 16px 20px; color: #999; font-size: 12px;"><li>Deploy the sharing server (see the <code>sharing-server/</code> folder in the repository)</li><li>Enter the server's base URL in the Backend configuration panel</li><li>Data syncs automatically every 5 minutes once configured</li></ul></div>`;
   }
-  return `<div style="margin-top: 24px;"><h4 style="color: #fff; font-size: 14px; margin-bottom: 12px;">📊 ${escapeHtml(localize('diagnostics.teamServer.configDetails'))}</h4><table class="session-table"><tbody><tr><td style="font-weight: 600; width: 200px;">${escapeHtml(localize('diagnostics.teamServer.serverUrl'))}</td><td>${escapeHtml(teamInfo.endpointUrl)}</td></tr></tbody></table></div><div style="margin-top: 24px;"><h4 style="color: #fff; font-size: 14px; margin-bottom: 12px;">📈 ${escapeHtml(localize('diagnostics.teamServer.localSessionStats'))}</h4><div class="summary-cards"><div class="summary-card"><div class="summary-label">📁 ${escapeHtml(localize('diagnostics.teamServer.totalSessions'))}</div><div class="summary-value">${escapeHtml(String(teamInfo.sessionCount))}</div><div style="font-size: 11px; color: #999; margin-top: 4px;">${escapeHtml(localize('diagnostics.teamServer.localSessionFiles'))}</div></div><div class="summary-card"><div class="summary-label">🔄 ${escapeHtml(localize('diagnostics.teamServer.usageData'))}</div><div class="summary-value" style="font-size: 14px;">${teamInfo.lastSyncTime ? formatDate(teamInfo.lastSyncTime) : escapeHtml(localize('diagnostics.teamServer.never'))}</div><div style="font-size: 11px; color: #999; margin-top: 4px;">${escapeHtml(localize('diagnostics.teamServer.lastRollupUpload'))}</div></div><div class="summary-card"><div class="summary-label">🎯 ${escapeHtml(localize('diagnostics.teamServer.fluencyScore'))}</div><div class="summary-value" style="font-size: 14px;">${teamInfo.fluencyLastSyncTime ? formatDate(teamInfo.fluencyLastSyncTime) : escapeHtml(localize('diagnostics.teamServer.never'))}</div><div style="font-size: 11px; color: #999; margin-top: 4px;">${escapeHtml(localize('diagnostics.teamServer.uploadedSeparately'))}</div></div></div></div>`;
+  return `<div style="margin-top: 24px;"><h4 style="color: #fff; font-size: 14px; margin-bottom: 12px;">📊 ${escapeHtml(localize('diagnostics.teamServer.configDetails'))}</h4>${renderKeyValueTable("diagnostics-team-server-config", localize('diagnostics.teamServer.configDetails'), [{ label: localize('diagnostics.teamServer.serverUrl'), value: teamInfo.endpointUrl }])}</div><div style="margin-top: 24px;"><h4 style="color: #fff; font-size: 14px; margin-bottom: 12px;">📈 ${escapeHtml(localize('diagnostics.teamServer.localSessionStats'))}</h4><div class="summary-cards"><div class="summary-card"><div class="summary-label">📁 ${escapeHtml(localize('diagnostics.teamServer.totalSessions'))}</div><div class="summary-value">${escapeHtml(String(teamInfo.sessionCount))}</div><div style="font-size: 11px; color: #999; margin-top: 4px;">${escapeHtml(localize('diagnostics.teamServer.localSessionFiles'))}</div></div><div class="summary-card"><div class="summary-label">🔄 ${escapeHtml(localize('diagnostics.teamServer.usageData'))}</div><div class="summary-value" style="font-size: 14px;">${teamInfo.lastSyncTime ? formatDate(teamInfo.lastSyncTime) : escapeHtml(localize('diagnostics.teamServer.never'))}</div><div style="font-size: 11px; color: #999; margin-top: 4px;">${escapeHtml(localize('diagnostics.teamServer.lastRollupUpload'))}</div></div><div class="summary-card"><div class="summary-label">🎯 ${escapeHtml(localize('diagnostics.teamServer.fluencyScore'))}</div><div class="summary-value" style="font-size: 14px;">${teamInfo.fluencyLastSyncTime ? formatDate(teamInfo.fluencyLastSyncTime) : escapeHtml(localize('diagnostics.teamServer.never'))}</div><div style="font-size: 11px; color: #999; margin-top: 4px;">${escapeHtml(localize('diagnostics.teamServer.uploadedSeparately'))}</div></div></div></div>`;
 }
 
 function renderTeamServerPanel(teamInfo: TeamServerInfo, githubAuth?: GitHubAuthStatus): string {
@@ -1067,28 +1112,70 @@ function renderFolderAnalyzerTab(): string {
   `;
 }
 
-function buildFolderFileTableRow(f: FolderFileResult, idx: number, folderPath: string): string {
-  const hasData = f.interactions > 0 || f.tokens > 0;
-  const rel = f.file.startsWith(folderPath)
-    ? f.file.slice(folderPath.length).replace(/^[/\\]/, "")
-    : getFileName(f.file);
-  const safeInteractions = Number(f.interactions);
-  const interactionsCell = safeInteractions > 0
-    ? `<strong>${escapeHtml(String(safeInteractions))}</strong>`
-    : `<span style="color: var(--text-muted);">0</span>`;
-  const safeTokens = Number(f.tokens);
-  const tokensCell = safeTokens > 0
-    ? `<strong title="${escapeHtml(String(safeTokens.toLocaleString()))} tokens">${escapeHtml(String(formatTokenCount(safeTokens)))}</strong>`
-    : `<span style="color: var(--text-muted);">0</span>`;
-  return `
-    <tr style="${hasData ? "" : "opacity: 0.45;"}">
-      <td>${idx + 1}</td>
-      <td title="${escapeHtml(f.file)}" style="font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(rel)}</td>
-      <td>${escapeHtml(String(formatFileSize(f.size)))}</td>
-      <td>${interactionsCell}</td>
-      <td>${tokensCell}</td>
-      <td>${formatDate(f.modified)}</td>
-    </tr>`;
+const FOLDER_ANALYSIS_TABLE_ID = "diagnostics-folder-analysis";
+
+function buildFolderFileColumns(folderPath: string): DataTableColumn<FolderFileResult>[] {
+  return [
+    { id: "index", label: "#", width: "40px", render: (_f, index) => String(index + 1) },
+    {
+      id: "file",
+      label: "File",
+      sortValue: (f) => f.file,
+      render: (f) => {
+        const rel = f.file.startsWith(folderPath)
+          ? f.file.slice(folderPath.length).replace(/^[/\\]/, "")
+          : getFileName(f.file);
+        return { html: `<span class="diag-path-cell data-table-truncate" title="${escapeHtml(f.file)}" style="font-size: 11px; max-width: 420px;">${escapeHtml(rel)}</span>` };
+      },
+    },
+    { id: "size", label: "Size", align: "right", sortValue: (f) => Number(f.size) || 0, render: (f) => String(formatFileSize(f.size)) },
+    {
+      id: "interactions",
+      label: "Interactions",
+      align: "right",
+      sortValue: (f) => Number(f.interactions) || 0,
+      render: (f) => {
+        const safeInteractions = Number(f.interactions);
+        return { html: safeInteractions > 0 ? `<strong>${escapeHtml(String(safeInteractions))}</strong>` : `<span style="color: var(--text-muted);">0</span>` };
+      },
+    },
+    {
+      id: "tokens",
+      label: "Tokens",
+      align: "right",
+      sortValue: (f) => Number(f.tokens) || 0,
+      render: (f) => {
+        const safeTokens = Number(f.tokens);
+        return {
+          html: safeTokens > 0
+            ? `<strong title="${escapeHtml(String(safeTokens.toLocaleString()))} tokens">${escapeHtml(String(formatTokenCount(safeTokens)))}</strong>`
+            : `<span style="color: var(--text-muted);">0</span>`,
+        };
+      },
+    },
+    {
+      id: "modified",
+      label: "Last Modified",
+      firstSortDirection: "desc",
+      sortValue: (f) => { const time = new Date(f.modified).getTime(); return Number.isNaN(time) ? null : time; },
+      render: (f) => ({ html: formatDate(f.modified) }),
+    },
+    // Default order: files with the most interactions first, then by tokens.
+    { id: "score", label: "", hidden: true, sortValue: (f) => Number(f.interactions) * 1000 + Number(f.tokens) || 0, render: () => "" },
+  ];
+}
+
+function renderFolderFileTable(files: FolderFileResult[], folderPath: string): string {
+  // A new analysis starts on the first page; the chosen sort is kept.
+  setDataTableState(FOLDER_ANALYSIS_TABLE_ID, { page: 1 });
+  return renderDataTable({
+    tableId: FOLDER_ANALYSIS_TABLE_ID,
+    ariaLabel: "Analysis Results",
+    rows: files,
+    columns: buildFolderFileColumns(folderPath),
+    initialSort: { columnId: "score", direction: "desc" },
+    rowOptions: (f) => f.interactions > 0 || f.tokens > 0 ? undefined : { className: "folder-file-empty" },
+  });
 }
 
 function renderFolderAnalysisResults(
@@ -1102,12 +1189,6 @@ function renderFolderAnalysisResults(
   const totalInteractions = files.reduce((sum, f) => sum + Number(f.interactions), 0);
   const totalTokens = files.reduce((sum, f) => sum + Number(f.tokens), 0);
 
-  const sorted = [...files].sort((a, b) => {
-    const aScore = a.interactions * 1000 + a.tokens;
-    const bScore = b.interactions * 1000 + b.tokens;
-    return bScore - aScore;
-  });
-
   const truncatedWarning = truncated
     ? `<div class="info-box" style="margin-bottom: 12px; border-color: #d97706; background: rgba(217,119,6,0.08);">
         <div>⚠️ Scan limit reached (500 files). Results may be incomplete. Try a more specific subfolder.</div>
@@ -1120,8 +1201,6 @@ function renderFolderAnalysisResults(
       <div style="font-size: 14px;">No matching files found in this folder.</div>
       <div style="font-size: 12px; margin-top: 8px;">Try a different folder path or tool type.</div>
     </div>`;
-
-  const tableRows = sorted.map((f, idx) => buildFolderFileTableRow(f, idx, folderPath)).join("");
 
   return `
     <div class="section" style="margin-top: 0;">
@@ -1152,21 +1231,7 @@ function renderFolderAnalysisResults(
         </div>` : ""}
       </div>
       ${files.length === 0 ? emptyState : `
-        <div class="table-container" style="margin-top: 12px; max-height: 420px;">
-          <table class="session-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>File</th>
-                <th>Size</th>
-                <th>Interactions</th>
-                <th>Tokens</th>
-                <th>Last Modified</th>
-              </tr>
-            </thead>
-            <tbody>${tableRows}</tbody>
-          </table>
-        </div>`}
+        <div style="margin-top: 12px;">${renderFolderFileTable(files, folderPath)}</div>`}
     </div>`;
 }
 
@@ -1241,25 +1306,40 @@ function renderModelUsageTimeSelector(disabled: boolean = false): void {
   wrapper.append(select);
 }
 
-function buildModelUsageTableRow(row: ModelUsageRow, showCache1h: boolean): string {
-  const sessionCountTitle = escapeHtml(`${row.sessionCount} session(s)`);
-  const inputTokensTitle = escapeHtml(`${row.inputTokens.toLocaleString()} tokens`);
-  const outputTokensTitle = escapeHtml(`${row.outputTokens.toLocaleString()} tokens`);
-  const cacheCreationTokensTitle = escapeHtml(`${row.cacheCreationTokens.toLocaleString()} tokens`);
-  const cacheCreation1hTokensTitle = escapeHtml(`${row.cacheCreation1hTokens.toLocaleString()} tokens`);
-  const cachedReadTokensTitle = escapeHtml(`${row.cachedReadTokens.toLocaleString()} tokens`);
+const MODEL_USAGE_TABLE_ID = "diagnostics-model-usage";
 
-  return `
-    <tr>
-      <td>${escapeHtml(row.model)}</td>
-      <td title="${sessionCountTitle}">${row.sessionCount.toLocaleString()}</td>
-      <td title="${inputTokensTitle}">${formatTokenCount(row.inputTokens)}</td>
-      <td title="${outputTokensTitle}">${formatTokenCount(row.outputTokens)}</td>
-      <td title="${cacheCreationTokensTitle}">${formatTokenCount(row.cacheCreationTokens)}</td>
-      ${showCache1h ? `<td title="${cacheCreation1hTokensTitle}">${formatTokenCount(row.cacheCreation1hTokens)}</td>` : ""}
-      <td title="${cachedReadTokensTitle}">${formatTokenCount(row.cachedReadTokens)}</td>
-      <td>$${row.estimatedCost.toFixed(2)}</td>
-    </tr>`;
+function tokenCountColumn(id: string, label: string, value: (row: ModelUsageRow) => number): DataTableColumn<ModelUsageRow> {
+  return {
+    id,
+    label,
+    align: "right",
+    sortValue: value,
+    render: (row) => ({ html: `<span title="${escapeHtml(`${value(row).toLocaleString()} tokens`)}">${formatTokenCount(value(row))}</span>` }),
+  };
+}
+
+function buildModelUsageColumns(showCache1h: boolean): DataTableColumn<ModelUsageRow>[] {
+  const columns: DataTableColumn<ModelUsageRow>[] = [
+    { id: "model", label: "Model", sortValue: (row) => row.model, render: (row) => row.model },
+    {
+      id: "sessions",
+      label: "Sessions",
+      align: "right",
+      sortValue: (row) => row.sessionCount,
+      render: (row) => ({ html: `<span title="${escapeHtml(`${row.sessionCount} session(s)`)}">${row.sessionCount.toLocaleString()}</span>` }),
+    },
+    tokenCountColumn("input", "Input", (row) => row.inputTokens),
+    tokenCountColumn("output", "Output", (row) => row.outputTokens),
+    tokenCountColumn("cacheCreate", "Cache Create", (row) => row.cacheCreationTokens),
+  ];
+  if (showCache1h) {
+    columns.push(tokenCountColumn("cacheCreate1h", "Cache Create (1h)", (row) => row.cacheCreation1hTokens));
+  }
+  columns.push(
+    tokenCountColumn("cacheRead", "Cache Read", (row) => row.cachedReadTokens),
+    { id: "cost", label: "Est. Cost", align: "right", sortValue: (row) => row.estimatedCost, render: (row) => `$${row.estimatedCost.toFixed(2)}` },
+  );
+  return columns;
 }
 
 function buildModelUsageExplanation(fileCount: number, filesWithUsage: number): string {
@@ -1310,7 +1390,13 @@ function renderModelUsageResults(
       </div>
       ${buildModelUsageExplanation(fileCount, filesWithUsage)}`;
   }
-  const tableRows = rows.map((r) => buildModelUsageTableRow(r, supportsCache1h)).join("");
+  setDataTableState(MODEL_USAGE_TABLE_ID, { page: 1 });
+  const table = renderDataTable({
+    tableId: MODEL_USAGE_TABLE_ID,
+    ariaLabel: "Model Usage Breakdown",
+    rows,
+    columns: buildModelUsageColumns(supportsCache1h),
+  });
   return `
     <div class="section" style="margin-top: 0;">
       <div class="section-title">📊 Results — ${escapeHtml(scopeLabel)}</div>
@@ -1329,23 +1415,7 @@ function renderModelUsageResults(
           <div class="summary-value">$${totalCost.toFixed(2)}</div>
         </div>
       </div>
-      <div class="table-container" style="margin-top: 12px; max-height: 420px;">
-        <table class="session-table">
-          <thead>
-            <tr>
-              <th>Model</th>
-              <th>Sessions</th>
-              <th>Input</th>
-              <th>Output</th>
-              <th>Cache Create</th>
-              ${supportsCache1h ? "<th>Cache Create (1h)</th>" : ""}
-              <th>Cache Read</th>
-              <th>Est. Cost</th>
-            </tr>
-          </thead>
-          <tbody>${tableRows}</tbody>
-        </table>
-      </div>
+      <div style="margin-top: 12px;">${table}</div>
       ${buildModelUsageExplanation(fileCount, filesWithUsage)}
     </div>`;
 }
@@ -1386,56 +1456,49 @@ function getHomeDirectory(): string {
   return win.process?.env?.HOME || win.process?.env?.USERPROFILE || "";
 }
 
-function buildSessionFolderRow(sf: SessionFolder, home: string | null): HTMLElement {
-  let display = sf.dir;
-  if (home && display.startsWith(home)) {
-    display = display.replace(home, "~");
-  }
+const SESSION_FOLDERS_TABLE_ID = "diagnostics-session-folders";
+
+function renderSessionFolderOpenCell(sf: SessionFolder): string {
   const editorName = sf.editorName || "Unknown";
+  const encodedPath = encodeURIComponent(String(sf.dir ?? ""));
+  const openLink = `<a href="#" class="reveal-link" data-path="${escapeHtml(encodedPath)}">Open directory</a>`;
+  const reportLink = editorName === "Unknown"
+    ? ` <a href="#" class="report-editor-link" data-path="${escapeHtml(encodedPath)}" title="Report this unknown path so we can add editor support">📢 Report</a>`
+    : "";
+  return openLink + reportLink;
+}
 
-  const row = document.createElement("tr");
-
-  const folderCell = document.createElement("td");
-  folderCell.setAttribute("title", sf.dir);
-  folderCell.textContent = display;
-  row.appendChild(folderCell);
-
-  const editorCell = document.createElement("td");
-  const editorBadge = document.createElement("span");
-  editorBadge.className = getEditorBadgeClass(editorName);
-  editorBadge.textContent = `${getEditorIcon(editorName)} ${editorName}`;
-  editorCell.appendChild(editorBadge);
-  row.appendChild(editorCell);
-
-  const countCell = document.createElement("td");
-  countCell.textContent = String(sf.count);
-  row.appendChild(countCell);
-
-  const openCell = document.createElement("td");
-  const openLink = document.createElement("a");
-  openLink.href = "#";
-  openLink.className = "reveal-link";
-  openLink.setAttribute("data-path", encodeURIComponent(sf.dir));
-  openLink.textContent = "Open directory";
-  openCell.appendChild(openLink);
-  if (editorName === "Unknown") {
-    const reportLink = document.createElement("a");
-    reportLink.href = "#";
-    reportLink.className = "report-editor-link";
-    reportLink.setAttribute("data-path", encodeURIComponent(sf.dir));
-    reportLink.setAttribute("title", "Report this unknown path so we can add editor support");
-    reportLink.textContent = "📢 Report";
-    openCell.appendChild(document.createTextNode(" "));
-    openCell.appendChild(reportLink);
-  }
-  row.appendChild(openCell);
-  return row;
+function buildSessionFolderColumns(home: string | null): DataTableColumn<SessionFolder>[] {
+  return [
+    {
+      id: "folder",
+      label: "Folder",
+      sortValue: (sf) => sf.dir,
+      cellClassName: () => "data-table-wrap-anywhere",
+      render: (sf) => {
+        // Host data from an older or partial payload may lack `dir`; render it empty rather than throw.
+        const dir = String(sf.dir ?? "");
+        const display = home && dir.startsWith(home) ? dir.replace(home, "~") : dir;
+        return { html: `<span title="${escapeHtml(dir)}">${escapeHtml(display)}</span>` };
+      },
+    },
+    {
+      id: "editor",
+      label: "Editor",
+      width: "150px",
+      sortValue: (sf) => sf.editorName || "Unknown",
+      render: (sf) => {
+        const editorName = sf.editorName || "Unknown";
+        return { html: `<span class="${getEditorBadgeClass(editorName)}">${escapeHtml(`${getEditorIcon(editorName)} ${editorName}`)}</span>` };
+      },
+    },
+    { id: "count", label: "# of Sessions", align: "right", width: "110px", sortValue: (sf) => sf.count, render: (sf) => String(sf.count ?? 0) },
+    { id: "open", label: "Open", width: "150px", cellClassName: () => "data-table-wrap-anywhere", render: (sf) => ({ html: renderSessionFolderOpenCell(sf) }) },
+  ];
 }
 
 function buildSessionFoldersElement(folders: SessionFolder[]): HTMLElement {
-  const sorted = [...folders].sort((a, b) => b.count - a.count);
-  const totalSessions = sorted.reduce((sum, sf) => sum + sf.count, 0);
-  const home = getHomeDirectory();
+  const totalSessions = folders.reduce((sum, sf) => sum + (sf.count || 0), 0);
 
   const container = document.createElement("div");
   container.className = "session-folders-table";
@@ -1444,49 +1507,17 @@ function buildSessionFoldersElement(folders: SessionFolder[]): HTMLElement {
   heading.textContent = "Main Session Folders (by editor root):";
   container.appendChild(heading);
 
-  const tableContainer = document.createElement("div");
-  tableContainer.className = "table-container";
-  container.appendChild(tableContainer);
-
-  const table = document.createElement("table");
-  table.className = "session-table";
-  tableContainer.appendChild(table);
-
-  const thead = document.createElement("thead");
-  table.appendChild(thead);
-  const headerRow = document.createElement("tr");
-  thead.appendChild(headerRow);
-  for (const text of ["Folder", "Editor", "# of Sessions", "Open"]) {
-    const th = document.createElement("th");
-    th.textContent = text;
-    headerRow.appendChild(th);
-  }
-
-  const tbody = document.createElement("tbody");
-  table.appendChild(tbody);
-
-  for (const sf of sorted) {
-    tbody.appendChild(buildSessionFolderRow(sf, home));
-  }
-
-  const totalRow = document.createElement("tr");
-  totalRow.style.borderTop = "2px solid #5a5a5a";
-  totalRow.style.fontWeight = "600";
-  totalRow.style.background = "rgba(255, 255, 255, 0.05)";
-
-  const totalLabelCell = document.createElement("td");
-  totalLabelCell.setAttribute("colspan", "2");
-  totalLabelCell.style.textAlign = "right";
-  totalLabelCell.style.paddingRight = "16px";
-  totalLabelCell.textContent = "Total:";
-  totalRow.appendChild(totalLabelCell);
-
-  const totalCountCell = document.createElement("td");
-  totalCountCell.textContent = String(totalSessions);
-  totalRow.appendChild(totalCountCell);
-
-  totalRow.appendChild(document.createElement("td"));
-  tbody.appendChild(totalRow);
+  const tableHost = document.createElement("div");
+  setHtml(tableHost, renderDataTable({
+    tableId: SESSION_FOLDERS_TABLE_ID,
+    ariaLabel: "Main Session Folders (by editor root):",
+    rows: folders,
+    columns: buildSessionFolderColumns(getHomeDirectory()),
+    initialSort: { columnId: "count", direction: "desc" },
+    className: "data-table--fixed",
+    footerRows: [{ cells: { editor: "Total:", count: String(totalSessions) } }],
+  }));
+  container.appendChild(tableHost);
 
   return container;
 }
@@ -1628,24 +1659,10 @@ function setupGroupHandlers(): void {
   });
 }
 
-function setupSortHandlers(): void {
-  document.querySelectorAll(".sortable").forEach((header) => {
-    header.addEventListener("click", () => {
-      const sortColumn = (header as HTMLElement).getAttribute(
-        "data-sort",
-      ) as typeof currentSortColumn;
-      if (sortColumn) {
-        if (currentSortColumn === sortColumn) {
-          currentSortDirection =
-            currentSortDirection === "desc" ? "asc" : "desc";
-        } else {
-          currentSortColumn = sortColumn;
-          currentSortDirection = "desc";
-        }
-        reRenderTable();
-      }
-    });
-  });
+/** Filters change which rows the session table shows, so go back to its first page. */
+function applySessionFilterChange(): void {
+  setDataTableState(SESSION_TABLE_ID, { page: 1 });
+  reRenderTable();
 }
 
 function setupEditorFilterHandlers(): void {
@@ -1653,7 +1670,7 @@ function setupEditorFilterHandlers(): void {
     panel.addEventListener("click", () => {
       const editor = (panel as HTMLElement).getAttribute("data-editor");
       currentEditorFilter = editor === "" ? null : editor;
-      reRenderTable();
+      applySessionFilterChange();
     });
   });
 }
@@ -1670,7 +1687,7 @@ function setupContextRefFilterHandlers(): void {
       } else {
         currentContextRefFilter = refType;
       }
-      reRenderTable();
+      applySessionFilterChange();
     });
   });
 }
@@ -1680,7 +1697,7 @@ function setupUnattributedFilterHandler(): void {
   if (checkbox) {
     checkbox.addEventListener("change", () => {
       showOnlyUnattributed = checkbox.checked;
-      reRenderTable();
+      applySessionFilterChange();
     });
   }
 }
@@ -1690,7 +1707,7 @@ function setupZeroInteractionFilterHandler(): void {
   if (checkbox) {
     checkbox.addEventListener("change", () => {
       hideEmptySessions = checkbox.checked;
-      reRenderTable();
+      applySessionFilterChange();
     });
   }
 }
@@ -1778,89 +1795,43 @@ function reRenderTable(): void {
   if (container) {
     setHtml(container, renderSessionTable(storedDetailedFiles, isLoading));
     if (!isLoading) {
-      setupSortHandlers();
       setupEditorFilterHandlers();
       setupContextRefFilterHandlers();
       setupZeroInteractionFilterHandler();
       setupUnattributedFilterHandler();
-      setupFileLinks();
     }
   }
 }
 
-function reRenderToolAnalysisTable(): void {
-  document.querySelectorAll<HTMLElement>(".tool-analysis-table").forEach(table => {
-    const encoded = table.getAttribute("data-rows");
-    if (!encoded) { return; }
-    const rows: ToolAnalysisRow[] = JSON.parse(decodeURIComponent(encoded));
-    const baselineRaw = table.getAttribute("data-baseline");
-    const baseline = baselineRaw ? parseFloat(baselineRaw) : NaN;
-    const tbody = table.querySelector("tbody");
-    if (tbody) { setHtml(tbody, renderToolAnalysisRows(rows, baseline)); }
-    const thead = table.querySelector("thead");
-    if (thead) { setHtml(thead, toolAnalysisTheadHtml()); }
-  });
-  setupToolAnalysisSortHandlers();
-}
-
-function setupToolAnalysisSortHandlers(): void {
-  document.querySelectorAll<HTMLElement>(".tool-sortable").forEach(header => {
-    header.addEventListener("click", () => {
-      const col = header.getAttribute("data-sort") as typeof toolSortColumn | null;
-      if (!col) { return; }
-      if (toolSortColumn === col) {
-        toolSortDir = toolSortDir === "desc" ? "asc" : "desc";
-      } else {
-        toolSortColumn = col;
-        toolSortDir = col === "tool" ? "asc" : "desc";
-      }
-      reRenderToolAnalysisTable();
-    });
-  });
+function setupToolAnalysisHandlers(): void {
   document.getElementById("btn-open-tool-families-settings")?.addEventListener("click", () => {
     vscode.postMessage({ command: "openToolFamiliesSettings" });
   });
 }
 
+const FILE_LINK_SELECTOR = ".session-file-link, .view-formatted-link, .reveal-link, .report-editor-link";
+let fileLinksDelegated = false;
+
+/**
+ * One delegated listener for the file/folder links in table cells, so links keep working after a
+ * table re-renders itself on sort or page changes.
+ */
 function setupFileLinks(): void {
-  document.querySelectorAll(".session-file-link").forEach((link) => {
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      const file = decodeURIComponent(
-        (link as HTMLElement).getAttribute("data-file") || "",
-      );
-      vscode.postMessage({ command: "openSessionFile", file });
-    });
-  });
-
-  document.querySelectorAll(".view-formatted-link").forEach((link) => {
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      const file = decodeURIComponent(
-        (link as HTMLElement).getAttribute("data-file") || "",
-      );
-      vscode.postMessage({ command: "openFormattedJsonlFile", file });
-    });
-  });
-
-  document.querySelectorAll(".reveal-link").forEach((link) => {
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      const path = decodeURIComponent(
-        (link as HTMLElement).getAttribute("data-path") || "",
-      );
-      vscode.postMessage({ command: "revealPath", path });
-    });
-  });
-
-  document.querySelectorAll(".report-editor-link").forEach((link) => {
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      const path = decodeURIComponent(
-        (link as HTMLElement).getAttribute("data-path") || "",
-      );
-      vscode.postMessage({ command: "reportNewEditorPath", path });
-    });
+  if (fileLinksDelegated) { return; }
+  fileLinksDelegated = true;
+  document.addEventListener("click", (e) => {
+    const link = (e.target as Element | null)?.closest?.(FILE_LINK_SELECTOR) as HTMLElement | null;
+    if (!link) { return; }
+    e.preventDefault();
+    if (link.classList.contains("session-file-link")) {
+      vscode.postMessage({ command: "openSessionFile", file: decodeURIComponent(link.getAttribute("data-file") || "") });
+    } else if (link.classList.contains("view-formatted-link")) {
+      vscode.postMessage({ command: "openFormattedJsonlFile", file: decodeURIComponent(link.getAttribute("data-file") || "") });
+    } else if (link.classList.contains("reveal-link")) {
+      vscode.postMessage({ command: "revealPath", path: decodeURIComponent(link.getAttribute("data-path") || "") });
+    } else {
+      vscode.postMessage({ command: "reportNewEditorPath", path: decodeURIComponent(link.getAttribute("data-path") || "") });
+    }
   });
 }
 
@@ -2308,7 +2279,7 @@ function handleToolAnalysisSection(message: DiagMessage): void {
   if (message.toolFamilies) { storedToolFamilies = message.toolFamilies as ToolFamilyConfig[]; }
   if (message.toolCallStats === undefined) { return; }
   const newContent = renderToolAnalysisTab(message.toolCallStats as DiagnosticsData['toolCallStats'], storedToolFamilies);
-  replaceTabContent("tool-analysis", newContent, setupToolAnalysisSortHandlers);
+  replaceTabContent("tool-analysis", newContent, setupToolAnalysisHandlers);
 }
 
 /** Re-renders the Skill Usage tab body from the cached data + current editor filter, preserving active/tab state. */
@@ -2327,6 +2298,7 @@ function setupSkillUsageFilterHandler(): void {
       if (!editor) { return; }
       skillUsageEditorFilter = editor;
       diagState.patch({ skillUsageEditorFilter: editor });
+      setDataTableState(SKILL_USAGE_TABLE_ID, { page: 1 });
       rerenderSkillUsageTab();
     });
   });
@@ -2351,6 +2323,7 @@ function setupOtelDeltaPeriodHandler(): void {
   select.addEventListener("change", () => {
     currentOtelDeltaPeriod = select.value as OtelDeltaPeriod;
     diagState.patch({ otelDeltaPeriod: currentOtelDeltaPeriod });
+    setDataTableState(OTEL_DELTA_TABLE_ID, { page: 1 });
     rerenderOtelDeltaTab();
   });
 }
@@ -2899,11 +2872,6 @@ for quick scanning, or as full numbers (e.g. <strong>1,500</strong>, <strong>1,2
 
 type ToolAnalysisRow = { tool: string; totalTokens: number; calls: number; isBuiltIn: boolean };
 
-function getToolSortIndicator(col: typeof toolSortColumn): string {
-  if (toolSortColumn !== col) { return ' <span class="sort-hint">↕</span>'; }
-  return toolSortDir === "desc" ? " ▼" : " ▲";
-}
-
 /** Compute pooled avg tokens/call across a set of rows (built-in baseline). Returns NaN if no data. */
 function pooledAvg(rows: ToolAnalysisRow[]): number {
   const totalCalls = rows.reduce((s, r) => s + r.calls, 0);
@@ -2911,50 +2879,67 @@ function pooledAvg(rows: ToolAnalysisRow[]): number {
   return totalCalls > 0 ? totalTokens / totalCalls : NaN;
 }
 
-/** Sort rows by the current toolSortColumn/toolSortDir. */
-function sortToolRows(rows: ToolAnalysisRow[]): ToolAnalysisRow[] {
-  return [...rows].sort((a, b) => {
-    let aVal: number | string, bVal: number | string;
-    switch (toolSortColumn) {
-      case "tool": aVal = a.tool.toLowerCase(); bVal = b.tool.toLowerCase(); break;
-      case "calls": aVal = a.calls; bVal = b.calls; break;
-      case "total": aVal = a.totalTokens; bVal = b.totalTokens; break;
-      case "avg": default: aVal = a.calls > 0 ? a.totalTokens / a.calls : 0; bVal = b.calls > 0 ? b.totalTokens / b.calls : 0; break;
-    }
-    if (aVal < bVal) { return toolSortDir === "desc" ? 1 : -1; }
-    if (aVal > bVal) { return toolSortDir === "desc" ? -1 : 1; }
-    return 0;
+function toolAvgTokens(r: ToolAnalysisRow): number {
+  return r.calls > 0 ? r.totalTokens / r.calls : 0;
+}
+
+/** An alternative tool's avg tokens/call relative to the family's built-in baseline, or null when not comparable. */
+function toolBaselineRatio(r: ToolAnalysisRow, builtInBaseline: number): number | null {
+  if (r.isBuiltIn || isNaN(builtInBaseline) || builtInBaseline <= 0 || r.calls <= 0) { return null; }
+  return toolAvgTokens(r) / builtInBaseline;
+}
+
+function toolRatioClass(r: ToolAnalysisRow, builtInBaseline: number): string | undefined {
+  if (r.isBuiltIn) { return "tool-builtin-label"; }
+  const ratio = toolBaselineRatio(r, builtInBaseline);
+  if (ratio === null) { return undefined; }
+  return ratio < 0.85 ? "ratio-better" : ratio > 1.15 ? "ratio-worse" : "ratio-neutral";
+}
+
+function renderToolRatioCell(r: ToolAnalysisRow, builtInBaseline: number): string {
+  if (r.isBuiltIn) { return "baseline"; }
+  const ratio = toolBaselineRatio(r, builtInBaseline);
+  if (ratio === null) { return "—"; }
+  const pct = Number(Math.round(ratio * 100)) || 0;
+  return `<span title="${pct}% of built-in average">${pct}%</span>`;
+}
+
+function buildToolAnalysisColumns(builtInBaseline: number): DataTableColumn<ToolAnalysisRow>[] {
+  return [
+    {
+      id: "tool",
+      label: "Tool",
+      sortValue: (r) => r.tool,
+      render: (r) => {
+        const badge = r.isBuiltIn ? ' <span class="tool-type-badge built-in">built-in</span>' : ' <span class="tool-type-badge alternative">alt</span>';
+        return { html: `${escapeHtml(r.tool)}${badge}` };
+      },
+    },
+    { id: "calls", label: "Calls", align: "right", sortValue: (r) => r.calls, render: (r) => String(r.calls) },
+    { id: "total", label: "Total Output Tokens", align: "right", sortValue: (r) => r.totalTokens, render: (r) => formatTokenCount(r.totalTokens) },
+    { id: "avg", label: "Avg Tokens / Call", align: "right", sortValue: toolAvgTokens, render: (r) => formatTokenCount(Math.round(toolAvgTokens(r))) },
+    {
+      id: "ratio",
+      label: "vs Built-in",
+      align: "right",
+      className: "tool-ratio",
+      sortValue: (r) => toolBaselineRatio(r, builtInBaseline),
+      cellClassName: (r) => toolRatioClass(r, builtInBaseline),
+      render: (r) => ({ html: renderToolRatioCell(r, builtInBaseline) }),
+    },
+  ];
+}
+
+/** One sortable, paged table per tool family; each keeps its own sort and page. */
+function renderToolAnalysisTable(tableId: string, ariaLabel: string, rows: ToolAnalysisRow[], builtInBaseline: number): string {
+  return renderDataTable({
+    tableId,
+    ariaLabel,
+    rows,
+    columns: buildToolAnalysisColumns(builtInBaseline),
+    initialSort: { columnId: "avg", direction: "desc" },
+    className: "tool-analysis-table",
   });
-}
-
-function renderToolRow(r: ToolAnalysisRow, builtInBaseline: number): string {
-  const avg = r.calls > 0 ? Math.round(r.totalTokens / r.calls) : 0;
-  let ratioHtml = '<td class="tool-ratio">—</td>';
-  if (!r.isBuiltIn && !isNaN(builtInBaseline) && builtInBaseline > 0 && r.calls > 0) {
-    const ratio = (r.totalTokens / r.calls) / builtInBaseline;
-    const pct = Number(Math.round(ratio * 100)) || 0;
-    const cls = ratio < 0.85 ? 'ratio-better' : ratio > 1.15 ? 'ratio-worse' : 'ratio-neutral';
-    ratioHtml = `<td class="tool-ratio ${cls}" title="${pct}% of built-in average">${pct}%</td>`;
-  } else if (r.isBuiltIn) {
-    ratioHtml = '<td class="tool-ratio tool-builtin-label">baseline</td>';
-  }
-  const badge = r.isBuiltIn ? ' <span class="tool-type-badge built-in">built-in</span>' : ' <span class="tool-type-badge alternative">alt</span>';
-  return `<tr><td>${escapeHtml(r.tool)}${badge}</td><td>${escapeHtml(String(r.calls))}</td><td>${formatTokenCount(r.totalTokens)}</td><td>${formatTokenCount(avg)}</td>${ratioHtml}</tr>`;
-}
-
-function renderToolAnalysisRows(rows: ToolAnalysisRow[], builtInBaseline: number = NaN): string {
-  return sortToolRows(rows).map(r => renderToolRow(r, builtInBaseline)).join('');
-}
-
-/** Thead HTML shared across initial render and re-render. */
-function toolAnalysisTheadHtml(): string {
-  return `<tr>
-<th class="tool-sortable" data-sort="tool">Tool${getToolSortIndicator("tool")}</th>
-<th class="tool-sortable" data-sort="calls">Calls${getToolSortIndicator("calls")}</th>
-<th class="tool-sortable" data-sort="total">Total Output Tokens${getToolSortIndicator("total")}</th>
-<th class="tool-sortable" data-sort="avg">Avg Tokens / Call${getToolSortIndicator("avg")}</th>
-<th>vs Built-in</th>
-</tr>`;
 }
 
 /** Render one family section. Returns empty string if the family has no data. */
@@ -2975,15 +2960,11 @@ function renderToolFamilySection(
   if (allRows.length === 0) { return { html: '', rows: [] }; }
 
   const baseline = pooledAvg(builtInRows);
-  const encodedRows = encodeURIComponent(JSON.stringify(allRows));
   const desc = family.description ? ` <span class="hint">${escapeHtml(family.description)}</span>` : '';
   const html = `
 <div class="tool-family-section">
 <h4 class="tool-family-heading">${escapeHtml(family.name)}${desc}</h4>
-<table class="session-table tool-analysis-table" data-rows="${encodedRows}" data-baseline="${isNaN(baseline) ? '' : String(baseline)}">
-<thead>${toolAnalysisTheadHtml()}</thead>
-<tbody>${renderToolAnalysisRows(allRows, baseline)}</tbody>
-</table>
+${renderToolAnalysisTable(`diagnostics-tool-family-${family.id}`, family.name, allRows, baseline)}
 </div>`;
   return { html, rows: allRows };
 }
@@ -3014,14 +2995,10 @@ function renderToolAnalysisTab(toolCallStats: DiagnosticsData['toolCallStats'], 
     .filter(([t]) => !assignedTools.has(t) && (byTool[t] || 0) > 0)
     .map(([t, tokens]) => ({ tool: t, totalTokens: tokens, calls: byTool[t] || 0, isBuiltIn: false }));
   if (otherRows.length > 0) {
-    const encodedOther = encodeURIComponent(JSON.stringify(otherRows));
     sectionsHtml += `
 <div class="tool-family-section">
 <h4 class="tool-family-heading">Other Tools</h4>
-<table class="session-table tool-analysis-table" data-rows="${encodedOther}" data-baseline="">
-<thead>${toolAnalysisTheadHtml()}</thead>
-<tbody>${renderToolAnalysisRows(otherRows, NaN)}</tbody>
-</table>
+${renderToolAnalysisTable("diagnostics-tool-other", "Other Tools", otherRows, NaN)}
 </div>`;
   }
 
@@ -3060,6 +3037,22 @@ function _renderSkillUsageFilterPanel(
   return `<div class="skill-usage-filter-panel">${allChip}${editorChips}</div>`;
 }
 
+type SkillUsageRow = { name: string; count: number; description: string };
+
+const SKILL_USAGE_TABLE_ID = "diagnostics-skill-usage";
+
+const SKILL_USAGE_COLUMNS: DataTableColumn<SkillUsageRow>[] = [
+  { id: "skill", label: "Skill", sortValue: (r) => r.name, render: (r) => r.name },
+  {
+    id: "description",
+    label: "Description",
+    sortValue: (r) => r.description || null,
+    cellClassName: () => "skill-usage-description",
+    render: (r) => ({ html: r.description ? escapeHtml(r.description) : '<span class="hint">—</span>' }),
+  },
+  { id: "invocations", label: "Invocations", align: "right", sortValue: (r) => r.count, render: (r) => formatTokenCount(r.count) },
+];
+
 /**
  * Renders per-skill invocation counts (e.g. Claude Code's `/graphify`, custom SKILL.md
  * workflows) over the last 30 days, filterable by editor. Adapter-agnostic by design —
@@ -3090,12 +3083,16 @@ function renderSkillUsageTab(
       count: editorFilter === 'all' ? byName[name] : (skillCallsByEditor?.[name]?.[editorFilter] ?? 0),
       description: skillDescriptions?.[name] ?? '',
     }))
-    .filter(r => r.count > 0)
-    .sort((a, b) => b.count - a.count);
+    .filter(r => r.count > 0);
   const shownTotal = rows.reduce((s, r) => s + r.count, 0);
-  const bodyRows = rows
-    .map(r => `<tr><td>${escapeHtml(r.name)}</td><td class="skill-usage-description">${r.description ? escapeHtml(r.description) : '<span class="hint">—</span>'}</td><td>${formatTokenCount(r.count)}</td></tr>`)
-    .join('');
+  const table = renderDataTable({
+    tableId: SKILL_USAGE_TABLE_ID,
+    ariaLabel: "Skill Usage",
+    rows,
+    columns: SKILL_USAGE_COLUMNS,
+    initialSort: { columnId: "invocations", direction: "desc" },
+    className: "skill-usage-table",
+  });
   const scopeLabel = editorFilter === 'all' ? 'across all editors' : `for ${escapeHtml(editorFilter)}`;
   return `<div id="tab-skill-usage" class="tab-content">
 <div class="info-box">
@@ -3103,10 +3100,7 @@ function renderSkillUsageTab(
 <div>${formatTokenCount(shownTotal)} skill invocation(s) across ${rows.length} skill(s) ${scopeLabel} in the last 30 days. Currently detected for Claude Code / Claude Desktop / Copilot CLI sessions.</div>
 </div>
 ${filterPanel}
-<table class="session-table skill-usage-table">
-<thead><tr><th>Skill</th><th>Description</th><th>Invocations</th></tr></thead>
-<tbody>${bodyRows}</tbody>
-</table>
+${table}
 </div>`;
 }
 
@@ -3230,21 +3224,49 @@ function renderOtelDeltaSummaryCards(comparison: CopilotCliOtelComparison): stri
 </div>`;
 }
 
-function renderOtelDeltaSessionRows(sessions: CopilotCliOtelComparisonSession[]): string {
-  return sessions.map(s => {
-    const delta = formatTokenDelta(s.delta);
-    const shortId = escapeHtml(String(s.sessionId ?? '').slice(0, 8));
-    const models = escapeHtml((Array.isArray(s.models) ? s.models : []).map(m => String(m)).join(', ') || '—');
-    const baselineTokens = Number(s.baselineTokens) || 0;
-    const otelTokens = Number(s.otelTokens) || 0;
-    return `<tr>
-<td title="${escapeHtml(String(s.sessionId ?? ''))}"><code>${shortId}</code></td>
-<td>${models}</td>
-<td title="${baselineTokens.toLocaleString()} tokens">${formatTokenCount(baselineTokens)}</td>
-<td title="${otelTokens.toLocaleString()} tokens">${formatTokenCount(otelTokens)}</td>
-<td class="${delta.cssClass}" title="${(Number(s.delta) || 0).toLocaleString()} tokens">${delta.text}</td>
-</tr>`;
-  }).join('');
+const OTEL_DELTA_TABLE_ID = "diagnostics-otel-delta";
+
+function otelSessionModels(s: CopilotCliOtelComparisonSession): string {
+  return (Array.isArray(s.models) ? s.models : []).map(m => String(m)).join(', ') || '—';
+}
+
+function otelTokenColumn(id: string, label: string, value: (s: CopilotCliOtelComparisonSession) => number): DataTableColumn<CopilotCliOtelComparisonSession> {
+  return {
+    id,
+    label,
+    align: "right",
+    sortValue: value,
+    render: (s) => ({ html: `<span title="${value(s).toLocaleString()} tokens">${formatTokenCount(value(s))}</span>` }),
+  };
+}
+
+const OTEL_DELTA_COLUMNS: DataTableColumn<CopilotCliOtelComparisonSession>[] = [
+  {
+    id: "session",
+    label: "Session",
+    sortValue: (s) => String(s.sessionId ?? ''),
+    render: (s) => ({ html: `<code title="${escapeHtml(String(s.sessionId ?? ''))}">${escapeHtml(String(s.sessionId ?? '').slice(0, 8))}</code>` }),
+  },
+  { id: "models", label: "Model(s)", sortValue: otelSessionModels, render: otelSessionModels },
+  otelTokenColumn("baseline", "Previous Estimate", (s) => Number(s.baselineTokens) || 0),
+  otelTokenColumn("otel", "OTel Exact", (s) => Number(s.otelTokens) || 0),
+  {
+    id: "delta",
+    label: "Delta",
+    align: "right",
+    sortValue: (s) => Number(s.delta) || 0,
+    cellClassName: (s) => formatTokenDelta(s.delta).cssClass || undefined,
+    render: (s) => ({ html: `<span title="${(Number(s.delta) || 0).toLocaleString()} tokens">${formatTokenDelta(s.delta).text}</span>` }),
+  },
+];
+
+function renderOtelDeltaSessionTable(sessions: CopilotCliOtelComparisonSession[]): string {
+  return renderDataTable({
+    tableId: OTEL_DELTA_TABLE_ID,
+    ariaLabel: "OTel vs. Estimated Token Counts",
+    rows: sessions,
+    columns: OTEL_DELTA_COLUMNS,
+  });
 }
 
 function renderOtelDeltaTab(comparison: CopilotCliOtelComparison | null | undefined, period: OtelDeltaPeriod = currentOtelDeltaPeriod): string {
@@ -3260,10 +3282,7 @@ ${setupNotice}
   }
   const filtered = filterOtelComparisonByPeriod(comparison, period);
   const tableOrEmpty = filtered.sessions.length > 0
-    ? `<table class="session-table">
-<thead><tr><th>Session</th><th>Model(s)</th><th>Previous Estimate</th><th>OTel Exact</th><th>Delta</th></tr></thead>
-<tbody>${renderOtelDeltaSessionRows(filtered.sessions)}</tbody>
-</table>`
+    ? renderOtelDeltaSessionTable(filtered.sessions)
     : `<div class="info-box">No Copilot CLI sessions with OTel data in this period. Try a wider range.</div>`;
   return `<div id="tab-otel-delta" class="tab-content">
 <div class="info-box">
@@ -3387,12 +3406,21 @@ ${paths}
 </div>`;
 }
 
-function renderTtftBucketTableRows(buckets: TtftBucketView[]): string {
-  return buckets.slice().reverse().map(b => `<tr>
-<td>${escapeHtml(b.label)}</td>
-<td>${escapeHtml(formatTtftSeconds(b.avgSeconds))}</td>
-<td>${b.count.toLocaleString()}</td>
-</tr>`).join('');
+const TTFT_BUCKET_TABLE_ID = "diagnostics-ttft-buckets";
+
+/** Newest bucket first. */
+function renderTtftBucketTable(granularity: TtftGranularity, buckets: TtftBucketView[]): string {
+  setDataTableState(TTFT_BUCKET_TABLE_ID, { page: 1 });
+  return renderDataTable({
+    tableId: TTFT_BUCKET_TABLE_ID,
+    ariaLabel: "Time to First Token",
+    rows: buckets.slice().reverse(),
+    columns: [
+      { id: "bucket", label: TTFT_GRANULARITY_LABELS[granularity], sortValue: (b) => b.key, render: (b) => b.label },
+      { id: "avg", label: "Avg TTFT", align: "right", sortValue: (b) => b.avgSeconds, render: (b) => formatTtftSeconds(b.avgSeconds) },
+      { id: "samples", label: "Samples", align: "right", sortValue: (b) => b.count, render: (b) => b.count.toLocaleString() },
+    ],
+  });
 }
 
 function renderTtftResults(granularity: TtftGranularity, buckets: TtftBucketView[], series: TtftModelSeriesView[], sampleCount: number, fileCount: number): string {
@@ -3428,12 +3456,7 @@ was on (a window reload is needed after enabling it).
 </div>
 </div>
 ${renderTtftChartSvg(buckets, series)}
-<div class="table-container" style="margin-top: 12px; max-height: 320px;">
-<table class="session-table">
-<thead><tr><th>${TTFT_GRANULARITY_LABELS[granularity]}</th><th>Avg TTFT</th><th>Samples</th></tr></thead>
-<tbody>${renderTtftBucketTableRows(buckets)}</tbody>
-</table>
-</div>`;
+<div style="margin-top: 12px;">${renderTtftBucketTable(granularity, buckets)}</div>`;
 }
 
 function renderTtftTab(): string {
@@ -3594,7 +3617,7 @@ function buildDiagRootHtml(
   escapedReport: string,
 ): string {
   return `
-<style>${themeStyles}</style>
+<style>${themeStyles}</style><style>${dataTableStyles}</style>
 <style>${styles}</style>
 <div class="container">
 <div class="header">
@@ -3696,7 +3719,6 @@ function renderLayout(data: DiagnosticsData): void {
 
   setupTabHandlers();
   setupGroupHandlers();
-  setupSortHandlers();
   setupEditorFilterHandlers();
   setupContextRefFilterHandlers();
   setupZeroInteractionFilterHandler();
@@ -3711,7 +3733,7 @@ function renderLayout(data: DiagnosticsData): void {
   renderModelUsageTimeSelector(isLoading);
   setupButtonHandlers();
   setupDisplaySettingHandlers();
-  setupToolAnalysisSortHandlers();
+  setupToolAnalysisHandlers();
   setupSkillUsageFilterHandler();
   setupOtelDeltaPeriodHandler();
   setupTtftHandlers();

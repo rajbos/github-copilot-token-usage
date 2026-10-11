@@ -297,10 +297,6 @@ export function sanitizePrOutcomeCounts(raw: Record<string, unknown>): PrOutcome
 	};
 }
 
-export function buildRevertHeaderHtml(): string {
-	return `<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="${escapeHtml(localize('agentic.reverts.headerTitle'))}">${escapeHtml(localize('agentic.reverts.header'))}</th>`;
-}
-
 function revertRate(reverted: number, merged: number): string {
 	return merged > 0 ? formatPercent((reverted / merged) * 100, 0) : DASH;
 }

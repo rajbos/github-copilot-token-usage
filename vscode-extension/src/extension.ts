@@ -106,9 +106,8 @@ import {
 
 // --- Repeated-task detection (skill candidates from recurring prompts) ---
 import {
-  detectRepeatedTasks as _detectRepeatedTasks,
-  MIN_CLUSTER_SIZE as _MIN_CLUSTER_SIZE,
-  type RepeatedTaskInput as _RepeatedTaskInput,
+  buildRepeatedTaskReport as _buildRepeatedTaskReport,
+  repoDisplayName as _repoDisplayName,
 } from '../../src/repeatedTasks';
 import {
   buildActivityTrend as _buildActivityTrend,
@@ -369,6 +368,8 @@ import {
   normalizeToRepoRoot as _normalizeToRepoRoot,
   resolveDebugLogCandidatePaths as _resolveDebugLogCandidatePaths,
 } from '../../src/workspaceHelpers';
+import { groupWorkspaces as _groupWorkspaces, detectArtefactWorkspaceNames as _detectArtefactWorkspaceNames, mergeGroupCustomizationFiles as _mergeGroupCustomizationFiles, workspaceEntriesWithRemotes as _workspaceEntriesWithRemotes, groupFolders as _groupFolders, type WorkspaceGroup } from '../../src/workspaceGrouping';
+import { prefetchWorkspaceGroupingProbes as _prefetchWorkspaceGroupingProbes } from '../../src/workspaceGroupingProbes';
 import { getRepositoryUrl as _getRepositoryUrl } from './repositoryUrl';
 
 // --- Chart building ---
@@ -482,6 +483,8 @@ import {
 	type WhatsNewState,
 } from './whatsNew/announcer';
 import { hasVisitedSince, recordVisit, sanitizeVisits, type ViewVisitMap } from './whatsNew/visits';
+import { findViewIndexEntry, type ViewIndexNavigation } from './whatsNew/viewIndex';
+import { SurfaceRevealQueue } from './whatsNew/surfaceRevealQueue';
 import { toolCallsByEditorToRecord } from './webview/usage/toolEditors';
 
 type LocalViewRegressionProbeResult = {
@@ -1020,16 +1023,6 @@ function aggregateEditorModelUsageByBillingGroup(editorModelUsage: { [editor: st
 	return groupModelUsage;
 }
 
-function _dwbcPickWinner(
-	key: string, canonical: string,
-	keyIsRemote: boolean, canonIsRemote: boolean,
-	sessionCounts: Map<string, number>
-): string {
-	if (!keyIsRemote && canonIsRemote) { return key; }
-	if (!canonIsRemote && keyIsRemote) { return canonical; }
-	return (sessionCounts.get(key) || 0) >= (sessionCounts.get(canonical) || 0) ? key : canonical;
-}
-
 /** One Copilot CLI session where OTel export data was found, for the diagnostics "OTel Delta" tab. */
 interface CopilotCliOtelComparisonSession {
 	file: string;
@@ -1108,11 +1101,14 @@ interface WorktreeCleanupDiagnostics {
 	untrackedFiles?: number;
 }
 
-type UsageAnalysisTab = 'activity' | 'sessions' | 'tools' | 'health' | 'repos' | 'readiness' | 'worktrees' | 'insights' | 'corrections';
+/** How long a "take me there" request waits for its panel to finish loading before it is dropped. */
+const SURFACE_REVEAL_TTL_MS = 60_000;
+
+type UsageAnalysisTab = 'activity' | 'sessions' | 'tools' | 'health' | 'repos' | 'agent' | 'readiness' | 'worktrees' | 'insights' | 'corrections';
 
 /** Narrows an arbitrary tab name (e.g. from the what's-new catalog) to one `showUsageAnalysisOnTab` accepts. */
 function isUsageAnalysisTab(tab: string): tab is UsageAnalysisTab {
-	return (['activity', 'sessions', 'tools', 'health', 'repos', 'readiness', 'worktrees', 'insights', 'corrections'] as string[]).includes(tab);
+	return (['activity', 'sessions', 'tools', 'health', 'repos', 'agent', 'readiness', 'worktrees', 'insights', 'corrections'] as string[]).includes(tab);
 }
 
 /**
@@ -1124,6 +1120,9 @@ type SessionsTabPreset = { filter: 'nearContextLimit'; lookback: 'last30' };
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation.
+	// v79: Copilot CLI exact cost (copilotNanoAiu) is the latest session.usage_checkpoint/shutdown
+	// totalNanoAiu instead of a sum over shutdowns (it is cumulative, so resumed sessions were
+	// counted more than once); an mtime/size hit would keep the summed value until the file changed.
 	// v78: per-tool outcome maps (toolCalls.completedByTool/failuresByTool/latencyByTool,
 	// mcpTools.completedByServer/failuresByServer/latencyByServer) are now recorded from Copilot
 	// CLI/JetBrains tool.execution_start/complete pairs and Claude Code tool_use/tool_result pairs;
@@ -1143,7 +1142,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// showing an estimate in Today/month/30-day totals until their file changed.
 	// v76: Add per-session autonomyUsage (autopilot/auto vs supervised) to usageAnalysis: cache hits
 	// skip re-analysis, so existing entries would lack the metric until their file changed.
-	private static readonly CACHE_VERSION = 78;
+	// v80: Resolve each session's git remote during analysis (adapter metadata, else content
+	// references) so workspace grouping has it on a cold cache; existing entries lack it.
+	private static readonly CACHE_VERSION = 80;
 	/** Initial stats should not wait indefinitely for one inaccessible or stalled session. */
 	private static readonly SESSION_PRELOAD_TIMEOUT_MS = 15_000;
 	/**
@@ -1308,6 +1309,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		(error) => this.warn(`Efficiency message delivery failed: ${error}`),
 	);
 	private whatsNewPanel: vscode.WebviewPanel | undefined;
+	/**
+	 * "Take me there" requests waiting for their panel to load or acknowledge
+	 * them. See whatsNew/surfaceRevealQueue.ts for the handshake.
+	 */
+	private readonly surfaceReveals = new SurfaceRevealQueue<FeatureViewId, ViewIndexNavigation, vscode.WebviewPanel>(SURFACE_REVEAL_TTL_MS);
+	/** Bumped by every navigation, so a slow opener never focuses its panel after a newer one started. */
+	private surfaceNavGeneration = 0;
 	/** What the user has already been told about; see `src/whatsNew/announcer.ts`. */
 	private _whatsNewState: WhatsNewState = { ...EMPTY_WHATS_NEW_STATE };
 	/** Last time the user opened each view / tab; see `src/whatsNew/visits.ts`. */
@@ -1604,6 +1612,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// backfill descriptions for skills whose repo isn't the one currently open (see
 	// findSkillDescriptionInWorkspaces).
 	private _skillWorkspacePathsAccum: Map<string, Set<string>> = new Map();
+	// Every git remote seen per workspace folder (last 30 days), the strongest grouping signal.
+	// All of them are kept: a folder reused for another repository must reach the grouping as
+	// conflicting, not as whichever remote the session loop happened to see first.
+	private _workspaceRepositoryAccum: Map<string, Set<string>> = new Map();
+	// Workspace groups from the last grouping pass, keyed by canonical path (src/workspaceGrouping.ts).
+	private _workspaceGroups: Map<string, WorkspaceGroup> = new Map();
 
 	// Model pricing data - loaded from modelPricing.json
 	// Reference: OpenAI API Pricing (https://openai.com/api/pricing/) - Retrieved December 2025
@@ -1930,20 +1944,22 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return this.handleExtensionPointAction(message.buttonId);
 		}
 		const handlers: Record<string, () => unknown> = {
-			showDetails:            () => this.showDetails(),
-			showChart:              () => this.showChart(),
-			showUsageAnalysis:      () => this.showUsageAnalysis(),
+			// Plain opens go through openView so they also cancel any deep link still
+			// pending for that view (see openViewSurface).
+			showDetails:            () => this.openView('details'),
+			showChart:              () => this.openView('chart'),
+			showUsageAnalysis:      () => this.openView('usage'),
 			// Distinct from showUsageAnalysis: that handler deliberately ignores payload
 			// properties, so a tab can only be requested through its own command.
 			showUsageAnalysisRepoPrs: () => this.showUsageAnalysisOnReposTab(),
-			showDiagnostics:        () => this.showDiagnosticReport(),
-			showMaturity:           () => this.showMaturity(),
+			showDiagnostics:        () => this.openView('diagnostics'),
+			showMaturity:           () => this.openView('maturity'),
 			showReadiness:          () => this.showReadiness(),
-			showDashboard:          () => this.showDashboard(),
-			showEnvironmental:      () => this.showEnvironmental(),
-			showEfficiency:         () => this.showEfficiency(),
-			showFluencyLevelViewer: () => this.showFluencyLevelViewer(),
-			showWhatsNew:           () => this.showWhatsNew(),
+			showDashboard:          () => this.openView('dashboard'),
+			showEnvironmental:      () => this.openView('environmental'),
+			showEfficiency:         () => this.openView('efficiency'),
+			showFluencyLevelViewer: () => this.openView('fluency-level-viewer'),
+			showWhatsNew:           () => this.openView('whatsnew'),
 			// Panels report their own tab switches so the what's-new announcer can tell
 			// which subviews the user has already found. Fire-and-forget by design: the
 			// webview must never wait on bookkeeping to render a tab.
@@ -1952,9 +1968,29 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const tab = typeof message.tab === 'string' ? message.tab : undefined;
 				if (view) { this.recordViewVisit(view as FeatureViewId, tab); }
 			},
-			openWhatsNewFeature:    async () => {
+			// Navigation is started, not awaited: dispatch() drops a command whose key is
+			// still in flight, so awaiting a slow cold open (e.g. Details loading its data)
+			// would silently swallow the user's next pick. A newer navigation supersedes an
+			// older one by itself (surfaceNavGeneration, the reveal queue's request ids).
+			openWhatsNewFeature:    () => {
 				if (typeof message.featureId === 'string' && message.featureId) {
-					await this.openWhatsNewFeature(message.featureId);
+					this.startNavigation(`What's New feature "${message.featureId}"`, () => this.openWhatsNewFeature(message.featureId));
+				}
+			},
+			openViewIndexEntry:     () => {
+				if (typeof message.entryId === 'string' && message.entryId) {
+					this.startNavigation(`View index entry "${message.entryId}"`, () => this.openViewIndexEntry(message.entryId));
+				}
+			},
+			// A panel's script is now listening: hand it any navigation that was
+			// requested while the panel was still being created.
+			surfaceNavReady:        () => {
+				if (typeof message.view === 'string') { this.flushPendingSurfaceReveal(message.view as FeatureViewId); }
+			},
+			// The webview acted on a revealSurface request: nothing is left to replay.
+			surfaceRevealHandled:   () => {
+				if (typeof message.view === 'string') {
+					this.surfaceReveals.handled(message.view as FeatureViewId, typeof message.requestId === 'number' ? message.requestId : undefined);
 				}
 			},
 			openFile:               () => {
@@ -2828,22 +2864,93 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return;
 		}
 		const { view, tab, anchor } = entry.feature.surface;
-		if (view === 'usage' && tab && isUsageAnalysisTab(tab)) {
-			await this.showUsageAnalysisOnTab(tab, anchor);
+		await this.openViewSurface(view, { ...(tab ? { tab } : {}), ...(anchor ? { anchor } : {}) });
+	}
+
+	/** Runs a navigation without blocking the command dispatcher, reporting a failure the way dispatch() would. */
+	private startNavigation(label: string, navigate: () => Promise<void>): void {
+		navigate().catch((error: unknown) => {
+			this.error(`Opening ${label} failed`, error);
+			vscode.window.showErrorMessage(l10n.t('viewIndex.navigationFailed', error instanceof Error ? error.message : String(error)));
+		});
+	}
+
+	/** Opens the view, tab and section a View index entry points at. */
+	private async openViewIndexEntry(entryId: string): Promise<void> {
+		const entry = findViewIndexEntry(entryId);
+		if (!entry) {
+			this.warn(`View index: unknown entry id "${entryId}"`);
 			return;
 		}
-		if (view === 'diagnostics') {
-			await this.showDiagnosticReport();
-			if (tab) { this.diagnosticsPanel?.webview.postMessage({ command: 'switchTab', tab }); }
+		this.log(`🧭 View index: opening ${entry.path.join(' › ')}`);
+		await this.openViewSurface(entry.view, entry.nav);
+	}
+
+	/**
+	 * Opens a view as the user asked for it — a header button or a command, no
+	 * tab or section. Unlike calling the view's opener directly, this also
+	 * cancels any deep link still pending for that view, so it can no longer
+	 * switch tabs or scroll after the user went to the view itself.
+	 */
+	public async openView(view: FeatureViewId): Promise<void> {
+		await this.openViewSurface(view, {});
+	}
+
+	/** The open panel for a view, if any. */
+	private getPanelForView(view: FeatureViewId): vscode.WebviewPanel | undefined {
+		const panels: Partial<Record<FeatureViewId, vscode.WebviewPanel | undefined>> = {
+			details: this.detailsPanel,
+			chart: this.chartPanel,
+			usage: this.analysisPanel,
+			maturity: this.maturityPanel,
+			efficiency: this.efficiencyPanel,
+			environmental: this.environmentalPanel,
+			diagnostics: this.diagnosticsPanel,
+			'fluency-level-viewer': this.fluencyLevelViewerPanel,
+			dashboard: this.dashboardPanel,
+			whatsnew: this.whatsNewPanel,
+		};
+		return panels[view];
+	}
+
+	/**
+	 * Opens a view and lands on a tab and section within it. The usage panel has
+	 * its own navigation protocol (`switchTab`); every other panel takes a
+	 * `revealSurface` request (see webview/shared/surfaceNavigation.ts).
+	 */
+	private async openViewSurface(view: FeatureViewId, nav: ViewIndexNavigation): Promise<void> {
+		if (view === 'logviewer') {
+			// The log viewer only opens on a specific session file, so a catalog feature
+			// living there (e.g. HydraFusion routing) lands where sessions are opened from:
+			// Recent Sessions, with a pointer to what to do next.
+			await this.showUsageAnalysisOnTab('sessions');
+			void vscode.window.showInformationMessage(l10n.t('whatsNew.logviewerHint'));
+			return;
+		}
+		if (view === 'usage') {
+			if (nav.tab && isUsageAnalysisTab(nav.tab)) {
+				await this.showUsageAnalysisOnTab(nav.tab, nav.anchor);
+			} else {
+				// Going to the view itself supersedes a deep link still waiting for the
+				// panel to be ready, which would otherwise redirect this open later.
+				this.pendingAnalysisNavigation = undefined;
+				const wasOpen = this.analysisPanel;
+				await this.runOpenerFocused('usage', () => this.showUsageAnalysis());
+				// A deep link that already reached the webview may still be waiting for its
+				// section to render; drop that too.
+				if (wasOpen && wasOpen === this.analysisPanel) {
+					void wasOpen.webview.postMessage({ command: 'cancelPendingNavigation' });
+				}
+			}
 			return;
 		}
 		const openers: Partial<Record<FeatureViewId, () => Promise<void>>> = {
 			details: () => this.showDetails(),
 			chart: () => this.showChart(),
-			usage: () => this.showUsageAnalysis(),
 			maturity: () => this.showMaturity(),
 			efficiency: () => this.showEfficiency(),
 			environmental: () => this.showEnvironmental(),
+			diagnostics: () => this.showDiagnosticReport(),
 			// `logviewer` is deliberately absent: it only opens against a specific
 			// session file, so it can never be the destination of a catalog entry.
 			'fluency-level-viewer': () => this.showFluencyLevelViewer(),
@@ -2851,7 +2958,73 @@ class CopilotTokenTracker implements vscode.Disposable {
 			whatsnew: () => this.showWhatsNew(),
 		};
 		const open = openers[view];
-		if (open) { await open(); }
+		if (!open) { return; }
+		const hasTarget = !!(nav.tab || nav.subtab || nav.anchor || nav.selector);
+		if (!hasTarget) {
+			this.surfaceReveals.clear(view);
+			const existing = this.getPanelForView(view);
+			const panel = await this.runOpenerFocused(view, open);
+			// An already-open panel may still be waiting to carry out an earlier
+			// reveal; going to the view itself supersedes it.
+			if (panel && panel === existing) {
+				void panel.webview.postMessage({ command: 'cancelReveal' });
+			}
+			return;
+		}
+		// Held before opening: a panel the opener creates may report ready before `open` resolves.
+		const existingPanel = this.getPanelForView(view);
+		this.surfaceReveals.request(view, nav, existingPanel);
+		const panel = await this.runOpenerFocused(view, open, (created) => {
+			// A new panel exists once the opener's synchronous part ran: bind the
+			// request to it now, before the opener's data load resolves.
+			if (created !== existingPanel) { this.surfaceReveals.bind(view, created); }
+		});
+		const postNow = this.surfaceReveals.opened(view, panel);
+		if (!panel) { return; }
+		if (postNow) {
+			// The opener reused the panel. Post now; if the webview is reloading
+			// (a hidden panel without retained context) the message may be lost, so
+			// the request stays held until the webview acknowledges it or the
+			// reloaded page reports ready.
+			void panel.webview.postMessage({ command: 'revealSurface', requestId: this.surfaceReveals.currentId(view), ...postNow });
+		}
+	}
+
+	/**
+	 * Runs a view's opener and focuses its panel. Openers create their panel (with
+	 * preserveFocus) before their first await and then load data, so the panel is
+	 * focused right when it appears — not after a slow load, by which time the user
+	 * may be somewhere else. Only if no panel existed synchronously is it focused
+	 * after the opener resolves, and then only if no newer navigation started since.
+	 * `onPanel` sees the panel as soon as it exists.
+	 */
+	private async runOpenerFocused(
+		view: FeatureViewId,
+		open: () => Promise<void>,
+		onPanel?: (panel: vscode.WebviewPanel) => void,
+	): Promise<vscode.WebviewPanel | undefined> {
+		const generation = ++this.surfaceNavGeneration;
+		const opening = open();
+		const early = this.getPanelForView(view);
+		if (early) {
+			onPanel?.(early);
+			early.reveal(undefined, false);
+		}
+		await opening;
+		const panel = this.getPanelForView(view);
+		if (panel && !early && generation === this.surfaceNavGeneration) {
+			onPanel?.(panel);
+			panel.reveal(undefined, false);
+		}
+		return panel;
+	}
+
+	private flushPendingSurfaceReveal(view: FeatureViewId): void {
+		const panel = this.getPanelForView(view);
+		if (!panel) { return; }
+		// Held until the webview acknowledges it with surfaceRevealHandled.
+		const nav = this.surfaceReveals.ready(view, panel);
+		if (nav) { void panel.webview.postMessage({ command: 'revealSurface', requestId: this.surfaceReveals.currentId(view), ...nav }); }
 	}
 
 	/** Projects the catalog into the shape the What's New webview renders. */
@@ -6803,7 +6976,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (nonCopilotFiles.length > 0 && !hasCopilotFiles) {
 				missedPotential.push({
 					workspacePath,
-					workspaceName: path.basename(workspacePath),
+					workspaceName: this._workspaceGroups.get(workspacePath)?.displayName ?? path.basename(workspacePath),
 					sessionCount,
 					interactionCount: workspaceInteractionCounts.get(workspacePath) || 0,
 					nonCopilotFiles
@@ -6870,6 +7043,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this._skillCallsByEditorAccum = new Map();
 		this._toolCallsByEditorAccum = new Map();
 		this._skillWorkspacePathsAccum = new Map();
+		this._workspaceRepositoryAccum = new Map();
 		let agenticDailyTrend: AgenticTrendPoint[] | undefined;
 		let recentSessions: { last7: TodaySessionSummary[]; last30: TodaySessionSummary[]; currentMonth: TodaySessionSummary[] } | undefined;
 		let sessionReports: Pick<UsageAnalysisStats, 'correctionReport' | 'repeatedTasks' | 'repoActivity' | 'activityTrend'> = {};
@@ -7790,12 +7964,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 	/** Maximum number of sessions with detected correction moments listed per repository. */
 	private static readonly CORRECTION_SCAN_SESSIONS_PER_REPO = 25;
 
-	/** Derive a short `owner/repo` display name from a git remote URL (falls back to the raw value). */
-	private repoDisplayName(repository: string): string {
-		const m = repository.match(/[:/]([^/:]+\/[^/]+?)(?:\.git)?$/);
-		return m ? m[1] : repository;
-	}
-
 	/**
 	 * Build the correction-moment report from already-parsed session results:
 	 * sessions are first filtered to those carrying detected correction moments,
@@ -7811,7 +7979,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		for (const r of results) {
 			const moments = r?.sessionData.usageAnalysis?.correctionMoments;
 			if (!r || !moments || moments.length === 0) { continue; }
-			const repo = this.repoDisplayName(r.sessionData.repository || '(unknown)');
+			const repo = _repoDisplayName(r.sessionData.repository || '(unknown)');
 			if (!byRepo.has(repo)) { byRepo.set(repo, []); }
 			byRepo.get(repo)!.push(r);
 		}
@@ -7925,23 +8093,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private buildRepeatedTaskReport(
 		results: ({ sessionFile: string; sessionData: SessionFileCache; mtime: number } | null | undefined)[]
 	): RepeatedTaskReport | undefined {
-		const inputs: _RepeatedTaskInput[] = [];
-		for (const r of results) {
-			const prompt = r?.sessionData.usageAnalysis?.firstUserPrompt;
-			if (!r || !prompt) { continue; }
-			inputs.push({
-				prompt,
-				session: {
-					file: r.sessionFile,
-					title: r.sessionData.title ?? null,
-					lastInteraction: r.sessionData.lastInteraction ?? new Date(r.mtime).toISOString(),
-					repository: r.sessionData.repository ? this.repoDisplayName(r.sessionData.repository) : undefined,
-				},
-			});
-		}
-		const clusters = _detectRepeatedTasks(inputs);
-		if (clusters.length === 0) { return undefined; }
-		return { minClusterSize: _MIN_CLUSTER_SIZE, sessionsScanned: inputs.length, clusters };
+		return _buildRepeatedTaskReport(results
+			.filter((r): r is NonNullable<typeof r> => !!r)
+			.map(r => ({
+				file: r.sessionFile,
+				firstUserPrompt: r.sessionData.usageAnalysis?.firstUserPrompt,
+				title: r.sessionData.title,
+				lastInteraction: r.sessionData.lastInteraction,
+				mtime: r.mtime,
+				repository: r.sessionData.repository,
+			})));
 	}
 
 	private _resolveSessionModelTokens(sessionData: SessionFileCache, modelUsage: ModelUsage): { inputTok: number; outputTok: number; cachedTok: number } {
@@ -8043,7 +8204,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		sessionFile: string, interactions: number,
 		sessionCounts: Map<string, number>, interactionCounts: Map<string, number>,
 		unresolvedIds: Set<string>, unresolvedCounts: Map<string, number>,
-		fallbackWorkspacePath?: string
+		fallbackWorkspacePath?: string, repository?: string
 	): void {
 		const workspaceId = _extractWorkspaceIdFromSessionPath(sessionFile);
 		try {
@@ -8057,6 +8218,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const norm = path.normalize(workspaceFolder);
 				sessionCounts.set(norm, (sessionCounts.get(norm) || 0) + 1);
 				interactionCounts.set(norm, (interactionCounts.get(norm) || 0) + interactions);
+				if (repository) {
+					const remotes = this._workspaceRepositoryAccum.get(norm) ?? new Set<string>();
+					remotes.add(repository);
+					this._workspaceRepositoryAccum.set(norm, remotes);
+				}
 				this.ensureWorkspaceCustomizationCached(norm);
 			} else if (workspaceId) {
 				unresolvedIds.add(workspaceId);
@@ -8178,7 +8344,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.trackWorkspaceForSession(sessionFile, interactions,
 				wsMaps.workspaceSessionCounts, wsMaps.workspaceInteractionCounts,
 				wsMaps.unresolvedWorkspaceIds, wsMaps.unresolvedWorkspaceInteractionCounts,
-				sessionData.workspaceFolderPath);
+				sessionData.workspaceFolderPath, sessionData.repository);
 			this._accumulateSkillCallsByEditor(sessionFile, analysis, sessionData.workspaceFolderPath);
 			this._accumulateToolCallsByEditor(sessionFile, analysis);
 		}
@@ -8269,123 +8435,54 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
-	private mergeWorkspaceInto(
-		winner: string, loser: string,
-		sessionCounts: Map<string, number>, interactionCounts: Map<string, number>
-	): void {
-		sessionCounts.set(winner, (sessionCounts.get(winner) || 0) + (sessionCounts.get(loser) || 0));
-		interactionCounts.set(winner, (interactionCounts.get(winner) || 0) + (interactionCounts.get(loser) || 0));
-		sessionCounts.delete(loser);
-		interactionCounts.delete(loser);
-		const winnerFiles = this._customizationFilesCache.get(winner) || [];
-		const loserFiles = this._customizationFilesCache.get(loser) || [];
-		if (winnerFiles.length === 0 && loserFiles.length > 0) {
-			this._customizationFilesCache.set(winner, loserFiles);
-		}
-		this._customizationFilesCache.delete(loser);
-	}
-
-	private deduplicateWorkspacesByCase(sessionCounts: Map<string, number>, interactionCounts: Map<string, number>): void {
-		if (process.platform !== 'win32' && process.platform !== 'darwin') { return; }
-		const isRemotePath = (p: string) => process.platform === 'win32' && _normalizePath(p).startsWith('/');
-		const lowerToCanonical = new Map<string, string>();
-		for (const key of Array.from(sessionCounts.keys())) {
-			const lower = key.toLowerCase();
-			if (!lowerToCanonical.has(lower)) { lowerToCanonical.set(lower, key); continue; }
-			const canonical = lowerToCanonical.get(lower)!;
-			const winner = _dwbcPickWinner(key, canonical, isRemotePath(key), isRemotePath(canonical), sessionCounts);
-			this.mergeWorkspaceInto(winner, winner === key ? canonical : key, sessionCounts, interactionCounts);
-			lowerToCanonical.set(lower, winner);
-		}
-	}
-
-	private deduplicateRemoteWorkspacePaths(sessionCounts: Map<string, number>, interactionCounts: Map<string, number>): void {
-		if (process.platform !== 'win32') { return; }
-		const isRemotePath = (p: string) => _normalizePath(p).startsWith('/');
-		const basenameToLocal = new Map<string, string>();
-		for (const key of Array.from(sessionCounts.keys())) {
-			if (!isRemotePath(key)) { basenameToLocal.set(path.basename(key).toLowerCase(), key); }
-		}
-		for (const key of Array.from(sessionCounts.keys())) {
-			if (!isRemotePath(key)) { continue; }
-			const localKey = basenameToLocal.get(path.basename(key).toLowerCase());
-			if (localKey && sessionCounts.has(key)) {
-				this.mergeWorkspaceInto(localKey, key, sessionCounts, interactionCounts);
-			}
-		}
-	}
-
-	private deduplicateCopilotWorktrees(sessionCounts: Map<string, number>, interactionCounts: Map<string, number>): void {
-		const worktreeToCanonical = new Map<string, string>();
-		for (const key of Array.from(sessionCounts.keys())) {
-			const segments = key.split(path.sep);
-			const wtIdx = segments.map(s => s.toLowerCase()).lastIndexOf('copilot-worktrees');
-			if (wtIdx === -1 || wtIdx + 2 >= segments.length) { continue; }
-			const repoName = segments[wtIdx + 1];
-			const reposPath = path.normalize(segments.slice(0, wtIdx).concat('repos', repoName).join(path.sep));
-			const canonical = fs.existsSync(reposPath) ? reposPath : path.normalize(segments.slice(0, wtIdx + 2).join(path.sep));
-			worktreeToCanonical.set(key, canonical);
-		}
-		const canonicals = new Set(worktreeToCanonical.values());
-		for (const canonical of canonicals) {
-			if (!sessionCounts.has(canonical)) { sessionCounts.set(canonical, 0); interactionCounts.set(canonical, 0); }
-			for (const [worktree, canon] of worktreeToCanonical) {
-				if (canon === canonical && worktree !== canonical && sessionCounts.has(worktree)) {
-					this.mergeWorkspaceInto(canonical, worktree, sessionCounts, interactionCounts);
-				}
-			}
-			this.ensureWorkspaceCustomizationCached(canonical);
-		}
-	}
-
 	/**
 	 * Dedup compares the customization files of the workspaces it merges, and may name new
 	 * canonical workspaces of its own, so the queued scans are resolved on both sides of it.
 	 */
 	private async deduplicateWorkspacePathsWithScans(sessionCounts: Map<string, number>, interactionCounts: Map<string, number>): Promise<void> {
 		await this.resolvePendingCustomizationScans();
-		this.deduplicateWorkspacePaths(sessionCounts, interactionCounts);
+		await this.deduplicateWorkspacePaths(sessionCounts, interactionCounts);
 		await this.resolvePendingCustomizationScans();
-	}
-
-	private deduplicateWorkspacePaths(sessionCounts: Map<string, number>, interactionCounts: Map<string, number>): void {
-		this.deduplicateWorkspacesByCase(sessionCounts, interactionCounts);
-		this.deduplicateRemoteWorkspacePaths(sessionCounts, interactionCounts);
-		this.deduplicateCopilotWorktrees(sessionCounts, interactionCounts);
-		this.deduplicateByBasename(sessionCounts, interactionCounts);
+		this.mergeGroupCustomizationScans();
 	}
 
 	/**
-	 * Pass 4 — same-basename dedup for local paths.
-	 * A repo cloned at two different locations (e.g. ~/.copilot/repos/my-repo AND
-	 * ~/source/my-repo) will have the same basename but different absolute paths.
-	 * Merge them into one entry; the path with more interactions wins so the richer
-	 * customization file scan is kept.
+	 * Folds worktrees, clones, case variants and remote spellings of one repository into a single
+	 * workspace (rules and tests live in src/workspaceGrouping.ts). The count maps are rewritten
+	 * to be keyed by each group's canonical path, and a canonical path nobody has scanned yet (a
+	 * main checkout reached through a worktree) is queued for its own customization scan.
 	 */
-	private deduplicateByBasename(sessionCounts: Map<string, number>, interactionCounts: Map<string, number>): void {
-		const isRemotePath = (p: string) => process.platform === 'win32' && _normalizePath(p).startsWith('/');
-		// Group all non-remote, non-unresolved paths by lower-case basename
-		const basenameToKeys = new Map<string, string[]>();
-		for (const key of Array.from(sessionCounts.keys())) {
-			if (isRemotePath(key) || key.startsWith('<unresolved:')) { continue; }
-			const base = path.basename(key).toLowerCase();
-			const group = basenameToKeys.get(base) || [];
-			group.push(key);
-			basenameToKeys.set(base, group);
+	private async deduplicateWorkspacePaths(sessionCounts: Map<string, number>, interactionCounts: Map<string, number>): Promise<void> {
+		const paths = new Set([...sessionCounts.keys(), ...interactionCounts.keys()]);
+		const entries = [...paths].flatMap(p => _workspaceEntriesWithRemotes(
+			p, sessionCounts.get(p) || 0, interactionCounts.get(p) || 0, this._workspaceRepositoryAccum.get(p),
+		));
+		// Disk checks run asynchronously before the (pure, synchronous) grouping, so a slow or
+		// network-mounted workspace cannot block the extension host.
+		const groups = _groupWorkspaces(entries, await _prefetchWorkspaceGroupingProbes(entries));
+		sessionCounts.clear();
+		interactionCounts.clear();
+		this._workspaceGroups = new Map();
+		for (const group of groups) {
+			sessionCounts.set(group.canonicalPath, group.sessionCount);
+			interactionCounts.set(group.canonicalPath, group.interactionCount);
+			this._workspaceGroups.set(group.canonicalPath, group);
+			this.ensureWorkspaceCustomizationCached(group.canonicalPath);
 		}
-		for (const [, group] of basenameToKeys) {
-			if (group.length < 2) { continue; }
-			// Pick winner: most interactions; on tie, most sessions; on tie, first entry
-			const winner = group.reduce((best, key) => {
-				const bestScore = (interactionCounts.get(best) || 0) * 10000 + (sessionCounts.get(best) || 0);
-				const keyScore = (interactionCounts.get(key) || 0) * 10000 + (sessionCounts.get(key) || 0);
-				return keyScore > bestScore ? key : best;
-			});
-			for (const key of group) {
-				if (key !== winner && sessionCounts.has(key)) {
-					this.mergeWorkspaceInto(winner, key, sessionCounts, interactionCounts);
-				}
-			}
+	}
+
+	/**
+	 * After the scans resolve: a group's customization files are the union of its canonical
+	 * folder's and every member's (mergeGroupCustomizationFiles), so a file present in any
+	 * folder of the repository counts. Member entries are then dropped from the cache.
+	 */
+	private mergeGroupCustomizationScans(): void {
+		for (const group of this._workspaceGroups.values()) {
+			const folders = _groupFolders(group);
+			if (folders.length < 2) { continue; }
+			const merged = _mergeGroupCustomizationFiles(folders.map(f => this._customizationFilesCache.get(f)));
+			for (const member of folders.slice(1)) { this._customizationFilesCache.delete(member); }
+			this._customizationFilesCache.set(group.canonicalPath, merged);
 		}
 	}
 
@@ -8405,7 +8502,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 				else { typeStatuses[type.id] = '✅'; }
 			}
 			if (customizationTypes.every(t => typeStatuses[t.id] === '❌')) { issues++; }
-			rows.push({ workspacePath: folderPath, workspaceName: path.basename(folderPath), sessionCount, interactionCount: interactionCounts.get(folderPath) || 0, typeStatuses });
+			const group = this._workspaceGroups.get(folderPath);
+			const folders = group ? _groupFolders(group) : [];
+			const memberPaths = folders.length > 1 ? folders : undefined;
+			rows.push({
+				workspacePath: folderPath, workspaceName: group?.displayName ?? path.basename(folderPath),
+				sessionCount, interactionCount: interactionCounts.get(folderPath) || 0, typeStatuses,
+				...(memberPaths ? { memberPaths } : {}),
+			});
 		}
 		return { rows, issues };
 	}
@@ -8448,7 +8552,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const { rows: unresolvedRows, issues: unresolvedIssues } = this.buildUnresolvedWorkspaceMatrixRows(unresolvedIds, unresolvedCounts, customizationTypes);
 			const matrixRows = [...resolvedRows, ...unresolvedRows];
 			matrixRows.sort((a, b) => b.interactionCount !== a.interactionCount ? b.interactionCount - a.interactionCount : b.sessionCount - a.sessionCount);
-			this._lastCustomizationMatrix = { customizationTypes, workspaces: matrixRows, totalWorkspaces: matrixRows.length, workspacesWithIssues: resolvedIssues + unresolvedIssues };
+			const artefactNames = _detectArtefactWorkspaceNames([...this._workspaceGroups.values()]);
+			this._lastCustomizationMatrix = {
+				customizationTypes, workspaces: matrixRows, totalWorkspaces: matrixRows.length, workspacesWithIssues: resolvedIssues + unresolvedIssues,
+				...(artefactNames.length > 0 ? { ungroupedWorkspaceNames: artefactNames.map(a => a.displayName) } : {}),
+			};
+			if (artefactNames.length > 0) {
+				this.log(`🔍 [Usage Analysis] ${artefactNames.length} workspace name(s) look like ungrouped worktrees or clones: ${artefactNames.slice(0, 5).map(a => `${a.displayName} (${a.reason})`).join(', ')}`);
+			}
 			this._lastMissedPotential = this.detectMissedPotential(sessionCounts, interactionCounts);
 		} catch (e) { /* ignore overall customization scanning errors */ }
 	}
@@ -10066,8 +10177,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private async showUsageAnalysisOnTab(tab: UsageAnalysisTab, anchor?: string, sessionsPreset?: SessionsTabPreset): Promise<void> {
 		this.pendingAnalysisNavigation = { tab, ...(anchor ? { anchor } : {}), ...(sessionsPreset ? { sessionsPreset } : {}) };
-		await this.showUsageAnalysis();
-		this.analysisPanel?.reveal(vscode.ViewColumn.One, false);
+		await this.runOpenerFocused('usage', () => this.showUsageAnalysis());
 		await this.flushPendingAnalysisNavigation();
 	}
 
@@ -15365,11 +15475,6 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
   }
 
   /** Build the JSON-serialized initial payload injected into the usage analysis webview. */
-  /** Per-repository agent activity for the Usage Analysis panel's first render. Local only, never uploaded. */
-  private agenticInitialData(stats: UsageAnalysisStats): { repoActivity: UsageAnalysisStats['repoActivity'] | null } {
-    return { repoActivity: stats.repoActivity ?? null };
-  }
-
   private _buildUsageAnalysisInitialData(stats: UsageAnalysisStats | null, detectedLocale: string): string {
     if (!stats) { return 'null'; }
     const suppressedUnknownTools = vscode.workspace
@@ -15398,7 +15503,8 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
       hideAutomaticToolCalls: this.getHideAutomaticToolCallsSetting(),
       insights: this.buildCurrentInsights(stats),
       correctionReport: stats.correctionReport ?? null,
-      ...this.agenticInitialData(stats),
+      repoActivity: stats.repoActivity ?? null,
+      repeatedTasks: stats.repeatedTasks ?? null,
       curationAnalysis: stats.curationAnalysis ?? null,
       memoryFilesAnalysis: _toMemoryFilesAnalysisView(stats.memoryFilesAnalysis ?? null),
       serverMemoriesAnalysis: this.buildServerMemoriesView(),
@@ -15732,7 +15838,7 @@ function registerSecondaryViewCommands(context: vscode.ExtensionContext, tokenTr
     "aiEngineeringFluency.showMaturity",
     async () => {
       tokenTracker.log("Show maturity command called");
-      await tokenTracker.showMaturity();
+      await tokenTracker.openView('maturity');
     },
   );
   const showReadinessCommand = vscode.commands.registerCommand(
@@ -15745,28 +15851,28 @@ function registerSecondaryViewCommands(context: vscode.ExtensionContext, tokenTr
     "aiEngineeringFluency.showDashboard",
     async () => {
       tokenTracker.log("Show dashboard command called");
-      await tokenTracker.showDashboard();
+      await tokenTracker.openView('dashboard');
     },
   );
   const showEnvironmentalCommand = vscode.commands.registerCommand(
     "aiEngineeringFluency.showEnvironmental",
     async () => {
       tokenTracker.log("Show environmental impact command called");
-      await tokenTracker.showEnvironmental();
+      await tokenTracker.openView('environmental');
     },
   );
   const showEfficiencyCommand = vscode.commands.registerCommand(
     "aiEngineeringFluency.showEfficiency",
     async () => {
       tokenTracker.log("Show efficiency trends command called");
-      await tokenTracker.showEfficiency();
+      await tokenTracker.openView('efficiency');
     },
   );
   const showWhatsNewCommand = vscode.commands.registerCommand(
     "aiEngineeringFluency.showWhatsNew",
     async () => {
       tokenTracker.log("Show what's new command called");
-      await tokenTracker.showWhatsNew();
+      await tokenTracker.openView('whatsnew');
     },
   );
   const openMcpJsonCommand = vscode.commands.registerCommand(
@@ -15817,7 +15923,7 @@ function registerViewCommands(context: vscode.ExtensionContext, tokenTracker: Co
     "aiEngineeringFluency.showDetails",
     async () => {
       tokenTracker.log("Show details command called");
-      await tokenTracker.showDetails();
+      await tokenTracker.openView('details');
     },
   );
 
@@ -15825,7 +15931,7 @@ function registerViewCommands(context: vscode.ExtensionContext, tokenTracker: Co
     "aiEngineeringFluency.showChart",
     async () => {
       tokenTracker.log("Show chart command called");
-      await tokenTracker.showChart();
+      await tokenTracker.openView('chart');
     },
   );
 
@@ -15833,7 +15939,7 @@ function registerViewCommands(context: vscode.ExtensionContext, tokenTracker: Co
     "aiEngineeringFluency.showUsageAnalysis",
     async () => {
       tokenTracker.log("Show usage analysis command called");
-      await tokenTracker.showUsageAnalysis();
+      await tokenTracker.openView('usage');
     },
   );
 
@@ -15899,7 +16005,7 @@ function registerDiagnosticAndAuthCommands(context: vscode.ExtensionContext, tok
     "aiEngineeringFluency.showFluencyLevelViewer",
     async () => {
       tokenTracker.log("Show fluency level viewer command called");
-      await tokenTracker.showFluencyLevelViewer();
+      await tokenTracker.openView('fluency-level-viewer');
     },
   );
 
@@ -15916,7 +16022,7 @@ function registerDiagnosticAndAuthCommands(context: vscode.ExtensionContext, tok
     "aiEngineeringFluency.generateDiagnosticReport",
     async () => {
       tokenTracker.log("Generate diagnostic report command called");
-      await tokenTracker.showDiagnosticReport();
+      await tokenTracker.openView('diagnostics');
     },
   );
 

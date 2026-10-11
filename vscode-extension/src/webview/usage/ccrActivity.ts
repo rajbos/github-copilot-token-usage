@@ -1,6 +1,18 @@
 import { escapeHtml } from '../shared/formatUtils';
 import { localize, localizeFormat } from '../shared/localization';
 
+interface CcrLookup { owner: string; repo: string; prNumber: number; message?: unknown }
+
+/**
+ * Lookups started or answered this session, so a table re-render (sort / page) that recreates the
+ * buttons can put back their "Checking…" or result text — see `replayCcrActivityResults`.
+ */
+const ccrLookups = new Map<string, CcrLookup>();
+
+function ccrKey(owner: string, repo: string, prNumber: number): string {
+	return `${owner}/${repo}#${prNumber}`;
+}
+
 /**
  * Inline "Check actual CCR activity" button + result placeholder for one reviewer-requested PR
  * detail row. On-demand only — see `handleCheckCcrActivity` in `extension.ts` for why this isn't
@@ -31,6 +43,7 @@ export function wireCcrActivityButtons(containerId: string, postMessage: (messag
 		const prNumber = Number(btn.getAttribute('data-pr'));
 		if (!owner || !repo || !Number.isFinite(prNumber)) { return; }
 		btn.setAttribute('disabled', 'true');
+		ccrLookups.set(ccrKey(owner, repo, prNumber), { owner, repo, prNumber });
 		const resultEl = document.querySelector<HTMLElement>(`[data-ccr-result="${owner}/${repo}#${prNumber}"]`);
 		if (resultEl) { resultEl.textContent = localize('usage.repoPrs.ccrChecking'); }
 		postMessage({ command: 'checkCcrActivity', owner, repo, prNumber });
@@ -39,6 +52,7 @@ export function wireCcrActivityButtons(containerId: string, postMessage: (messag
 
 /** Renders the response of an on-demand `checkCcrActivity` lookup next to the button that triggered it. */
 export function renderCcrActivityResult(owner: string, repo: string, prNumber: number, message: any): void {
+	ccrLookups.set(ccrKey(owner, repo, prNumber), { owner, repo, prNumber, message });
 	const resultEl = document.querySelector<HTMLElement>(`[data-ccr-result="${owner}/${repo}#${prNumber}"]`);
 	const btn = document.querySelector<HTMLButtonElement>(`.btn-check-ccr[data-owner="${owner}"][data-repo="${repo}"][data-pr="${prNumber}"]`);
 	btn?.removeAttribute('disabled');
@@ -76,4 +90,18 @@ export function renderCcrActivityResult(owner: string, repo: string, prNumber: n
 	infoIcon.title = localize('usage.repoPrs.ccrInfoTooltip');
 	infoIcon.textContent = 'ℹ️';
 	resultEl.appendChild(infoIcon);
+}
+
+/** Restores every pending or answered lookup onto freshly rendered buttons (after a table re-render). */
+export function replayCcrActivityResults(): void {
+	for (const lookup of [...ccrLookups.values()]) {
+		if (lookup.message !== undefined) {
+			renderCcrActivityResult(lookup.owner, lookup.repo, lookup.prNumber, lookup.message);
+			continue;
+		}
+		const key = ccrKey(lookup.owner, lookup.repo, lookup.prNumber);
+		const resultEl = document.querySelector<HTMLElement>(`[data-ccr-result="${key}"]`);
+		if (resultEl) { resultEl.textContent = localize('usage.repoPrs.ccrChecking'); }
+		resultEl?.previousElementSibling?.setAttribute('disabled', 'true');
+	}
 }

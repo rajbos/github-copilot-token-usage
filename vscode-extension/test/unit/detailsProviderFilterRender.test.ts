@@ -97,7 +97,7 @@ async function renderDetails(data: Record<string, unknown>): Promise<Document> {
 
 /** Finds the provider cost row ("Estimated cost (all|selected providers)") in the Key Metrics table. */
 function providersCostRow(doc: Document): { label: string; tooltip: string; cells: Record<Period, string> } | undefined {
-	for (const tr of Array.from(doc.querySelectorAll('table.stats-table tbody tr'))) {
+	for (const tr of Array.from(doc.querySelectorAll('#section-key-metrics table.data-table tbody tr'))) {
 		const labelEl = tr.querySelector('.metric-label');
 		const label = labelEl?.textContent ?? '';
 		if (!/Estimated cost \((all|selected) providers\)/.test(label)) { continue; }

@@ -114,13 +114,39 @@
             { "click": ".tab-button[data-tab=\"tools\"]" },
             { "click": "#builtin-tools-details > summary" }
           ],
-          "expect": "#paged-table-root-builtin"
+          "expect": "#builtin-tools-details[open] #data-table-root-builtin"
+        },
+        {
+          "id": "tools-skill-suggestions-expanded",
+          "title": "Workspace tools with a Skill Suggestions sessions table expanded",
+          "steps": [
+            { "click": ".group-tab[data-group=\"workspace\"]" },
+            { "click": ".tab-button[data-tab=\"tools\"]" },
+            { "click": "#section-skill-suggestions .skill-suggestion-card[data-cluster-index=\"0\"] details > summary" }
+          ],
+          "expect": "#section-skill-suggestions .skill-suggestion-card[data-cluster-index=\"0\"] details[open] #data-table-root-skill-sessions-0"
+        },
+        {
+          "id": "tools-mcp-by-tool",
+          "title": "Workspace tools with the MCP Tools section switched to By Tool",
+          "steps": [
+            { "click": ".group-tab[data-group=\"workspace\"]" },
+            { "click": ".tab-button[data-tab=\"tools\"]" },
+            { "click": "button[data-mcp-view=\"tool\"]" }
+          ],
+          "expect": "#mcp-period-tool:not([hidden])"
         },
         {
           "id": "health",
           "title": "Workspace › Workspace Health tab",
           "steps": [{ "click": ".group-tab[data-group=\"workspace\"]" }, { "click": ".tab-button[data-tab=\"health\"]" }],
           "expect": "#tab-panel-health"
+        },
+        {
+          "id": "health-customization-page2",
+          "title": "Workspace › Workspace Health, Customization Files table on page 2",
+          "steps": [{ "click": ".group-tab[data-group=\"workspace\"]" }, { "click": ".tab-button[data-tab=\"health\"]" }, { "click": "#data-table-root-customization [data-table-direction=\"next\"]" }],
+          "expect": "#data-table-root-customization [data-table-direction=\"previous\"]:not([disabled])"
         },
         {
           "id": "repos",
@@ -136,7 +162,7 @@
             { "click": ".tab-button[data-tab=\"repos\"]" },
             { "post": {"command": "repoPrStatsLoaded", "data": {"authenticated": true, "since": "2026-02-13T00:00:00.000Z", "repos": [{"owner": "rajbos", "repo": "ai-engineering-fluency", "repoUrl": "https://github.com/rajbos/ai-engineering-fluency", "totalPrs": 99, "aiAuthoredPrs": 7, "aiReviewRequestedPrs": 3, "userAuthoredPrs": 40, "userMergedPrs": 38, "aiMergedPrs": 6, "aiRevertedPrs": 1, "otherMergedPrs": 62, "otherRevertedPrs": 1, "aiAuthoredRecent": 5, "aiAuthoredEarlier": 2, "aiDetails": [{"number": 2094, "title": "Copilot memory-files hygiene", "url": "https://github.com/rajbos/ai-engineering-fluency/pull/2094", "aiType": "copilot", "role": "author"}, {"number": 2071, "title": "Improve Cost Attribution model-mix table", "url": "https://github.com/rajbos/ai-engineering-fluency/pull/2071", "aiType": "claude", "role": "reviewer-requested"}]}, {"owner": "xebia", "repo": "xms-techradar", "repoUrl": "https://github.com/xebia/xms-techradar", "totalPrs": 0, "aiAuthoredPrs": 0, "aiReviewRequestedPrs": 0, "userAuthoredPrs": 0, "userMergedPrs": 0, "aiDetails": [], "error": "Repo not found or not accessible with current token"}]}} }
           ],
-          "expect": "#repos-pr-content .customization-matrix"
+          "expect": "#repos-pr-content .data-table"
         },
         {
           "id": "readiness",
@@ -217,7 +243,7 @@
             { "click": ".tab-button[data-tab=\"agent\"]" },
             { "post": {"command": "agentSessionsLoaded", "data": {"authenticated": true, "since": "2026-02-13T00:00:00.000Z", "totalTasks": 6, "totalSessions": 9, "totalCredits": 42, "totalPremiumRequests": 12, "accountTasksAvailable": true, "partial": false, "repos": [{"owner": "rajbos", "repo": "ai-engineering-fluency", "totalTasks": 4, "totalSessions": 6, "totalCredits": 30, "totalPremiumRequests": 8, "tasksScanned": 4, "tasksTotal": 4, "partial": false, "discovery": "both", "unassigned": false}, {"owner": "xebia", "repo": "xms-techradar", "totalTasks": 2, "totalSessions": 3, "totalCredits": 12, "totalPremiumRequests": 4, "tasksScanned": 2, "tasksTotal": 2, "partial": false, "discovery": "account", "unassigned": false}]}} }
           ],
-          "expect": "#agent-sessions-content .customization-matrix"
+          "expect": "#agent-sessions-content .data-table"
         },
         {
           "id": "worktrees",
@@ -274,6 +300,18 @@
           "title": "Coaching › Corrections tab",
           "steps": [{ "click": ".group-tab[data-group=\"coaching\"]" }, { "click": ".tab-button[data-tab=\"corrections\"]" }],
           "expect": "#tab-panel-corrections"
+        }
+      ],
+      "scenarios": [
+        {
+          "name": "Tools tab: MCP Tools By Server / By Tool toggle switches the table both ways",
+          "expect": "#tab-panel-tools",
+          "steps": [
+            { "click": ".group-tab[data-group=\"workspace\"]" },
+            { "click": ".tab-button[data-tab=\"tools\"]", "expect": "#mcp-period-server", "expectHidden": "#mcp-period-tool" },
+            { "click": "button[data-mcp-view=\"tool\"]", "expect": "#mcp-period-tool", "expectHidden": "#mcp-period-server" },
+            { "click": "button[data-mcp-view=\"server\"]", "expect": "#mcp-period-server", "expectHidden": "#mcp-period-tool" }
+          ]
         }
       ]
     },
@@ -374,7 +412,28 @@
       "title": "What's New",
       "bundle": "whatsnew",
       "global": "__INITIAL_WHATSNEW__",
-      "fixture": "whatsnew.json"
+      "fixture": "whatsnew.json",
+      "$statesComment": [
+        "'releases' is the initial render. The View index is bundled into the",
+        "webview (src/whatsNew/viewIndex.ts), so it needs nothing from the fixture."
+      ],
+      "states": [
+        {
+          "id": "index",
+          "title": "View index tab",
+          "steps": [{ "click": ".wn-tab[data-tab=\"index\"]" }],
+          "expect": "#wn-tab-panel-index .index-tree"
+        },
+        {
+          "id": "index-search",
+          "title": "View index tab filtered by a search",
+          "steps": [
+            { "click": ".wn-tab[data-tab=\"index\"]" },
+            { "type": "#view-index-search", "text": "latency" }
+          ],
+          "expect": "#wn-tab-panel-index .index-mark"
+        }
+      ]
     },
     {
       "id": "diagnostics",

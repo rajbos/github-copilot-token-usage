@@ -321,6 +321,10 @@ To maintain a consistent, VS Code-native look across all webview panels (Details
   - Run `npm run validate` and verify TypeScript and ESLint pass.
   - Visually compare the header with the Details and other panels to confirm parity.
 
+## Webview Tables
+
+Every table in a webview is rendered with `renderDataTable()` from `src/webview/shared/dataTable.ts` and styled by `src/webview/shared/dataTable.css` — never hand-build a `<table>` with its own sort state, sort indicators, pager or table CSS. The component owns layout, styling, sorting, pagination (10 rows by default; `pageSize: false` only for fixed-structure tables), row filters, focus restoration, screen-reader announcements and the click wiring; a view only supplies rows and column definitions. See [docs/vscode-extension/DATA-TABLE.md](../../docs/vscode-extension/DATA-TABLE.md).
+
 ## Webview State Persistence
 
 Webview panels are created with `retainContextWhenHidden: false`. When the user switches to a different tab (e.g. navigates from Chart to Details), VS Code **destroys the webview's JavaScript context**. When they switch back, the JS module re-executes with all variables reset to their defaults.

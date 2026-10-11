@@ -579,38 +579,11 @@ details[open] > summary .collapse-arrow {
 	letter-spacing: 0.5px;
 }
 
-.tools-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 13px;
+.turn-tools-table {
 	margin-top: 10px;
 }
 
-.tools-table thead th {
-	text-align: left;
-	padding: 8px 12px;
-	background: var(--bg-tertiary);
-	border-bottom: 2px solid var(--border-subtle);
-	color: var(--text-secondary);
-	font-weight: 600;
-	font-size: 12px;
-	text-transform: uppercase;
-	letter-spacing: 0.5px;
-}
-
-.tools-table thead th:nth-child(2) {
-	text-align: right;
-}
-
-.tools-table tbody .tool-row {
-	border-bottom: 1px solid var(--border-subtle);
-}
-
-.tools-table tbody .tool-row:last-child {
-	border-bottom: none;
-}
-
-.tools-table tbody .tool-row.sub-agent-row {
+.data-table tbody tr.sub-agent-row > td {
 	background: rgba(99, 102, 241, 0.06);
 }
 
@@ -658,16 +631,9 @@ details[open] > summary .collapse-arrow {
 	outline: 1px solid rgba(99, 102, 241, 0.8);
 }
 
-.tool-name-cell {
-	padding: 10px 12px;
+.data-table td.tool-name-cell,
+.data-table td.tool-action-cell {
 	vertical-align: top;
-}
-
-.tool-action-cell {
-	padding: 10px 12px;
-	text-align: right;
-	vertical-align: top;
-	width: 100px;
 }
 
 .tool-name {
@@ -795,39 +761,7 @@ details[open] > summary .collapse-arrow {
 	font-weight: 600;
 }
 
-.context-refs-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 13px;
-	margin-top: 8px;
-}
-
-.context-refs-table th,
-.context-refs-table td {
-	padding: 8px 12px;
-	text-align: left;
-	border-bottom: 1px solid var(--border-subtle);
-}
-
-.context-refs-table th {
-	color: var(--text-secondary);
-	font-weight: 600;
-	font-size: 11px;
-	text-transform: uppercase;
-	letter-spacing: 0.5px;
-	background: var(--bg-tertiary);
-}
-
-.context-refs-table td {
-	color: var(--text-primary);
-}
-
-.context-refs-table tbody tr:hover {
-	background: var(--list-hover-bg);
-}
-
-.context-refs-table .count-cell {
-	text-align: center;
+.context-refs-content .count-cell {
 	font-weight: 600;
 	color: var(--link-color);
 }
@@ -1080,40 +1014,8 @@ details[open] > summary .collapse-arrow {
 	border-top: 1px solid rgb(255, 255, 255, 0.1);
 }
 
-.usage-comparison-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 13px;
+.usage-comparison {
 	margin-bottom: 16px;
-}
-
-.usage-comparison-table th,
-.usage-comparison-table td {
-	padding: 8px 12px;
-	text-align: left;
-	border-bottom: 1px solid var(--border-subtle);
-}
-
-.usage-comparison-table th {
-	color: var(--text-secondary);
-	font-weight: 600;
-	font-size: 11px;
-	text-transform: uppercase;
-	letter-spacing: 0.5px;
-	background: var(--bg-tertiary);
-}
-
-.usage-comparison-table .count-cell {
-	text-align: right;
-	font-variant-numeric: tabular-nums;
-}
-
-.usage-total-row {
-	border-top: 2px solid var(--border-subtle);
-}
-
-.usage-total-row td {
-	padding-top: 10px;
 }
 
 .delta-over {
@@ -1155,33 +1057,6 @@ details[open] > summary .collapse-arrow {
 	border: 1px solid rgb(56, 189, 248, 0.3);
 	padding: 3px 10px;
 	border-radius: 4px;
-}
-
-.prompt-breakdown-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 13px;
-}
-
-.prompt-breakdown-table th,
-.prompt-breakdown-table td {
-	padding: 8px 12px;
-	text-align: left;
-	border-bottom: 1px solid var(--border-subtle);
-}
-
-.prompt-breakdown-table th {
-	color: var(--text-secondary);
-	font-weight: 600;
-	font-size: 11px;
-	text-transform: uppercase;
-	letter-spacing: 0.5px;
-	background: var(--bg-tertiary);
-}
-
-.prompt-breakdown-table .count-cell {
-	text-align: right;
-	font-variant-numeric: tabular-nums;
 }
 
 .bar-cell {
@@ -1247,7 +1122,7 @@ details[open] > summary .collapse-arrow {
 	background: var(--bg-secondary);
 	border: 1px solid var(--border-subtle);
 	border-radius: 12px;
-	padding: 16px 20px 4px;
+	padding: 16px 20px 12px;
 	margin-bottom: 24px;
 	box-shadow: 0 4px 12px rgb(0, 0, 0, 0.3), 0 1px 3px rgb(0, 0, 0, 0.2);
 }
@@ -1269,47 +1144,8 @@ details[open] > summary .collapse-arrow {
 	color: var(--text-secondary);
 }
 
-.turns-overview-table-wrap {
-	overflow-x: auto;
-}
-
-.turns-overview-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 13px;
-}
-
-.turns-overview-table th,
-.turns-overview-table td {
-	padding: 6px 12px;
-	text-align: left;
-	border-bottom: 1px solid var(--border-subtle);
-	white-space: nowrap;
-}
-
-.turns-overview-table th {
-	color: var(--text-secondary);
-	font-weight: 600;
-	font-size: 11px;
-	text-transform: uppercase;
-	letter-spacing: 0.5px;
-	background: var(--bg-tertiary);
-	position: sticky;
-	top: 0;
-}
-
-.turns-overview-table .count-cell {
-	text-align: right;
-	font-variant-numeric: tabular-nums;
-}
-
 .turns-overview-row {
 	cursor: pointer;
-	transition: background 0.15s;
-}
-
-.turns-overview-row:hover {
-	background: var(--bg-tertiary);
 }
 
 .turns-overview-row-switch {
@@ -1344,7 +1180,6 @@ details[open] > summary .collapse-arrow {
 }
 
 .turns-overview-actual {
-	text-align: center;
 	color: var(--text-secondary);
 }
 
@@ -1388,7 +1223,10 @@ details[open] > summary .collapse-arrow {
 	color: var(--text-primary);
 }
 
-.turns-overview-legs-row td {
+/* The expanded legs live in a full-width row of the overview table: no hover fill, and
+   wrapping allowed so the nested legs table can size itself. */
+.turns-overview-table > tbody > tr.turns-overview-legs-row > td,
+.turns-overview-table > tbody > tr.turns-overview-legs-row:hover > td {
 	background: var(--bg-tertiary);
 	padding: 10px 12px 12px 34px;
 	white-space: normal;
@@ -1589,37 +1427,6 @@ font-style: italic;
 	color: var(--text-secondary);
 	margin: 2px 0 10px;
 	line-height: 1.5;
-}
-
-.hydra-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 12px;
-}
-
-.hydra-table th,
-.hydra-table td {
-	padding: 5px 10px;
-	text-align: left;
-	border-bottom: 1px solid var(--border-subtle);
-	white-space: nowrap;
-}
-
-.hydra-table th {
-	color: var(--text-secondary);
-	font-weight: 600;
-	font-size: 10px;
-	text-transform: uppercase;
-	letter-spacing: 0.5px;
-}
-
-.hydra-table tbody tr:last-child td {
-	border-bottom: none;
-}
-
-.hydra-num {
-	text-align: right;
-	font-variant-numeric: tabular-nums;
 }
 
 .hydra-muted {

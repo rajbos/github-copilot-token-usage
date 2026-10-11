@@ -139,7 +139,9 @@ export function formatSignedCostCompact(value: number): string {
  * Escapes HTML special characters in a string to prevent XSS.
  */
 export function escapeHtml(text: string): string {
-	return text
+	// Host payloads are untyped at runtime; a missing field must render empty, not throw and
+	// abort the whole panel render (matches `escapeHtml` in src/utils/html.ts).
+	return String(text ?? '')
 		.replace(/&/g, '&amp;')
 		.replace(/</g, '&lt;')
 		.replace(/>/g, '&gt;')

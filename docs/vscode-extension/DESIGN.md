@@ -196,9 +196,13 @@ error message boxes) and high-contrast component outlines.
 - **Fluency badge**: pill-shaped-but-square (`border-radius: 0`) outlined
   badge, colored per stage via `currentColor`, used inline in tables and
   leaderboards.
-- **Leaderboard / data table**: bordered grid with inverted-color header
-  row, alternating hover highlight, and a distinct `current-user` row style
-  (inverted background) to self-locate in a shared ranking.
+- **Data table** (`shared/dataTable.ts` + `shared/dataTable.css`, see
+  [DATA-TABLE.md](DATA-TABLE.md)): the one table component every panel
+  uses — square-cornered bordered grid, sticky header row, hover highlight,
+  sortable column headers with ↑/↓ indicators, and a shared Previous/Next
+  pager. In high-contrast mode the header row inverts and rows get a dashed
+  hover outline. View-specific rows (e.g. the leaderboard's `current-user`
+  row) are styled through a row class, not by restyling the table.
 - **Loading indicator**: a single filled square that pulses opacity
   (`step-end` easing) instead of a spinner — deliberately blocky rather than
   a smooth circular spinner, consistent with the square-cornered system.

@@ -131,6 +131,7 @@ short — it is the escape hatch, not the norm.
 npm run check:interaction
 npm run check:interaction -- --view chart,usage   # one or more views
 npm run check:interaction -- --isolate            # reload between clicks (slow, exhaustive)
+npm run check:interaction -- --concurrency 1      # one view at a time (default 4)
 ```
 
 Renders the **real** webview bundles headlessly (reusing the `visual-view-diff`
@@ -204,6 +205,11 @@ no longer *showing* is a finding — "showing" means present **and** rendered (n
 crawl uses. That last check is how the Models tab proves a picker reconciles
 instead of dropping to an empty state.
 
+A step can also carry its own `expect` (must be showing after *that* step) and
+`expectHidden` (must not be showing after it), for a toggle whose result only
+holds once it was clicked — e.g. `{ "click": "button[data-mcp-view=\"tool\"]",
+"expect": "#mcp-period-tool", "expectHidden": "#mcp-period-server" }`.
+
 ### A note on the visual diff's baseline
 
 `visual:diff` compares against the merge base with `origin/main`. **On a shallow
@@ -212,6 +218,13 @@ then lands on a much older tree — so half the views come back "changed" for
 reasons unrelated to the change under review. The script warns when it detects
 this; run `git fetch --unshallow` (or pass `--base <ref>`) for a comparison you
 can trust. The CI job checks out with `fetch-depth: 0` for the same reason.
+
+Baseline and current render side by side, each with `--concurrency` pages at
+once (default 4). Almost all of a render is fixed settle waits, so this is where
+the run's time goes. The run prints a per-phase timing table at the end and
+writes it to `visual-output/timings.md`; CI appends that table to the
+`ui-checks` job summary. If a diff looks noisy, rerun with `--concurrency 1` to
+rule out machine load.
 
 ## What CI runs
 

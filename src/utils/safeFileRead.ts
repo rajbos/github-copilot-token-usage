@@ -49,7 +49,8 @@ function getSystemTempRoots(): string[] {
 	return cachedSystemTempRoots;
 }
 
-function isPathInsideSystemTempDir(filePath: string): boolean {
+/** Whether a path resolves inside an OS temp directory (session data is never read from there). */
+export function isPathInsideSystemTempDir(filePath: string): boolean {
 	const resolvedPath = (() => {
 		try {
 			return fs.realpathSync(filePath);

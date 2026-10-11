@@ -59,26 +59,139 @@ test('l10n: missing-instructions insight is tool-neutral in English and zh-cn', 
 });
 
 test('l10n: paged curation table controls resolve in English and zh-cn', () => {
-	assert.equal(t('usage.pagedTable.previous'), 'Previous');
-	assert.equal(t('usage.pagedTable.next'), 'Next');
-	assert.equal(t('usage.pagedTable.page', 2, 3, 11, 20, 25), 'Page 2 of 3 · Showing 11–20 of 25');
-	assert.equal(t('usage.pagedTable.showing', 1, 10, 10), 'Showing 1–10 of 10');
-	assert.equal(t('usage.pagedTable.sortBy', 'Server'), 'Sort by Server');
-	assert.equal(t('usage.pagedTable.sortedAscending'), 'Sorted ascending');
-	assert.equal(t('usage.pagedTable.sortedDescending'), 'Sorted descending');
-	assert.equal(t('usage.pagedTable.announcement.sort', 'Server', 'Sorted ascending'), 'Server: Sorted ascending');
-	assert.equal(t('usage.pagedTable.noRows'), 'No rows to display.');
+	assert.equal(t('dataTable.previous'), 'Previous');
+	assert.equal(t('dataTable.next'), 'Next');
+	assert.equal(t('dataTable.page', 2, 3, 11, 20, 25), 'Page 2 of 3 · Showing 11–20 of 25');
+	assert.equal(t('dataTable.showing', 1, 10, 10), 'Showing 1–10 of 10');
+	assert.equal(t('dataTable.sortBy', 'Server'), 'Sort by Server');
+	assert.equal(t('dataTable.sortedAscending'), 'Sorted ascending');
+	assert.equal(t('dataTable.sortedDescending'), 'Sorted descending');
+	assert.equal(t('dataTable.announcement.sort', 'Server', 'Sorted ascending'), 'Server: Sorted ascending');
+	assert.equal(t('dataTable.noRows'), 'No rows to display.');
 	mock.setLanguage('zh-cn');
 	try {
-		assert.equal(t('usage.pagedTable.previous'), '上一页');
-		assert.equal(t('usage.pagedTable.next'), '下一页');
-		assert.equal(t('usage.pagedTable.page', 2, 3, 11, 20, 25), '第 2/3 页 · 显示 11–20 条，共 25 条');
-		assert.equal(t('usage.pagedTable.showing', 1, 10, 10), '显示 1–10 条，共 10 条');
-		assert.equal(t('usage.pagedTable.sortBy', 'Server'), '按Server排序');
-		assert.equal(t('usage.pagedTable.sortedAscending'), '当前按升序排列');
-		assert.equal(t('usage.pagedTable.sortedDescending'), '当前按降序排列');
-		assert.equal(t('usage.pagedTable.announcement.sort', '服务器', '当前按升序排列'), '服务器：当前按升序排列');
-		assert.equal(t('usage.pagedTable.noRows'), '没有可显示的行。');
+		assert.equal(t('dataTable.previous'), '上一页');
+		assert.equal(t('dataTable.next'), '下一页');
+		assert.equal(t('dataTable.page', 2, 3, 11, 20, 25), '第 2/3 页 · 显示 11–20 条，共 25 条');
+		assert.equal(t('dataTable.showing', 1, 10, 10), '显示 1–10 条，共 10 条');
+		assert.equal(t('dataTable.sortBy', 'Server'), '按Server排序');
+		assert.equal(t('dataTable.sortedAscending'), '当前按升序排列');
+		assert.equal(t('dataTable.sortedDescending'), '当前按降序排列');
+		assert.equal(t('dataTable.announcement.sort', '服务器', '当前按升序排列'), '服务器：当前按升序排列');
+		assert.equal(t('dataTable.noRows'), '没有可显示的行。');
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
+test('l10n: customization files table controls resolve in English and zh-cn', () => {
+	const translations: Array<[string, string, string]> = [
+		['usage.customization.column.workspace', '📂 Workspace', '📂 工作区'],
+		['usage.customization.column.sessions', 'Sessions', '会话'],
+		['usage.customization.column.interactions', 'Interactions', '交互'],
+		['usage.customization.aria.table', 'Copilot customization files by workspace', '按工作区列出的 Copilot 自定义文件'],
+		['usage.customization.filter.noCustomizationOnly', 'Only workspaces without customization files', '仅显示没有自定义文件的工作区'],
+		['usage.customization.status.fresh', "Present and fresh", "存在且最新"],
+		['usage.customization.status.stale', "Present but stale", "存在但已过时"],
+		['usage.customization.status.missing', "Missing", "缺失"],
+		['usage.customization.status.unknown', "Status unknown", "状态未知"],
+		['usage.customization.status.error', "Error", "错误"],
+		['usage.customization.badge.noCustomization', "No customization files", "没有自定义文件"],
+		['usage.customization.legend.fresh', "= Present & Fresh", "= 存在且最新"],
+		['usage.customization.legend.stale', "= Present but Stale", "= 存在但已过时"],
+		['usage.customization.legend.missing', "= Missing", "= 缺失"],
+		['usage.customization.title', "Copilot Customization Files", "Copilot 自定义文件"],
+		['usage.customization.emptySubtitle', "Showing workspace customization status for active workspaces", "显示活跃工作区的自定义状态"],
+		['usage.customization.empty', "No workspaces with customization files detected in the last 30 days.", "过去 30 天内未检测到包含自定义文件的工作区。"],
+		['usage.customization.summary.allGood', "All workspaces have up-to-date customizations.", "所有工作区的自定义文件均为最新。"],
+	];
+	for (const [key, english] of translations) {
+		assert.equal(t(key), english);
+	}
+	assert.equal(t('usage.customization.summary', 26), 'Showing 26 workspace(s) with Copilot activity in the last 30 days.');
+	assert.equal(t('usage.customization.summary.issues', 6), '6 workspace(s) have no customization files.');
+	mock.setLanguage('zh-cn');
+	try {
+		for (const [key, , chinese] of translations) {
+			assert.equal(t(key), chinese);
+		}
+		assert.equal(t('usage.customization.summary', 26), '显示过去 30 天内有 Copilot 活动的 26 个工作区。');
+		assert.equal(t('usage.customization.summary.issues', 6), '6 个工作区没有自定义文件。');
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
+test('l10n: tool × period table strings resolve in English and zh-cn', () => {
+	const translations: Array<[string, string, string]> = [
+		['usage.toolPeriod.colTool', 'Tool', '工具'],
+		['usage.toolPeriod.colServer', 'Server', '服务器'],
+		['usage.toolPeriod.colToday', 'Today', '今天'],
+		['usage.toolPeriod.colLast30', 'Last 30 Days', '最近 30 天'],
+		['usage.toolPeriod.colPreviousMonth', 'Previous Month', '上月'],
+		['usage.toolPeriod.totalToolCalls', 'Total tool calls', '工具调用总数'],
+		['usage.toolPeriod.totalMcpCalls', 'Total MCP calls', 'MCP 调用总数'],
+		['usage.toolPeriod.byServer', 'By Server', '按服务器'],
+		['usage.toolPeriod.byTool', 'By Tool', '按工具'],
+		['usage.toolPeriod.mcpViewAria', 'MCP breakdown', 'MCP 细分'],
+		['usage.toolPeriod.emptyTools', 'No tools used yet', '尚未使用任何工具'],
+		['usage.toolPeriod.emptyToolsHidden', 'No purposeful tools used yet (automatic tool calls are hidden)', '尚未使用任何有目的的工具（已隐藏自动工具调用）'],
+		['usage.toolPeriod.emptyMcp', 'No MCP tools used yet', '尚未使用任何 MCP 工具'],
+		['usage.toolPeriod.autoBadge', 'auto', '自动'],
+		['usage.toolPeriod.ariaToolUsage', 'Tool usage by period', '按时间段的工具使用情况'],
+		['usage.toolPeriod.ariaMcpServers', 'MCP calls by server and period', '按服务器和时间段的 MCP 调用'],
+		['usage.toolPeriod.ariaMcpTools', 'MCP calls by tool and period', '按工具和时间段的 MCP 调用'],
+		['usage.toolPeriod.autoBadgeTitle', 'Automatic tool — Copilot uses this internally and it does not count toward fluency scoring', '自动工具 — Copilot 在内部使用，不计入熟练度评分'],
+	];
+	for (const [key, english] of translations) {
+		assert.equal(t(key), english, key);
+	}
+	mock.setLanguage('zh-cn');
+	try {
+		for (const [key, , chinese] of translations) {
+			assert.equal(t(key), chinese, key);
+		}
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
+test('l10n: skill suggestion UI strings resolve in English and zh-cn', () => {
+	const translations: Array<[string, string, string]> = [
+		["usage.skillSuggestions.title", "Skill Suggestions ({0})", "技能建议（{0}）"],
+		["usage.skillSuggestions.subtitle", "Tasks you keep prompting for across sessions (first prompt per session, {0} sessions scanned). A repeated task is a good candidate for a reusable skill, prompt file, or custom agent.", "你在多个会话中反复提出的任务（取每个会话的第一条提示，共扫描 {0} 个会话）。重复的任务很适合做成可复用的技能、提示文件或自定义智能体。"],
+		["usage.skillSuggestions.repeated", "{0}× repeated", "重复 {0} 次"],
+		["usage.skillSuggestions.sessions", "Sessions ({0})", "会话（{0}）"],
+		["usage.skillSuggestions.createSkill", "🤖 Create skill with Copilot", "🤖 用 Copilot 创建技能"],
+		["usage.skillSuggestions.createSkillTooltip", "Draft a Copilot Chat prompt that turns this task into a reusable skill. The prompt is not sent until you review it.", "起草一条 Copilot Chat 提示，将此任务做成可复用的技能。提示在你检查之前不会发送。"],
+		["usage.skillSuggestions.copyPrompt", "📋 Copy prompt", "📋 复制提示"],
+		["usage.skillSuggestions.copyPromptTooltip", "Copy the skill prompt to paste into Copilot Chat in another workspace", "复制技能提示，以便粘贴到其他工作区的 Copilot Chat 中"],
+		["usage.skillSuggestions.copied", "✅ Copied!", "✅ 已复制！"],
+		["usage.skillSuggestions.target.workspace", "Target: workspace skill in {0}", "目标：{0} 中的工作区技能"],
+		["usage.skillSuggestions.target.user", "Target: user-level skill (not tied to exactly one repository)", "目标：用户级技能（不只属于一个仓库）"],
+		["usage.skillSuggestions.openRepoFirst", "⚠️ Open \"{0}\" in VS Code first, then paste this prompt into Copilot Chat:", "⚠️ 请先在 VS Code 中打开“{0}”，然后将此提示粘贴到 Copilot Chat："],
+		["usage.skillSuggestions.column.session", "Session", "会话"],
+		["usage.skillSuggestions.column.date", "Date", "日期"],
+		["usage.skillSuggestions.column.repository", "Repository", "仓库"],
+		["usage.skillSuggestions.column.actions", "Actions", "操作"],
+		["usage.skillSuggestions.openSession", "Open", "打开"],
+		["usage.skillSuggestions.openSessionTooltip", "Open this session in the session viewer", "在会话查看器中打开此会话"],
+		["usage.skillSuggestions.sessionsTableLabel", "Sessions for this suggestion", "此建议的会话"],
+		["usage.skillSuggestions.pagerLabel", "Skill suggestion pages", "技能建议分页"],
+	];
+	for (const [key, english] of translations) {
+		assert.equal(t(key), english, key);
+	}
+	assert.equal(t('usage.skillSuggestions.title', 7), 'Skill Suggestions (7)');
+	assert.equal(t('usage.skillSuggestions.repeated', 3), '3× repeated');
+	assert.equal(t('usage.skillSuggestions.openRepoFirst', 'app'), '⚠️ Open "app" in VS Code first, then paste this prompt into Copilot Chat:');
+	mock.setLanguage('zh-cn');
+	try {
+		for (const [key, , chinese] of translations) {
+			assert.equal(t(key), chinese, key);
+		}
+		assert.equal(t('usage.skillSuggestions.title', 7), '技能建议（7）');
+		assert.equal(t('usage.skillSuggestions.repeated', 3), '重复 3 次');
 	} finally {
 		mock.setLanguage('en');
 	}
@@ -1747,6 +1860,26 @@ test('l10n: tool-execution tooltips, table headers and the 0.19.1 What\'s New en
 	assert.equal(t('whatsNew.release.0.19.1.headline'), 'The Tools & Integrations tab now shows how reliable and how slow each tool is, which MCP servers fail, and a cost-vs-speed map of your built-in, subagent and skill tools.');
 	assert.equal(t('whatsNew.feature.usage.tool-execution-stats.title'), 'Tool reliability, latency and MCP health');
 	assert.ok(t('whatsNew.feature.usage.tool-execution-stats.description').includes('cost-vs-speed map'));
+	assert.equal(t('whatsNew.feature.whatsnew.view-index.title'), 'View index');
+	assert.equal(t('whatsNew.logviewerHint'), 'Open a session from this list to see it in the Session Log Viewer.');
+	assert.equal(t('viewIndex.navigationFailed', 'boom'), 'Could not open that view: boom');
+	assert.ok(t('whatsNew.feature.whatsnew.view-index.description').startsWith('A searchable map of every view, tab and section'));
+	assert.equal(t('whatsNew.footer', '0.19.1'), 'Running version 0.19.1. The full changelog, including fixes, ships with the extension.');
+	assert.equal(t('viewIndex.summary', '97', '10'), '97 entries across 10 views');
+	assert.equal(t('viewIndex.matchMany', '3'), '3 matches');
+	assert.equal(t('viewIndex.noMatchStatus', 'xyz'), 'Nothing matches “xyz”. Try fewer or shorter words.');
+	assert.equal(t('viewIndex.searchPlaceholder'), 'Search views, tabs and sections…');
+	assert.equal(t('viewIndex.searchLabel'), 'Search the view index');
+	assert.equal(t('viewIndex.treeLabel'), 'View index');
+	assert.equal(t('viewIndex.expand', 'Usage'), 'Expand Usage');
+	assert.equal(t('viewIndex.collapse', 'Usage'), 'Collapse Usage');
+	assert.equal(t('viewIndex.open', 'Usage › Tools'), 'Open Usage › Tools');
+	assert.equal(t('viewIndex.matchOne'), '1 match');
+	assert.equal(t('viewIndex.noMatch'), 'No matching views, tabs or sections.');
+	assert.ok(t('viewIndex.intro').startsWith('Every view you can open, with its tabs and sections.'));
+	assert.equal(t('whatsNew.tabs.label'), "What's New sections");
+	assert.equal(t('whatsNew.tab.releases'), '📣 Releases');
+	assert.equal(t('whatsNew.tab.index'), '🧭 View index');
 	mock.setLanguage('zh-cn');
 	try {
 		assert.equal(t('usage.toolExec.tip.reliability', 'View', '30', '10'), 'View：成功 30 次，失败 10 次');
@@ -1754,6 +1887,26 @@ test('l10n: tool-execution tooltips, table headers and the 0.19.1 What\'s New en
 		assert.equal(t('usage.toolExec.col.completed'), '已完成调用');
 		assert.equal(t('usage.toolExec.empty.latency'), '暂无工具延迟数据。该数据来自 Copilot CLI、JetBrains、Claude Code 和 Claude Desktop 会话。');
 		assert.equal(t('whatsNew.feature.usage.tool-execution-stats.title'), '工具可靠性、延迟与 MCP 健康度');
+		assert.equal(t('whatsNew.feature.whatsnew.view-index.title'), '视图索引');
+		assert.equal(t('whatsNew.logviewerHint'), '从此列表中打开一个会话，即可在会话日志查看器中查看。');
+		assert.equal(t('viewIndex.navigationFailed', 'boom'), '无法打开该视图：boom');
+		assert.ok(t('whatsNew.feature.whatsnew.view-index.description').startsWith('“新增功能”中的一个新标签页'));
+		assert.equal(t('viewIndex.summary', '97', '10'), '10 个视图中共 97 个条目');
+		assert.equal(t('viewIndex.matchMany', '3'), '3 个匹配项');
+		assert.equal(t('whatsNew.tab.index'), '🧭 视图索引');
+		assert.equal(t('whatsNew.tab.releases'), '📣 版本');
+		assert.equal(t('whatsNew.tabs.label'), '新增功能分区');
+		assert.equal(t('whatsNew.footer', '0.19.1'), '当前运行版本 0.19.1。包含修复内容的完整更新日志随扩展一起提供。');
+		assert.equal(t('viewIndex.searchPlaceholder'), '搜索视图、标签页和部分…');
+		assert.equal(t('viewIndex.searchLabel'), '搜索视图索引');
+		assert.equal(t('viewIndex.treeLabel'), '视图索引');
+		assert.equal(t('viewIndex.expand', 'X'), '展开 X');
+		assert.equal(t('viewIndex.collapse', 'X'), '折叠 X');
+		assert.equal(t('viewIndex.open', 'X'), '打开 X');
+		assert.equal(t('viewIndex.matchOne'), '1 个匹配项');
+		assert.equal(t('viewIndex.noMatchStatus', 'xyz'), '没有与“xyz”匹配的内容。请尝试更少或更短的词。');
+		assert.equal(t('viewIndex.noMatch'), '没有匹配的视图、标签页或部分。');
+		assert.ok(t('viewIndex.intro').startsWith('你可以打开的每个视图及其标签页和部分。'));
 		assert.equal(t('whatsNew.release.0.19.1.headline'), '工具与集成标签页现在可以显示每个工具的可靠性和速度、哪些 MCP 服务器会失败，以及内置、子代理与技能工具的成本与速度图。');
 	} finally {
 		mock.setLanguage('en');
@@ -1782,6 +1935,27 @@ test('worktree cleanup delete-feedback keys resolve in zh-cn', () => {
 		for (const [key, { zh }] of Object.entries(WORKTREE_CLEANUP_KEYS)) {
 			assert.equal(t(key), zh, `zh-cn value for ${key}`);
 		}
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
+test('l10n: workspace grouping strings in the Customization Files matrix resolve in English and zh-cn', () => {
+	mock.setLanguage('en');
+	assert.equal(t('customizationMatrix.mergedFolders', '3'), '3 folders merged');
+	assert.equal(t('customizationMatrix.ungroupedBadge'), 'Ungrouped workspace names');
+	assert.equal(
+		t('customizationMatrix.ungroupedNames', '2', 'repo-85ed99, goofy-wozniak-42f712'),
+		'2 workspace name(s) look like ungrouped worktrees or clones: repo-85ed99, goofy-wozniak-42f712'
+	);
+	mock.setLanguage('zh-cn');
+	try {
+		assert.equal(t('customizationMatrix.mergedFolders', '3'), '已合并 3 个文件夹');
+		assert.equal(t('customizationMatrix.ungroupedBadge'), '未分组的工作区名称');
+		assert.equal(
+			t('customizationMatrix.ungroupedNames', '2', 'a, b'),
+			'2 个工作区名称看起来像未分组的工作树或克隆：a, b'
+		);
 	} finally {
 		mock.setLanguage('en');
 	}

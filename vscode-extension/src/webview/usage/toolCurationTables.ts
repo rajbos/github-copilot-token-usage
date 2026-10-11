@@ -1,7 +1,7 @@
 import type { AvailableToolEntry, ToolCurationAnalysis } from '../../../../src/types';
-import { escapeHtml } from '../shared/formatUtils';
+import { escapeHtml, formatNumber } from '../shared/formatUtils';
 import { localize, localizeFormat } from '../shared/localization';
-import { getPagedTableState, renderPagedTable, type PagedTableColumn } from './pagedTable';
+import { getDataTableState, renderDataTable, renderDataTableFilter, type DataTableColumn } from '../shared/dataTable';
 
 type McpServerEntry = ToolCurationAnalysis['underusedMcpServers'][number];
 
@@ -65,7 +65,7 @@ function mcpActionButton(server: McpServerEntry): string {
 }
 
 function renderMcpTable(servers: McpServerEntry[], bloat: ToolCurationAnalysis['estimatedPromptBloat']): string {
-	const columns: PagedTableColumn<McpServerEntry>[] = [
+	const columns: DataTableColumn<McpServerEntry>[] = [
 		{
 			id: 'default',
 			label: '',
@@ -99,26 +99,24 @@ function renderMcpTable(servers: McpServerEntry[], bloat: ToolCurationAnalysis['
 			sortValue: server => bloat.byServer[server.server] ?? 0,
 			render: server => {
 				const tokens = bloat.byServer[server.server] ?? 0;
-				return tokens > 0 ? `~${tokens.toLocaleString()} tokens` : '—';
+				return tokens > 0 ? `~${formatNumber(tokens)} tokens` : '—';
 			},
 		},
-		{ id: 'action', label: localize('usage.toolCuration.column.action'), sortable: false, sortValue: () => null, render: server => ({ html: mcpActionButton(server) }) },
+		{ id: 'action', label: localize('usage.toolCuration.column.action'), render: server => ({ html: mcpActionButton(server) }) },
 	];
-	return renderPagedTable({
+	return renderDataTable({
 		tableId: 'mcp',
 		ariaLabel: localize('usage.toolCuration.aria.mcp'),
 		rows: servers,
 		columns,
-		initialSortColumn: 'default',
-		initialSortDirection: 'asc',
+		initialSort: { columnId: 'default', direction: 'asc' },
 		defaultFilters: { hideWithUsage: true },
 		filterRows: (server, filters) => !filters.hideWithUsage || server.usedToolCount === 0,
-		emptyMessage: localize('usage.pagedTable.noRows'),
 	});
 }
 
 function renderSkillsTable(skills: AvailableToolEntry[]): string {
-	const columns: PagedTableColumn<AvailableToolEntry>[] = [
+	const columns: DataTableColumn<AvailableToolEntry>[] = [
 		{ id: 'name', label: localize('usage.toolCuration.column.skill'), sortValue: skill => skill.name, render: skill => skill.name },
 		{
 			id: 'source', label: localize('usage.toolCuration.column.source'), sortValue: getSkillSourceLabel,
@@ -132,15 +130,15 @@ function renderSkillsTable(skills: AvailableToolEntry[]): string {
 		},
 		{
 			id: 'description', label: localize('usage.toolCuration.column.description'), sortValue: skill => skill.description,
-			render: skill => ({ html: `<span class="paged-table-truncate" title="${escapeHtml(skill.description)}">${escapeHtml(skill.description)}</span>` }),
+			render: skill => ({ html: `<span class="data-table-truncate" title="${escapeHtml(skill.description)}">${escapeHtml(skill.description)}</span>` }),
 		},
 		{
 			id: 'overhead', label: localize('usage.toolCuration.column.overhead'), align: 'right',
 			sortValue: skill => estimateToolOverheadTokens(skill.name, skill.description),
-			render: skill => `~${estimateToolOverheadTokens(skill.name, skill.description).toLocaleString()} tokens`,
+			render: skill => `~${formatNumber(estimateToolOverheadTokens(skill.name, skill.description))} tokens`,
 		},
 		{
-			id: 'view', label: localize('usage.toolCuration.column.view'), sortable: false, sortValue: () => null,
+			id: 'view', label: localize('usage.toolCuration.column.view'),
 			render: skill => {
 				const file = skill.configFiles?.[0];
 				return file
@@ -149,38 +147,34 @@ function renderSkillsTable(skills: AvailableToolEntry[]): string {
 			},
 		},
 	];
-	return renderPagedTable({
+	return renderDataTable({
 		tableId: 'skills',
 		ariaLabel: localize('usage.toolCuration.aria.skills'),
 		rows: skills,
 		columns,
-		initialSortColumn: 'overhead',
-		initialSortDirection: 'desc',
-		emptyMessage: localize('usage.pagedTable.noRows'),
+		initialSort: { columnId: 'overhead', direction: 'desc' },
 	});
 }
 
 function renderBuiltinTable(tools: AvailableToolEntry[]): string {
-	const columns: PagedTableColumn<AvailableToolEntry>[] = [
+	const columns: DataTableColumn<AvailableToolEntry>[] = [
 		{ id: 'name', label: localize('usage.toolCuration.column.tool'), sortValue: tool => tool.name, render: tool => tool.name },
 		{
 			id: 'description', label: localize('usage.toolCuration.column.description'), sortValue: tool => tool.description,
-			render: tool => ({ html: `<span class="paged-table-truncate" title="${escapeHtml(tool.description)}">${escapeHtml(tool.description || '—')}</span>` }),
+			render: tool => ({ html: `<span class="data-table-truncate" title="${escapeHtml(tool.description)}">${escapeHtml(tool.description || '—')}</span>` }),
 		},
 		{
 			id: 'overhead', label: localize('usage.toolCuration.column.overhead'), align: 'right',
 			sortValue: tool => estimateToolOverheadTokens(tool.name, tool.description),
-			render: tool => `~${estimateToolOverheadTokens(tool.name, tool.description).toLocaleString()} tokens`,
+			render: tool => `~${formatNumber(estimateToolOverheadTokens(tool.name, tool.description))} tokens`,
 		},
 	];
-	return renderPagedTable({
+	return renderDataTable({
 		tableId: 'builtin',
 		ariaLabel: localize('usage.toolCuration.aria.builtin'),
 		rows: tools,
 		columns,
-		initialSortColumn: 'overhead',
-		initialSortDirection: 'desc',
-		emptyMessage: localize('usage.pagedTable.noRows'),
+		initialSort: { columnId: 'overhead', direction: 'desc' },
 	});
 }
 
@@ -209,15 +203,14 @@ export function buildUnusedMcpHtml(
 		: defaultMcpConfigLink;
 	const unusedCount = servers.filter(server => server.usedToolCount === 0).length;
 	const usedCount = servers.length - unusedCount;
-	const state = getPagedTableState('mcp', 'default', 'asc', { hideWithUsage: true });
+	const state = getDataTableState('mcp', { sort: { columnId: 'default', direction: 'asc' }, filters: { hideWithUsage: true } });
 	return `<details style="margin-top:12px;" open>
 		<summary style="cursor:pointer; font-size:13px; font-weight:600; color:var(--text-primary); padding:6px 0;">${escapeHtml(localizeFormat('usage.toolCuration.summary.mcp', windowDays, servers.length))}</summary>
-		<div style="display:flex; align-items:center; gap:6px; margin:6px 0;">
-			<input type="checkbox" id="mcp-hide-toggle" data-paged-table="mcp" data-paged-table-filter="hideWithUsage"${state.filters.hideWithUsage ? ' checked' : ''} style="margin:0; cursor:pointer; flex-shrink:0;">
-			<label for="mcp-hide-toggle" style="font-size:12px; color:var(--text-primary); cursor:pointer; user-select:none;">${escapeHtml(localize('usage.toolCuration.filter.hideServersWithUsage'))}</label>
+		<div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin:6px 0;">
+			${renderDataTableFilter({ tableId: 'mcp', filterId: 'hideWithUsage', id: 'mcp-hide-toggle', label: localize('usage.toolCuration.filter.hideServersWithUsage'), checked: state.filters.hideWithUsage === true })}
 			<span style="font-size:11px; color:var(--text-secondary);">${escapeHtml(localizeFormat('usage.toolCuration.summary.mcpCounts', unusedCount, usedCount))}</span>
 		</div>
-		<div style="margin-top:8px; overflow-x:auto;">${renderMcpTable(servers, bloat)}</div>
+		<div style="margin-top:8px;">${renderMcpTable(servers, bloat)}</div>
 		<div style="margin-top:8px; font-size:11px; color:var(--text-secondary);">${localizeFormat('usage.toolCuration.help.mcp', configLink, escapeHtml(localize('usage.toolCuration.action.manageExtension')))}</div>
 	</details>`;
 }
@@ -226,7 +219,7 @@ export function buildUnusedSkillsHtml(skills: AvailableToolEntry[]): string {
 	if (skills.length === 0) { return ''; }
 	return `<details style="margin-top:8px;" open>
 		<summary style="cursor:pointer; font-size:13px; font-weight:600; color:var(--text-primary); padding:6px 0;">${escapeHtml(localizeFormat('usage.toolCuration.summary.unusedSkills', skills.length))}</summary>
-		<div style="margin-top:8px; overflow-x:auto;">${renderSkillsTable(skills)}</div>
+		<div style="margin-top:8px;">${renderSkillsTable(skills)}</div>
 		<div style="margin-top:8px; font-size:11px; color:var(--text-secondary);">${localizeFormat('usage.toolCuration.help.unusedSkills', escapeHtml(localize('usage.toolCuration.action.manage')))}</div>
 	</details>`;
 }
@@ -240,7 +233,7 @@ export function buildBuiltinToolsHtml(
 	const formattedBloat = builtinBloat >= 1000 ? `~${Math.round(builtinBloat / 1000)}K` : `~${builtinBloat}`;
 	return `<details id="builtin-tools-details" style="margin-top:12px;">
 		<summary style="cursor:pointer; font-size:13px; font-weight:600; color:var(--text-primary); padding:6px 0;">${escapeHtml(localizeFormat('usage.toolCuration.summary.builtin', tools.length, formattedBloat))}</summary>
-		<div style="margin-top:8px; overflow-x:auto;">${renderBuiltinTable(tools)}</div>
+		<div style="margin-top:8px;">${renderBuiltinTable(tools)}</div>
 		<div style="margin-top:8px; font-size:11px; color:var(--text-secondary);">${escapeHtml(localize('usage.toolCuration.help.builtin'))}</div>
 	</details>`;
 }

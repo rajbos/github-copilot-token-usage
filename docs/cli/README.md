@@ -34,9 +34,10 @@ Requires **Node.js 22.14 or later**. The first run parses every session file it 
 | [`diagnostics`](#diagnostics--search-locations--stats) | Every search location and what was found there | — |
 | [`memory-files`](#memory-files--copilot-memory-files-hygiene-report) | Copilot agent memory-file hygiene | `--json`, `--stale-days`, `--large-kb`, `--server`, `--repo`, `--limit`, `--promote` |
 | [`curation`](#curation--tool-curation-report) | MCP servers and skills you load but don't use | `--json`, `--window` |
+| [`skill-suggestions`](#skill-suggestions--repeated-tasks) | Tasks you keep prompting for by hand (skill candidates) | `--json`, `--include-prompts` |
 | [`segment`](#segment--prompt-segment) | Compact, cached one-liner for shell prompts | `--ttl`, `--refresh`, `--hide-zero`, `--json` |
 | [`chart`](#integration-commands-chart-usage-analysis-all) | Daily usage payload (integration) | `--json`, `-v, --verbose` |
-| [`usage-analysis`](#integration-commands-chart-usage-analysis-all) | Usage-analysis payload (integration) | `--json` |
+| [`usage-analysis`](#integration-commands-chart-usage-analysis-all) | Usage-analysis payload (integration) | `--json`, `--repeated-tasks` |
 | [`all`](#integration-commands-chart-usage-analysis-all) | Every payload in one call (integration) | `--json` (required) |
 
 Global options, valid before any command:
@@ -167,6 +168,8 @@ Figures are estimates: tokens are weighted by type (output fully, fresh input an
 ### `fluency` — Fluency Score
 
 Your AI Engineering Fluency stage (1–4) overall and across six categories — Prompt Engineering, Context Engineering, Agentic, Tool Usage, Customization and Workflow Integration — based on the last 30 days, with the evidence behind each score. Scoring rules: [FLUENCY-LEVELS.md](../FLUENCY-LEVELS.md).
+
+The Customization category counts the workspaces you worked in that have an instructions file. Worktrees, scratch clones and case or WSL spellings of one repository are counted as one workspace, using the same grouping rules as the VS Code extension ([workspace grouping](../features/WORKSPACE-GROUPING.md)), so the workspace counts in the evidence match the extension's.
 
 ```bash
 ai-engineering-fluency fluency
@@ -310,6 +313,36 @@ Unused MCP Servers:
 
 ---
 
+### `skill-suggestions` — Repeated Tasks
+
+Find tasks you keep prompting for by hand — similar first prompts across several sessions, such as "run the tests and fix the failures" — as candidates for a reusable skill, prompt file or custom agent. This is the same report as the **Skill Suggestions** section of the VS Code extension's Usage Analysis view, built by the same shared code; see [features/REPEATED-TASKS.md](../features/REPEATED-TASKS.md).
+
+```bash
+ai-engineering-fluency skill-suggestions                          # Text report, prompts included
+ai-engineering-fluency skill-suggestions --json                   # JSON without prompt text, keywords or session titles
+ai-engineering-fluency skill-suggestions --json --include-prompts # JSON with prompt text, keywords and session titles
+```
+
+Sessions active in the current or the previous calendar month (at least the last 30 days) are scanned; for editors that keep many sessions in one database (such as OpenCode and Crush), each session's own last activity decides, not the database file's date. A task is reported once at least two sessions start with a similar prompt.
+
+```
+Skill Suggestions — repeated tasks
+==================================================
+
+2 repeated task(s) in 184 session(s) with a usable first prompt (a task needs at least 2 similar sessions).
+
+1. "run the tests and fix the failures"
+   Sessions:     4
+   Keywords:     failures, tests
+   Repositories: rajbos/ai-engineering-fluency
+   Last seen:    2026-10-08
+...
+```
+
+`--json` output has the shape `{ "promptsIncluded": false, "repeatedTasks": { "minClusterSize", "sessionsScanned", "clusters": [...] } }`; `repeatedTasks` is `null` when nothing repeats. `sessionsScanned` counts sessions whose first prompt could be clustered — slash commands, very short prompts and prompts made only of filler words are not counted. Each cluster carries `sessionCount`, `repositories` and `sessions` (`file`, `lastInteraction`, `repository`). Prompts are free text you wrote, so `representativePrompt`, the prompt-derived `sharedKeywords` and each session's `title` are only included with `--include-prompts`. Repositories are filled in only for editors whose session files record one.
+
+---
+
 ### `segment` — Prompt Segment
 
 A compact token-usage string for shell prompts such as [oh-my-posh](https://ohmyposh.dev/), backed by its own short-lived cache so each prompt render returns immediately. Setup: [omp-segment/README.md](../../omp-segment/README.md).
@@ -345,7 +378,7 @@ These print the JSON payloads that the editor front-ends render — the Visual S
 | Command | Output |
 |---|---|
 | `chart --json` | Daily token usage (labels, per-day totals, per-editor/model series). `-v, --verbose` logs debug-log discovery details to stderr. Without `--json` it prints a per-period token and cost summary. |
-| `usage-analysis --json` | Usage analysis per period: interaction modes, tool calls, MCP usage, context references. `--json` is required. |
+| `usage-analysis --json` | Usage analysis per period: interaction modes, tool calls, MCP usage, context references. `--json` is required. `--repeated-tasks` adds the `repeatedTasks` report (the [`skill-suggestions`](#skill-suggestions--repeated-tasks) data, prompts included); it is left out by default because it carries prompt text. |
 | `all --json` | One object with `details`, `chart`, `usage`, `fluency` and `curation` keys — the payloads of `usage --json`, `chart --json`, `usage-analysis --json`, `fluency --json` and `curation --json`. `--json` is required; without it the command prints a hint to stderr and exits. |
 
 ---
@@ -390,7 +423,7 @@ The CLI writes two files under `~/.copilot-token-tracker/` (the folder name pred
 | `cli-cache.json` | Parsed per-file results, keyed on file path and modification time, so unchanged files are not re-parsed. Holds at most 2,000 entries. | Until the file changes. Discarded automatically when a new CLI version changes the cache format. |
 | `omp-segment-cache.json` | Last `segment` output. | `--ttl` minutes (default 5). |
 
-To bypass the parse cache for one run, use `--no-cache`. To reset everything, delete the folder — it is rebuilt on the next run.
+To bypass the parse cache for one run, use `--no-cache`. To reset everything, delete the folder — it is rebuilt on the next run. The [library entry point](#programmatic-use) keeps its cache in memory and never touches these files.
 
 ---
 
@@ -438,6 +471,49 @@ Run `ai-engineering-fluency diagnostics` to see exactly which of these locations
 
 ---
 
+## Programmatic use
+
+Since 0.7.0 the package also works as a Node library. The `@rajbos/ai-engineering-fluency/session` entry point returns token usage and cost for one session file, so another app can show per-session cost without running the CLI. It works with `require()` and `import`, ships its own TypeScript types, and contains none of the CLI code.
+
+```bash
+npm install @rajbos/ai-engineering-fluency
+```
+
+```js
+const { analyzeSessionFile, analyzeSessionFiles } = require('@rajbos/ai-engineering-fluency/session');
+
+const usage = await analyzeSessionFile('/home/me/.copilot/session-state/<id>/events.jsonl');
+if (usage) {
+  console.log(usage.editorSource, usage.totalTokens, usage.estimatedCostUsd.provider);
+  if (usage.copilotCredits !== null) {
+    console.log(`${usage.copilotCredits} AI credits billed`);
+  }
+}
+
+// Several files at once. The Map only holds the files that parsed.
+const byPath = await analyzeSessionFiles([claudeSessionPath, copilotEventsPath]);
+```
+
+Pass absolute paths (for example built with `os.homedir()`). Node does not expand `~`. `analyzeSessionFile(filePath, { cache? })` resolves to a `SessionUsage`, or to `null` for a missing, unknown or unparsable file, a session file over 100 MB, and a session with no activity recorded yet (no turns, tokens, models or billing). Database-backed sessions (`…/state.db#<id>`, `session-store.db#<id>`, …) are not size-capped, because one database holds every session. It never throws for a bad file, never writes to the console and never exits the process. Each `SessionUsage` has these fields:
+
+| Field | Meaning |
+|---|---|
+| `filePath` | The path you passed in. |
+| `editorSource` | Friendly tool name, the same one the CLI shows: `Claude Code`, `Copilot CLI`, `VS Code`, and so on. |
+| `interactions` | Number of user turns. |
+| `models` / `modelUsage` | Model ids, and per model: `inputTokens` (including cache reads and writes), `outputTokens`, `cachedReadTokens`, `cacheCreationTokens`, and so on. |
+| `totalTokens` | Session total. Exact where the tool records it, otherwise estimated (see [Data Sources](#data-sources)). |
+| `copilotNanoAiu` | Exact GitHub Copilot billed amount, in nano-AI-units, from the latest Copilot CLI `session.usage_checkpoint` or `session.shutdown` event, the Copilot CLI billing store, or a Copilot Chat debug log. `0` when not available. |
+| `copilotCredits` | `copilotNanoAiu / 1e9` (1 AI credit = $0.01), or `null` when not available. |
+| `estimatedCostUsd` | `{ provider, copilot }`: an estimate from the per-model token counts, at provider API rates and at Copilot rates, using the same pricing table as the CLI. |
+| `lastModified` | File modification time, ISO 8601. |
+
+**Polling.** Results are cached in memory, per path. A cached result is reused while the session file's modification time and size stay the same, and so do those of the side files it draws on: for Copilot CLI sessions, `~/.copilot/session-store.db` and the OTel export in `~/.copilot/otel/`; for VS Code chat sessions, the Copilot Chat debug log. A repeated call on an unchanged session therefore costs a few `stat` calls. When any of those files changes, including a Claude Code or Copilot CLI log that is still being appended to, the session is re-parsed on the next call. The OTel export is re-indexed at most every 30 seconds. Concurrent calls on the same file share one parse. Pass `{ cache: false }` to always re-parse. Returned objects are frozen, and repeated calls may hand back the same object.
+
+The library does not read or write the CLI's `cli-cache.json`, so it is safe to use while the CLI is running. It never reads anything stored in the OS temp directory, including databases behind `…#<id>` paths, so Visual Studio's logs under `%LOCALAPPDATA%\Temp` are not supported by the library. The CLI still reads those.
+
+---
+
 ## Troubleshooting
 
 **"No session files found" or a tool is missing**
@@ -462,6 +538,7 @@ Every session file is parsed once; later runs only re-parse files that changed.
 - Everything runs locally. The CLI reads session files from your disk and writes only its [cache files](#cache-files).
 - Nothing is uploaded. The only network call is `memory-files --server` (and `--repo` / `--promote`), which takes your github.com token from the GitHub CLI (`gh auth token`) and reads the repository's Copilot memories from `api.githubcopilot.com`. It is read-only.
 - `memory-files` reads local memory files' metadata only, never their content.
+- `skill-suggestions` prints the first prompt of your sessions in its text report. Its `--json` output leaves prompt text, the keywords taken from it and session titles out unless you pass `--include-prompts`, and `usage-analysis --json` only includes them with `--repeated-tasks`.
 
 ---
 

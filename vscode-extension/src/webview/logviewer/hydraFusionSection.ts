@@ -11,9 +11,12 @@
 
 import { escapeHtml, formatCompact, formatCost, formatPercent } from '../shared/formatUtils';
 import { localize, localizeFormat } from '../shared/localization';
+import { renderDataTable, type DataTableCell, type DataTableColumn } from '../shared/dataTable';
 import { aiuToUsd } from '../../../../src/hydrafusion';
 import type {
+	HydraFusionModelStat,
 	HydraFusionPhase,
+	HydraFusionPhaseKindStat,
 	HydraFusionSummary,
 	HydraFusionTurn,
 } from '../../../../src/hydrafusion';
@@ -147,62 +150,101 @@ ${escapeHtml(p.pattern)} <strong>${p.turns}</strong> <span class="hydra-pattern-
 	return `<div class="hydra-pattern-row"><span class="hydra-pattern-row-label">Patterns chosen</span>${pills}</div>`;
 }
 
+/** Table classes shared by every HydraFusion table: one line per row, like the rest of the section. */
+const HYDRA_TABLE_CLASS = 'data-table--compact data-table--nowrap';
+
+/** A visually hidden header for the bar column, so the bar still has an accessible column name. */
+function srOnlyHeader(label: string): string {
+	return `<span class="hydra-sr-only">${escapeHtml(label)}</span>`;
+}
+
+/** A header label carrying its own tooltip; sortable headers use their `title` for the sort hint. */
+function titledHeader(label: string, title: string): string {
+	return `<span title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
+}
+
+function barCell(value: number, max: number, cssClass = ''): DataTableCell {
+	return { html: `<span class="hydra-bar${cssClass ? ` ${cssClass}` : ''}" style="width:${barWidthPercent(value, max).toFixed(1)}%"></span>` };
+}
+
 /** "Who did the work": every model that served a leg, ranked by credits spent. */
 function renderModelTable(summary: HydraFusionSummary): string {
 	const maxAiu = Math.max(...summary.byModel.map(m => m.aiu), 0);
-	const rows = summary.byModel.map(m => `<tr>
-<td class="hydra-model-cell"><span class="hydra-model-name">${escapeHtml(m.model)}</span></td>
-<td class="hydra-num">${m.legs}</td>
-<td class="hydra-num" title="Turns where this model supplied the answer you saw">${m.finalAnswers}</td>
-<td class="hydra-num"><strong>${escapeHtml(formatFusionCost(m.aiu))}</strong></td>
-<td class="hydra-bar-cell"><span class="hydra-bar" style="width:${barWidthPercent(m.aiu, maxAiu).toFixed(1)}%"></span></td>
-<td class="hydra-num">${formatCompact(m.inputTokens)}</td>
-<td class="hydra-num">${formatCompact(m.outputTokens)}</td>
-</tr>`).join('');
+	const columns: DataTableColumn<HydraFusionModelStat>[] = [
+		{
+			id: 'model', label: 'Model', className: 'hydra-model-cell', sortValue: m => m.model,
+			render: m => ({ html: `<span class="hydra-model-name">${escapeHtml(m.model)}</span>` }),
+		},
+		{
+			id: 'legs', label: 'Legs', headerHtml: titledHeader('Legs', 'Router hops this model served'), align: 'right',
+			sortValue: m => m.legs, render: m => String(m.legs),
+		},
+		{
+			id: 'answers', label: 'Answers', headerHtml: titledHeader('Answers', 'Turns where this model produced the final answer'), align: 'right',
+			sortValue: m => m.finalAnswers,
+			render: m => ({ html: `<span title="Turns where this model supplied the answer you saw">${m.finalAnswers}</span>` }),
+		},
+		{
+			id: 'cost', label: localize('logviewer.hydrafusion.cost'), align: 'right', sortValue: m => m.aiu,
+			render: m => ({ html: `<strong>${escapeHtml(formatFusionCost(m.aiu))}</strong>` }),
+		},
+		{
+			id: 'share', label: 'Share of credits', headerHtml: srOnlyHeader('Share of credits'), className: 'hydra-bar-cell',
+			render: m => barCell(m.aiu, maxAiu),
+		},
+		{ id: 'input', label: 'Input', align: 'right', sortValue: m => m.inputTokens, render: m => formatCompact(m.inputTokens) },
+		{ id: 'output', label: 'Output', align: 'right', sortValue: m => m.outputTokens, render: m => formatCompact(m.outputTokens) },
+	];
 
 	return `<div class="hydra-panel">
 <div class="hydra-panel-title">🤝 Who did the work</div>
 <div class="hydra-panel-sub">Every leg the router ran, grouped by the model that served it.</div>
-<table class="hydra-table">
-<thead><tr>
-<th scope="col">Model</th>
-<th scope="col" title="Router hops this model served">Legs</th>
-<th scope="col" title="Turns where this model produced the final answer">Answers</th>
-<th scope="col">${localize('logviewer.hydrafusion.cost')}</th>
-<th scope="col"><span class="hydra-sr-only">Share of credits</span></th>
-<th scope="col">Input</th>
-<th scope="col">Output</th>
-</tr></thead>
-<tbody>${rows}</tbody>
-</table>
+${renderDataTable({
+	tableId: 'hydra-models',
+	ariaLabel: 'Who did the work',
+	rows: summary.byModel,
+	columns,
+	initialSort: { columnId: 'cost', direction: 'desc' },
+	className: HYDRA_TABLE_CLASS,
+})}
 </div>`;
 }
 
 /** "Where the credits went": the phase ledger, by what each leg was for. */
 function renderPhaseLedger(summary: HydraFusionSummary): string {
 	const maxAiu = Math.max(...summary.byPhaseKind.map(p => p.aiu), 0);
-	const rows = summary.byPhaseKind.map(p => {
-		const meta = phaseMeta(p.kind);
-		return `<tr>
-<td><span class="hydra-phase-badge ${meta.cssClass}">${meta.icon} ${escapeHtml(p.kind)}</span></td>
-<td class="hydra-num">${p.legs}</td>
-<td class="hydra-num"><strong>${escapeHtml(formatFusionCost(p.aiu))}</strong></td>
-<td class="hydra-bar-cell"><span class="hydra-bar ${meta.cssClass}" style="width:${barWidthPercent(p.aiu, maxAiu).toFixed(1)}%"></span></td>
-</tr>`;
-	}).join('');
+	const columns: DataTableColumn<HydraFusionPhaseKindStat>[] = [
+		{
+			id: 'phase', label: 'Phase', sortValue: p => p.kind,
+			render: p => {
+				const meta = phaseMeta(p.kind);
+				return { html: `<span class="hydra-phase-badge ${meta.cssClass}">${meta.icon} ${escapeHtml(p.kind)}</span>` };
+			},
+		},
+		{ id: 'legs', label: 'Legs', align: 'right', sortValue: p => p.legs, render: p => String(p.legs) },
+		{
+			id: 'cost', label: localize('logviewer.hydrafusion.cost'), align: 'right', sortValue: p => p.aiu,
+			render: p => ({ html: `<strong>${escapeHtml(formatFusionCost(p.aiu))}</strong>` }),
+		},
+		{
+			id: 'share', label: 'Share of credits', headerHtml: srOnlyHeader('Share of credits'), className: 'hydra-bar-cell',
+			render: p => barCell(p.aiu, maxAiu, phaseMeta(p.kind).cssClass),
+		},
+	];
 
+	// Bounded by the handful of phase kinds the router knows, so no pager.
 	return `<div class="hydra-panel">
 <div class="hydra-panel-title">💰 Where the credits went</div>
 <div class="hydra-panel-sub">Solving, reviewing and repairing, priced separately.</div>
-<table class="hydra-table">
-<thead><tr>
-<th scope="col">Phase</th>
-<th scope="col">Legs</th>
-<th scope="col">${localize('logviewer.hydrafusion.cost')}</th>
-<th scope="col"><span class="hydra-sr-only">Share of credits</span></th>
-</tr></thead>
-<tbody>${rows}</tbody>
-</table>
+${renderDataTable({
+	tableId: 'hydra-phases',
+	ariaLabel: 'Where the credits went',
+	rows: summary.byPhaseKind,
+	columns,
+	initialSort: { columnId: 'cost', direction: 'desc' },
+	pageSize: false,
+	className: HYDRA_TABLE_CLASS,
+})}
 </div>`;
 }
 
@@ -217,48 +259,75 @@ function renderModelChain(turn: HydraFusionTurn): string {
 	}).join('<span class="hydra-chain-arrow">→</span>');
 }
 
-/** One leg's row inside an expanded turn, with a duration bar scaled to the turn's slowest leg. */
-function renderLegRow(phase: HydraFusionPhase, maxDurationMs: number): string {
-	const meta = phaseMeta(phase.kind);
-	const verdict = phase.verdict
-		? `<span class="hydra-verdict hydra-verdict-${escapeHtml(phase.verdict)}">${escapeHtml(phase.verdict)}</span>`
-		: '<span class="hydra-muted">—</span>';
-	return `<tr class="${phase.isFinalSource ? 'hydra-leg-final' : ''}">
-<td><span class="hydra-phase-badge ${meta.cssClass}">${meta.icon} ${escapeHtml(phase.kind)}</span></td>
-<td class="hydra-model-cell">${escapeHtml(phase.model)}${phase.isFinalSource ? ' <span class="hydra-final-tag" title="This leg produced the answer you saw">answer</span>' : ''}</td>
-<td>${verdict}</td>
-<td class="hydra-num">${escapeHtml(formatFusionDuration(phase.durationMs))}</td>
-<td class="hydra-bar-cell"><span class="hydra-bar ${meta.cssClass}" style="width:${barWidthPercent(phase.durationMs, maxDurationMs).toFixed(1)}%"></span></td>
-<td class="hydra-num">${phase.usage.requestCount}</td>
-<td class="hydra-num">${formatCompact(phase.usage.inputTokens)}</td>
-<td class="hydra-num">${formatCompact(phase.usage.outputTokens)}</td>
-<td class="hydra-num"><strong>${escapeHtml(formatFusionCost(phase.usage.aiu))}</strong></td>
-</tr>`;
+/** The columns of one turn's leg table; the duration bar is scaled to the turn's slowest leg. */
+function legColumns(maxDurationMs: number): DataTableColumn<HydraFusionPhase>[] {
+	return [
+		{
+			id: 'phase', label: 'Phase', sortValue: p => p.kind,
+			render: p => {
+				const meta = phaseMeta(p.kind);
+				return { html: `<span class="hydra-phase-badge ${meta.cssClass}">${meta.icon} ${escapeHtml(p.kind)}</span>` };
+			},
+		},
+		{
+			id: 'model', label: 'Model', className: 'hydra-model-cell', sortValue: p => p.model,
+			render: p => ({ html: `${escapeHtml(p.model)}${p.isFinalSource ? ' <span class="hydra-final-tag" title="This leg produced the answer you saw">answer</span>' : ''}` }),
+		},
+		{
+			id: 'verdict', label: 'Verdict', sortValue: p => p.verdict,
+			render: p => ({
+				html: p.verdict
+					? `<span class="hydra-verdict hydra-verdict-${escapeHtml(p.verdict)}">${escapeHtml(p.verdict)}</span>`
+					: '<span class="hydra-muted">—</span>',
+			}),
+		},
+		{
+			id: 'duration', label: 'Duration', align: 'right', sortValue: p => p.durationMs,
+			render: p => formatFusionDuration(p.durationMs),
+		},
+		{
+			id: 'durationBar', label: 'Relative duration', headerHtml: srOnlyHeader('Relative duration'), className: 'hydra-bar-cell',
+			render: p => barCell(p.durationMs, maxDurationMs, phaseMeta(p.kind).cssClass),
+		},
+		{
+			id: 'calls', label: 'Calls', headerHtml: titledHeader('Calls', 'Inference calls this leg made'), align: 'right',
+			sortValue: p => p.usage.requestCount, render: p => String(p.usage.requestCount),
+		},
+		{ id: 'input', label: 'Input', align: 'right', sortValue: p => p.usage.inputTokens, render: p => formatCompact(p.usage.inputTokens) },
+		{ id: 'output', label: 'Output', align: 'right', sortValue: p => p.usage.outputTokens, render: p => formatCompact(p.usage.outputTokens) },
+		{
+			id: 'cost', label: localize('logviewer.hydrafusion.cost'), align: 'right', sortValue: p => p.usage.aiu,
+			render: p => ({ html: `<strong>${escapeHtml(formatFusionCost(p.usage.aiu))}</strong>` }),
+		},
+	];
+}
+
+/** The `tableId` of the leg table inside the HydraFusion section's `index`-th turn row. */
+export function hydraTurnLegsTableId(index: number): string {
+	return `hydra-turn-legs-${index}`;
 }
 
 /**
- * The leg-by-leg waterfall for one turn: phase, model, verdict, duration and cost.
- * Exported so the Session Steps Overview table (main.ts) can embed the exact same
- * table under a matching turn's row instead of re-deriving its own — see
+ * The leg-by-leg waterfall for one turn: phase, model, verdict, duration and cost, in
+ * completion order. Exported so the Session Steps Overview table (main.ts) can embed the
+ * same table under a matching turn's row instead of re-deriving its own — see
  * `matchHydraFusionTurnsToChatTurns` in src/hydrafusion.ts for how rows are matched.
+ *
+ * @param tableId Unique per document: the same turn's legs appear both here and in the
+ *   overview, so each place passes its own id.
  */
-export function renderLegsTable(phases: HydraFusionPhase[]): string {
+export function renderLegsTable(phases: HydraFusionPhase[], tableId: string): string {
 	const maxDurationMs = Math.max(...phases.map(p => p.durationMs), 0);
-	const legs = phases.map(p => renderLegRow(p, maxDurationMs)).join('');
-	return `<table class="hydra-table hydra-legs-table">
-<thead><tr>
-<th scope="col">Phase</th>
-<th scope="col">Model</th>
-<th scope="col">Verdict</th>
-<th scope="col">Duration</th>
-<th scope="col"><span class="hydra-sr-only">Relative duration</span></th>
-<th scope="col" title="Inference calls this leg made">Calls</th>
-<th scope="col">Input</th>
-<th scope="col">Output</th>
-<th scope="col">${localize('logviewer.hydrafusion.cost')}</th>
-</tr></thead>
-<tbody>${legs}</tbody>
-</table>`;
+	// A turn only has the few legs its plan allows, and the waterfall reads best whole.
+	return renderDataTable({
+		tableId,
+		ariaLabel: 'HydraFusion legs',
+		rows: phases,
+		columns: legColumns(maxDurationMs),
+		pageSize: false,
+		className: `${HYDRA_TABLE_CLASS} hydra-legs-table`,
+		rowOptions: p => p.isFinalSource ? { className: 'hydra-leg-final' } : undefined,
+	});
 }
 
 /**
@@ -294,7 +363,7 @@ ${canJumpToStep ? `<span class="hydra-jump-to-step" data-turn="${chatTurnNumber}
 <div class="hydra-turn-body">
 ${plan ? `<div class="hydra-turn-plan">Planned: <code>${escapeHtml(plan)}</code>${escapeHtml(skipped)}</div>` : ''}
 ${turn.degradedReason ? `<div class="hydra-turn-degraded">⚠️ Degraded: ${escapeHtml(turn.degradedReason)}</div>` : ''}
-${renderLegsTable(turn.phases)}
+${renderLegsTable(turn.phases, hydraTurnLegsTableId(index))}
 </div>
 </details>`;
 }

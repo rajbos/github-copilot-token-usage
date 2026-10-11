@@ -4,12 +4,13 @@ import { createPeriodSelector, PERIOD_LABELS, type Period } from '../shared/peri
 import { navButtonsHtml } from '../shared/buttonConfig';
 import { ContextReferenceUsage, getTotalContextRefs } from '../shared/contextRefUtils';
 import { buildFilterPillGroupHtml, type SessionFilterOption } from './sessionFilterBar';
-import { escapeHtml, formatAbsoluteDate, formatCompact, formatCost, formatDurationShort, formatFileSize, formatFixed, formatNumber, formatPercent, getTimeSince, safeSectionHtml, setFormatLocale } from '../shared/formatUtils';
+import { escapeHtml, formatCompact, formatCost, formatDurationShort, formatFileSize, formatFixed, formatNumber, formatPercent, getTimeSince, safeSectionHtml, setFormatLocale } from '../shared/formatUtils';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
 import { localize, localizeFormat } from '../shared/localization';
+import { createViewStateManager } from '../shared/viewState';
 import { applyWebviewLocale } from '../shared/webviewLocale';
 import { RECENT_SESSION_PERIODS, sanitizeRecentSessionBuckets } from './recentSessionsSanitizer';
-import { renderCcrCheckButtonHtml, wireCcrActivityButtons, renderCcrActivityResult } from './ccrActivity';
+import { renderCcrCheckButtonHtml, wireCcrActivityButtons, renderCcrActivityResult, replayCcrActivityResults } from './ccrActivity';
 import {
 	hasContextWindowData,
 	sanitizeAutomaticCompactions,
@@ -28,6 +29,8 @@ const NEAR_LIMIT_PERCENT = Math.round(CONTEXT_NEAR_LIMIT_RATIO * 100);
 import type { McpToolUsage, ModeUsage, ModelSwitchingAnalysis as BaseModelSwitchingAnalysis, ToolCallUsage } from '../shared/types';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
+import dataTableStyles from '../shared/dataTable.css';
+import { renderDataTable, rerenderDataTable, setDataTableState, type DataTableColumn, type DataTableSortValue } from '../shared/dataTable';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
 import { registerMessageHandler } from '../shared/messageHandler';
@@ -38,9 +41,12 @@ import { deriveModelEfficiencyRates, computeEfficiencyLowUsageThreshold, compute
 import { buildCorrectionImprovementPrompt } from '../../../../src/correctionDetection';
 import type { ModelPricing, ModelEfficiencyUsage, ModelEfficiencyCounters } from '../../../../src/types';
 import { sanitizeCustomizationMatrix } from './customizationSanitizer';
+import { statusBadgeHtml, type CustomizationTypeStatus } from './statusBadge';
+import { buildCustomizationSectionHtml } from './customizationMatrixSection';
 import { buildTabStripHtml, type UsageTabStripInput } from './tabStripHtml';
 import { formatToolEditors, sanitizeToolCallsByEditor } from './toolEditors';
 import { buildToolExecutionSectionsHtml } from './toolExecutionHtml';
+import { buildMcpPeriodTablesHtml, buildToolPeriodTableHtml, isMcpPeriodView, type McpPeriodView } from './toolPeriodTable';
 import { sanitizeToolOutcomeMaps, sanitizeMcpOutcomeMaps } from './toolOutcomeSanitizer';
 import { renderContextRefTable } from './contextRefTableHtml';
 import { shouldListAccountBudgets } from '../../githubAccountBudgets';
@@ -56,9 +62,10 @@ import { insightCardElementId, isInsightCardAnchor } from '../../insightAnchors'
 import { placeBubbleLabels, scaleBubbleRadius, type BubbleLabelPlacement } from './modelLeaderboard';
 import { createUsageWebviewReadyNotifier, restoreGitHubActivityPanels } from './readiness';
 import { sanitizeServerMemoriesAnalysis as _sanitizeServerMemoriesAnalysis, buildServerMemoriesSectionHtml } from './serverMemories';
-import { buildCorrectionsRepoSummaryHtml, buildParticipationModesCardHtml, buildRevertCellHtml, buildRevertHeaderHtml, sanitizeRepoActivity } from './agenticSignals';
-import { buildBuiltinToolsHtml, buildUnusedMcpHtml, buildUnusedSkillsHtml, renderCurationTable, type CurationTableId } from './toolCurationTables';
-import { getPagedTableAnnouncement, getPagedTableFocusTarget, restorePagedTableFocus, setPagedTableFilter, setPagedTablePage, setPagedTableSort } from './pagedTable';
+import { buildCorrectionsRepoSummaryHtml, buildParticipationModesCardHtml, buildRevertCellHtml, sanitizeRepoActivity } from './agenticSignals';
+import { buildBuiltinToolsHtml, buildUnusedMcpHtml, buildUnusedSkillsHtml } from './toolCurationTables';
+import { renderAgentPluginsFilter, renderAgentPluginsTable, renderMemoryFilesTable, renderMissedPotentialTable, renderRepoHygieneListTable, type RepoHygieneListRow } from './usageListTables';
+import { buildSkillSuggestionsSectionHtml, sanitizeRepeatedTaskReport, wireSkillSuggestions, type RepeatedTaskReport, type SkillSuggestionsMessage } from './skillSuggestions';
 
 type ModelSwitchingAnalysis = BaseModelSwitchingAnalysis & {
 	minModelsPerSession: number;
@@ -188,31 +195,6 @@ type CorrectionReport = {
 	sessionsWithMoments: number;
 };
 
-// ── Repeated-task types ─────────────────────────────────────────────────────
-// Mirror the interfaces in src/types.ts (RepeatedTaskReport etc.) — keep in
-// sync manually; the webview bundle cannot import them directly.
-
-type RepeatedTaskSessionRef = {
-	file: string;
-	title?: string | null;
-	lastInteraction?: string | null;
-	repository?: string;
-};
-
-type RepeatedTaskCluster = {
-	representativePrompt: string;
-	sessionCount: number;
-	repositories: string[];
-	sessions: RepeatedTaskSessionRef[];
-	sharedKeywords: string[];
-};
-
-type RepeatedTaskReport = {
-	minClusterSize: number;
-	sessionsScanned: number;
-	clusters: RepeatedTaskCluster[];
-};
-
 type UsageAnalysisStats = {
 	today: UsageAnalysisPeriod;
 	last30Days: UsageAnalysisPeriod;
@@ -285,30 +267,13 @@ interface CustomizationFileEntry {
 	category?: 'copilot' | 'non-copilot';
 }
 
-type CustomizationTypeStatus = '✅' | '⚠️' | '❌';
-
-/**
- * Returns a modern styled HTML badge for a status value, replacing plain emoji icons.
- * Pass/fresh → green ✓, warning/stale → amber !, fail/missing → red ✕
- */
-function statusBadgeHtml(status: CustomizationTypeStatus | string, label?: string): string {
-	const titleAttr = label ? ` title="${escapeHtml(label)}"` : '';
-	const base = 'display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:4px;font-weight:700;flex-shrink:0;';
-	if (status === '✅') {
-		return `<span style="${base}background:rgba(34,197,94,0.2);border:1px solid rgba(34,197,94,0.5);color:#4ade80;font-size:12px;"${titleAttr} aria-label="${escapeHtml(label ?? 'Present and fresh')}">✓</span>`;
-	} else if (status === '⚠️') {
-		return `<span style="${base}background:rgba(251,191,36,0.2);border:1px solid rgba(251,191,36,0.5);color:#fbbf24;font-size:12px;"${titleAttr} aria-label="${escapeHtml(label ?? 'Present but stale')}">!</span>`;
-	} else {
-		return `<span style="${base}background:rgba(239,68,68,0.2);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:12px;"${titleAttr} aria-label="${escapeHtml(label ?? 'Missing')}">✕</span>`;
-	}
-}
-
 interface WorkspaceCustomizationRow {
 	workspacePath: string;
 	workspaceName: string;
 	sessionCount: number;
 	interactionCount: number;
 	typeStatuses: { [typeId: string]: CustomizationTypeStatus };
+	memberPaths?: string[];
 }
 
 interface WorkspaceCustomizationMatrix {
@@ -316,6 +281,7 @@ interface WorkspaceCustomizationMatrix {
 	workspaces: WorkspaceCustomizationRow[];
 	totalWorkspaces: number;
 	workspacesWithIssues: number;
+	ungroupedWorkspaceNames?: string[];
 }
 
 interface MissedPotentialWorkspace {
@@ -365,18 +331,24 @@ interface RepoAnalysisRecord {
 }
 
 /** Webview state persisted by VS Code across tab switches (survives the panel being hidden). */
-interface UsageWebviewState {
-	aboutCollapsed?: boolean;
-}
+type UsageWebviewState = {
+	aboutCollapsed: boolean;
+	mcpPeriodView: McpPeriodView;
+};
 
 const vscode = acquireVsCodeApi<UsageWebviewState>();
+const usageState = createViewStateManager<UsageWebviewState>(vscode, { aboutCollapsed: false, mcpPeriodView: 'server' });
+const restoredUsageState = usageState.restore();
 const notifyUsageWebviewReady = createUsageWebviewReadyNotifier(
 	(message) => vscode.postMessage(message),
 );
 const curationTraceOnceKeys = new Set<string>();
 
 /** Collapsed state of the "About This Dashboard" info box, restored from webview state. */
-let aboutCollapsed = vscode.getState()?.aboutCollapsed ?? false;
+let aboutCollapsed = restoredUsageState.aboutCollapsed === true;
+
+/** MCP Tools section By Server / By Tool toggle, restored from webview state. */
+let mcpPeriodView: McpPeriodView = isMcpPeriodView(restoredUsageState.mcpPeriodView) ? restoredUsageState.mcpPeriodView : 'server';
 
 function traceCuration(stage: string, details?: Record<string, unknown>): void {
 	try {
@@ -413,6 +385,13 @@ let currentWorkspacePaths: string[] = [];
 let activeTab = 'activity';
 let pendingTabAnchor: string | null = null;
 /**
+ * When a deep link that is still waiting for its section stops being honoured. Matches the
+ * host's SURFACE_REVEAL_TTL_MS for every other panel, so a conditional section that turns up
+ * much later does not scroll the user.
+ */
+const PENDING_ANCHOR_TTL_MS = 60_000;
+let pendingTabAnchorExpiresAt = 0;
+/**
  * How long an insight anchor keeps re-asserting itself once its card has been shown. Activating
  * the Insights tab immediately marks its new insights as "seen", which makes the host push a
  * fresh `updateInsights`; a background stats refresh runs the full `renderLayout`. Either rebuilds
@@ -426,8 +405,8 @@ const INSIGHT_FOCUS_WINDOW_MS = 4000;
 let focusedInsightAnchor: { anchor: string; until: number } | null = null;
 /** The node the last anchor scroll targeted, so a re-apply can tell a rebuild from a repeat. */
 let lastAnchorScrollTarget: HTMLElement | null = null;
-/** Handle of a deferred scroll to an insight card, so navigating away before it fires cancels it. */
-let pendingInsightScrollTimer: ReturnType<typeof setTimeout> | null = null;
+/** Handle of a deferred anchor scroll (section or insight card), so navigating away or a host cancel before it fires stops it. */
+let pendingAnchorScrollTimer: ReturnType<typeof setTimeout> | null = null;
 /** Elements with a highlight flash still in flight, with the styling their timer will restore. */
 const activeFlashes = new WeakMap<HTMLElement, { shadow: string; transition: string; timer: ReturnType<typeof setTimeout> }>();
 let loadingTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -445,6 +424,13 @@ let currentMemoryFilesAnalysis: MemoryFilesAnalysisView | null = null;
 // trip — a refresh that omits them must keep showing the last good read rather than blank
 // the section while the next fetch is in flight.
 let currentServerMemoriesAnalysis: ServerMemoriesAnalysisView | null = null;
+// Skill Suggestions read the report on click, so the buttons act on what is rendered.
+let currentRepeatedTasks: RepeatedTaskReport | null = null;
+const skillSuggestionsWiring = {
+	getReport: () => currentRepeatedTasks,
+	getWorkspacePaths: () => currentWorkspacePaths,
+	postMessage: (message: SkillSuggestionsMessage) => vscode.postMessage(message),
+};
 
 type WorktreeResult = {
 	path: string;
@@ -495,10 +481,6 @@ let worktreeRenderPending = false;
 const worktreeExpandedRepos = new Set<string>();
 // Whether the root-folders list is expanded. Collapsed by default when there are more than 2.
 let worktreeRootsExpanded = false;
-// Sort state for the top-level repository table.
-type WorktreeSortColumn = "repo" | "count" | "size";
-let worktreeSortColumn: WorktreeSortColumn = "count";
-let worktreeSortDir: "asc" | "desc" = "desc";
 
 // Bulk "clean up pushed worktrees" state.
 let worktreeCleanupInProgress = false;
@@ -741,7 +723,7 @@ function showLoadError(message: string): void {
 	container.style.cssText = 'padding: 32px; text-align: center; font-size: 14px;';
 	const icon = document.createElement('div');
 	icon.style.cssText = 'font-size: 24px; margin-bottom: 12px;';
-	setHtml(icon, statusBadgeHtml('❌', 'Error'));
+	setHtml(icon, statusBadgeHtml('❌', localize('usage.customization.status.error')));
 	const msg = document.createElement('div');
 	msg.style.cssText = 'color: var(--vscode-errorForeground, #f48771); margin-bottom: 16px;';
 	msg.textContent = message;
@@ -770,6 +752,7 @@ function getEffortDisplayName(level: string): string {
 }
 
 import { resolveGuidMcpToolName, isGuidMcpTool, resolveMcpFamilyToolName, isMcpFamilyResolvedTool, lookupKnownToolName, isKnownToolDisplayName } from '../../../../src/utils/toolUtils';
+import { preferredScrollBehavior } from '../shared/surfaceNavigation';
 
 // Tool name maps are injected by the extension host as window.__TOOL_NAMES__ and window.__AUTOMATIC_TOOLS__
 const TOOL_NAME_MAP: { [key: string]: string } | null = getWindowData<Record<string, string>>('__TOOL_NAMES__') ?? null;
@@ -800,16 +783,19 @@ function getUnknownMcpTools(stats: UsageAnalysisStats): string[] {
 	Object.entries(stats.today.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.last30Days.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.month.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
+	Object.entries(stats.lastMonth.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
 	// Also collect MCP server names — the "By Server" tables render them through the
 	// same friendly-name lookup, so an unmapped server name (e.g. `ccd_session`)
 	// would otherwise show raw without ever being flagged as missing.
 	Object.keys(stats.today.mcpTools.byServer).forEach(server => allTools.add(server));
 	Object.keys(stats.last30Days.mcpTools.byServer).forEach(server => allTools.add(server));
 	Object.keys(stats.month.mcpTools.byServer).forEach(server => allTools.add(server));
+	Object.keys(stats.lastMonth.mcpTools.byServer).forEach(server => allTools.add(server));
 	// Also collect all general tool calls so non-MCP tools without friendly names are caught
 	Object.entries(stats.today.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.last30Days.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.month.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
+	Object.entries(stats.lastMonth.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
 
 	const suppressed = new Set<string>(stats.suppressedUnknownTools ?? []);
 	
@@ -1048,7 +1034,7 @@ function renderMissedPotential(stats: UsageAnalysisStats): string {
 	const missed = stats.missedPotential || initialData?.missedPotential || [];
 	if (missed.length === 0) {
 		return `
-			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 6px;">
+			<div id="section-missed-potential" style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 6px;">
 				<div style="font-size: 13px; font-weight: 600; color: var(--success-fg); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
 					${statusBadgeHtml('✅')} No other AI tool configs missing a Copilot counterpart
 				</div>
@@ -1063,101 +1049,21 @@ function renderMissedPotential(stats: UsageAnalysisStats): string {
 	}
 
 	return `
-        <div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 6px;">
+        <div id="section-missed-potential" style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 6px;">
             <div style="font-size: 13px; font-weight: 600; color: var(--warning-fg); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
                 ${statusBadgeHtml('⚠️')} Missed Potential: Non-Copilot Instruction Files
             </div>
             <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px;">
                 These active workspaces use other AI tools but lack Copilot customizations. <a href="https://code.visualstudio.com/docs/copilot/customization/custom-instructions" style="color: var(--link-color);" target="_blank">Learn how to add Copilot instructions</a>.
             </div>
-            <div class="customization-matrix-container">
-                <table class="customization-matrix">
-                    <thead>
-                        <tr>
-                            <th style="text-align: left; padding: 8px; border-bottom: 2px solid rgba(251, 191, 36, 0.2);">📂 Workspace</th>
-                            <th style="text-align: center; padding: 8px; border-bottom: 2px solid rgba(251, 191, 36, 0.2);">Sessions</th>
-                            <th style="text-align: center; padding: 8px; border-bottom: 2px solid rgba(251, 191, 36, 0.2);">Interactions</th>
-                            <th style="text-align: left; padding: 8px; border-bottom: 2px solid rgba(251, 191, 36, 0.2);">Non-Copilot Files Found</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${missed.map(ws => `
-                            <tr style="background: rgba(251, 191, 36, 0.05);">
-                                <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2); font-family: 'Courier New', monospace; font-size: 12px;">
-                                    ${escapeHtml(ws.workspaceName)}
-                                </td>
-                                <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2); text-align: center; color: var(--text-primary);">
-                                    ${formatNumber(ws.sessionCount)}
-                                </td>
-                                <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2); text-align: center; color: var(--text-primary);">
-                                    ${formatNumber(ws.interactionCount)}
-                                </td>
-                                <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2);">
-                                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                                        ${ws.nonCopilotFiles.map(f => `
-                                            <div style="font-size: 11px; display: flex; align-items: center; gap: 6px;">
-                                                <span>${escapeHtml(f.icon || '📄')}</span>
-                                                <span style="font-weight: 500;">${escapeHtml(f.label || '')}:</span>
-                                                <span style="font-family: monospace; color: var(--text-muted);">${escapeHtml(f.relativePath)}</span>
-                                            </div>
-                                        `).join('')}
-                                    </div>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
+            ${renderMissedPotentialTable(missed)}
         </div>
     `;
 }
 
-function renderToolsTable(byTool: { [key: string]: number }, limit = 10, nameResolver: (id: string) => string = lookupToolName, applyAutoFilter = false): string {
-	const entries = applyAutoFilter && hideAutomaticToolCalls
-		? Object.entries(byTool).filter(([tool]) => !AUTOMATIC_TOOL_SET_WV.has(tool.toLowerCase()))
-		: Object.entries(byTool);
-	const sortedTools = entries
-		.sort(([, a], [, b]) => b - a)
-		.slice(0, limit);
-
-	if (sortedTools.length === 0) {
-		return applyAutoFilter && hideAutomaticToolCalls
-			? '<div style="color: var(--text-muted);">No purposeful tools used yet (automatic tool calls are hidden)</div>'
-			: '<div style="color: var(--text-muted);">No tools used yet</div>';
-	}
-
-	    const rows = sortedTools.map(([tool, count], idx) => {
-		const friendly = escapeHtml(nameResolver(tool));
-		const idEscaped = escapeHtml(tool);
-		const autoBadge = AUTOMATIC_TOOL_SET_WV.has(tool.toLowerCase())
-			? `<span class="auto-badge" title="Automatic tool — Copilot uses this internally and it does not count toward fluency scoring">auto</span>`
-			: '';
-		return `
-		    <tr>
-			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); width:40px; max-width:40px; text-align:center;">${idx + 1}</td>
-			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); word-break:break-word; overflow-wrap:break-word; max-width:0;"> <strong title="${idEscaped}">${friendly}</strong>${autoBadge}</td>
-			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); text-align:right; width:90px; white-space:nowrap;">${formatNumber(count)}</td>
-		    </tr>`;
-	    }).join('');
-
-	return `
-		<table style="width:100%; border-collapse:collapse; table-layout:fixed;">
-			<thead>
-				<tr style="color:var(--text-secondary); font-size:12px; text-align:left;">
-					<th style="padding:8px 12px; opacity:0.9; width:40px;">#</th>
-					<th style="padding:8px 12px; opacity:0.9;">Tool</th>
-					<th style="padding:8px 12px; opacity:0.9; text-align:right; width:90px;">Calls</th>
-				</tr>
-			</thead>
-			<tbody>
-				${rows}
-			</tbody>
-		</table>`;
-}
-
 // --- Recent Sessions table with sortable, toggleable columns ---
-type SessionSortColumn = 'title' | 'interactions' | 'toolCalls' | 'inputTokens' | 'outputTokens' | 'thinkingTokens' | 'cachedTokens' | 'totalTokens' | 'estimatedCost' | 'editor' | 'workspace' | 'durationMs' | 'lastActivity' | 'subAgentCalls' | 'contextFill';
 type SessionsLookback = Period;
+const SESSIONS_TABLE_ID = 'recent-sessions';
 
 /** Optional (toggleable) session table columns. Title is always shown and is not part of this set. */
 type SessionColumnId = 'interactions' | 'toolCalls' | 'inputTokens' | 'outputTokens' | 'thinkingTokens' | 'cachedTokens' | 'totalTokens' | 'estimatedCost' | 'editor' | 'workspace' | 'models' | 'durationMs' | 'lastActivity' | 'subAgentCalls' | 'contextFill';
@@ -1166,10 +1072,11 @@ type SessionColumnDef = {
 	id: SessionColumnId;
 	label: string;
 	/** Absent for columns that cannot be sorted (Models). */
-	sortKey?: SessionSortColumn;
+	sortValue?: (s: TodaySessionSummary) => DataTableSortValue;
 	align: 'left' | 'right';
-	/** Extra inline style appended after the base cell style (later declarations win). */
-	cellStyle?: string;
+	/** Extra cell class (styles.css `.sessions-table .session-col-*`). */
+	cellClass?: string;
+	/** `html` is trusted markup; `title` is plain text and is escaped when rendered. */
 	render: (s: TodaySessionSummary) => { html: string; title?: string };
 };
 
@@ -1199,29 +1106,35 @@ function getEffectiveSessionDurationMs(s: TodaySessionSummary): number | undefin
 	return s.activeDurationMs ? s.activeDurationMs : s.durationMs;
 }
 
+/** Timestamp sort key for an ISO date; unparseable or missing dates sort last. */
+function sessionTimestamp(iso: string | undefined): number | null {
+	const time = iso ? Date.parse(iso) : NaN;
+	return Number.isFinite(time) ? time : null;
+}
+
 const SESSION_COLUMN_DEFS: SessionColumnDef[] = [
-	{ id: 'interactions', label: 'Turns', sortKey: 'interactions', align: 'right', render: s => formatCompactSessionNumber(s.interactions) },
-	{ id: 'toolCalls', label: 'Tools', sortKey: 'toolCalls', align: 'right', render: s => formatCompactSessionNumber(s.toolCalls) },
-	{ id: 'subAgentCalls', label: 'Sub-Agents', sortKey: 'subAgentCalls', align: 'right', render: s => s.subAgentCalls
+	{ id: 'interactions', label: 'Turns', sortValue: s => s.interactions, align: 'right', render: s => formatCompactSessionNumber(s.interactions) },
+	{ id: 'toolCalls', label: 'Tools', sortValue: s => s.toolCalls, align: 'right', render: s => formatCompactSessionNumber(s.toolCalls) },
+	{ id: 'subAgentCalls', label: 'Sub-Agents', sortValue: s => s.subAgentCalls ?? 0, align: 'right', render: s => s.subAgentCalls
 		? { ...formatCompactSessionNumber(s.subAgentCalls), title: `${formatNumber(s.subAgentCalls)} sub-agent tool call${s.subAgentCalls === 1 ? '' : 's'} detected in this session` }
 		: { html: '—', title: 'No sub-agent calls detected in this session' } },
-	{ id: 'inputTokens', label: 'Input', sortKey: 'inputTokens', align: 'right', render: s => formatCompactSessionNumber(s.inputTokens) },
-	{ id: 'outputTokens', label: 'Output', sortKey: 'outputTokens', align: 'right', render: s => formatCompactSessionNumber(s.outputTokens) },
-	{ id: 'thinkingTokens', label: 'Thinking', sortKey: 'thinkingTokens', align: 'right', render: s => formatCompactSessionNumber(s.thinkingTokens) },
-	{ id: 'cachedTokens', label: 'Cached', sortKey: 'cachedTokens', align: 'right', render: s => formatCompactSessionNumber(s.cachedTokens) },
-	{ id: 'totalTokens', label: 'Total', sortKey: 'totalTokens', align: 'right', render: s => formatCompactSessionNumber(s.totalTokens) },
-	{ id: 'estimatedCost', label: 'Cost', sortKey: 'estimatedCost', align: 'right', render: s => s.estimatedCost > 0
+	{ id: 'inputTokens', label: 'Input', sortValue: s => s.inputTokens, align: 'right', render: s => formatCompactSessionNumber(s.inputTokens) },
+	{ id: 'outputTokens', label: 'Output', sortValue: s => s.outputTokens, align: 'right', render: s => formatCompactSessionNumber(s.outputTokens) },
+	{ id: 'thinkingTokens', label: 'Thinking', sortValue: s => s.thinkingTokens, align: 'right', render: s => formatCompactSessionNumber(s.thinkingTokens) },
+	{ id: 'cachedTokens', label: 'Cached', sortValue: s => s.cachedTokens, align: 'right', render: s => formatCompactSessionNumber(s.cachedTokens) },
+	{ id: 'totalTokens', label: 'Total', sortValue: s => s.totalTokens, align: 'right', render: s => formatCompactSessionNumber(s.totalTokens) },
+	{ id: 'estimatedCost', label: 'Cost', sortValue: s => s.estimatedCost, align: 'right', render: s => s.estimatedCost > 0
 		? { html: formatCost(s.estimatedCost), title: `$${s.estimatedCost.toFixed(4)}` }
 		: { html: '—' } },
-	{ id: 'editor', label: 'Editor', sortKey: 'editor', align: 'left', render: s => ({ html: escapeHtml(s.editor || 'unknown') }) },
-	{ id: 'workspace', label: 'Workspace', sortKey: 'workspace', align: 'left', cellStyle: 'max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;', render: s => { const workspace = escapeHtml(s.workspace || '—'); return { html: workspace, title: workspace }; } },
-	{ id: 'models', label: 'Models', align: 'left', cellStyle: 'font-size:11px; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;', render: s => { const models = s.models.map(m => escapeHtml(getModelDisplayName(m))).join(', ') || '—'; return { html: models, title: models }; } },
-	{ id: 'durationMs', label: 'Duration', sortKey: 'durationMs', align: 'right', cellStyle: 'white-space:nowrap;', render: s => {
+	{ id: 'editor', label: 'Editor', sortValue: s => s.editor || '', align: 'left', render: s => ({ html: escapeHtml(s.editor || 'unknown') }) },
+	{ id: 'workspace', label: 'Workspace', sortValue: s => s.workspace || '', align: 'left', cellClass: 'session-col-workspace', render: s => ({ html: escapeHtml(s.workspace || '—'), title: s.workspace || '—' }) },
+	{ id: 'models', label: 'Models', align: 'left', cellClass: 'session-col-models', render: s => { const models = s.models.map(m => getModelDisplayName(m)).join(', ') || '—'; return { html: escapeHtml(models), title: models }; } },
+	{ id: 'durationMs', label: 'Duration', sortValue: s => getEffectiveSessionDurationMs(s), align: 'right', cellClass: 'session-col-nowrap', render: s => {
 		const net = getEffectiveSessionDurationMs(s);
 		const wallLabel = s.durationMs !== undefined ? `Wall time: ${formatDurationShort(s.durationMs)}` : undefined;
 		return { html: formatDurationShort(net), ...(wallLabel ? { title: wallLabel } : {}) };
 	} },
-	{ id: 'contextFill', label: localize('usage.sessions.contextFill.columnLabel'), sortKey: 'contextFill', align: 'right', cellStyle: 'white-space:nowrap;', render: s => {
+	{ id: 'contextFill', label: localize('usage.sessions.contextFill.columnLabel'), sortValue: s => getSessionContextFillPercent(s), align: 'right', cellClass: 'session-col-nowrap', render: s => {
 		const pct = getSessionContextFillPercent(s);
 		if (pct === undefined) {
 			return { html: '—', title: localize('usage.sessions.contextFill.noData') };
@@ -1236,7 +1149,7 @@ const SESSION_COLUMN_DEFS: SessionColumnDef[] = [
 		return { html: `<span style="color:${color};">${near ? '⚠️ ' : ''}${pct}%</span>`, title };
 	} },
 	{
-		id: 'lastActivity', label: 'Last Active', sortKey: 'lastActivity', align: 'right', cellStyle: 'white-space:nowrap;',
+		id: 'lastActivity', label: 'Last Active', sortValue: s => sessionTimestamp(s.lastActivity), align: 'right', cellClass: 'session-col-nowrap',
 		render: s => ({
 			html: s.lastActivity
 				? (sessionsLookback === 'today'
@@ -1249,8 +1162,6 @@ const SESSION_COLUMN_DEFS: SessionColumnDef[] = [
 
 const ALL_SESSION_COLUMN_IDS: SessionColumnId[] = SESSION_COLUMN_DEFS.map(c => c.id);
 
-let sessionSortColumn: SessionSortColumn = 'interactions';
-let sessionSortDirection: 'asc' | 'desc' = 'desc';
 let cachedTodaySessions: TodaySessionSummary[] = [];
 let use24HourTime = true;
 /** When true (default), the Tool Usage tables hide rows tagged "auto" so purposeful tool calls stand out. */
@@ -1399,38 +1310,35 @@ function handleSessionFilterPillClick(target: HTMLElement): boolean {
 	return true;
 }
 
-function getSessionSortIndicator(column: SessionSortColumn): string {
-	if (sessionSortColumn !== column) { return ''; }
-	return sessionSortDirection === 'desc' ? ' ▼' : ' ▲';
+/** Maps a toggleable column onto the data table; a hidden column keeps sorting if it was the sort key. */
+function toSessionDataColumn(col: SessionColumnDef): DataTableColumn<TodaySessionSummary> {
+	return {
+		id: col.id,
+		label: col.label,
+		align: col.align,
+		className: col.cellClass,
+		hidden: !enabledSessionColumns.has(col.id),
+		sortValue: col.sortValue,
+		render: s => {
+			const { html, title } = col.render(s);
+			return { html: title !== undefined ? `<span title="${escapeHtml(title)}">${html}</span>` : html };
+		},
+	};
 }
 
-const _todaySessionColumnComparators: Partial<Record<SessionSortColumn, (a: TodaySessionSummary, b: TodaySessionSummary) => number>> = {
-	title: (a, b) => (a.title || '').localeCompare(b.title || ''),
-	editor: (a, b) => (a.editor || '').localeCompare(b.editor || ''),
-	workspace: (a, b) => (a.workspace || '').localeCompare(b.workspace || ''),
-	durationMs: (a, b) => (getEffectiveSessionDurationMs(a) ?? -1) - (getEffectiveSessionDurationMs(b) ?? -1),
-	subAgentCalls: (a, b) => (a.subAgentCalls ?? 0) - (b.subAgentCalls ?? 0),
-	contextFill: (a, b) => (getSessionContextFillPercent(a) ?? -1) - (getSessionContextFillPercent(b) ?? -1),
-	lastActivity: (a, b) => (a.lastActivity || '').localeCompare(b.lastActivity || ''),
-};
-
-/** Sort columns handled by the generic numeric fallback below — i.e. the ones that are plain numeric fields on the summary. */
-type NumericSessionSortColumn = Extract<SessionSortColumn, keyof TodaySessionSummary>;
-
-function _compareTodaySessionsByColumn(a: TodaySessionSummary, b: TodaySessionSummary): number {
-	const comparator = _todaySessionColumnComparators[sessionSortColumn];
-	if (comparator) { return comparator(a, b); }
-	// Every column without an explicit comparator is a numeric field; derived
-	// columns (e.g. contextFill) always have one, so they never reach this line.
-	const key = sessionSortColumn as NumericSessionSortColumn;
-	return (a[key] as number) - (b[key] as number);
+function sessionTitleCellHtml(s: TodaySessionSummary): string {
+	const title = escapeHtml(s.title || 'Untitled session');
+	const hydraFusionBadge = s.models.some(isHydraFusionModel)
+		? '<span class="hydrafusion-session-badge" title="This session used HydraFusion" style="display:inline-block; margin-right:4px; padding:1px 5px; border:1px solid var(--vscode-badge-background, var(--accent-color)); border-radius:999px; background:var(--vscode-badge-background, var(--accent-color)); color:var(--vscode-badge-foreground, var(--bg-primary)); font-size:10px; font-weight:600; line-height:14px; vertical-align:middle;">HydraFusion</span>'
+		: '';
+	return `<a href="#" class="session-title-link" data-file="${escapeHtml(s.filePath || '')}" title="Open viewer for session &quot;${title}&quot;" style="color:var(--link-color, #4fc1ff); text-decoration:none; cursor:pointer;">${hydraFusionBadge}${title}</a>`;
 }
 
-function sortTodaySessions(sessions: TodaySessionSummary[]): TodaySessionSummary[] {
-	return [...sessions].sort((a, b) => {
-		const cmp = _compareTodaySessionsByColumn(a, b);
-		return sessionSortDirection === 'desc' ? -cmp : cmp;
-	});
+/** Re-renders the sessions table after its rows changed (filters, lookback), back on its first page. */
+function rerenderSessionsTableFromFirstPage(): void {
+	setDataTableState(SESSIONS_TABLE_ID, { page: 1 });
+	const container = document.getElementById('sessions-table-container');
+	if (container) { setHtml(container, buildSessionsTableHtml(cachedTodaySessions)); }
 }
 
 function renderTodaySessionsTable(sessions: TodaySessionSummary[]): string {
@@ -1445,54 +1353,24 @@ function renderTodaySessionsTable(sessions: TodaySessionSummary[]): string {
 function buildSessionsTableHtml(sessions: TodaySessionSummary[]): string {
 	const filterBarHtml = buildSessionFilterBarHtml(sessions);
 	const filtered = sessions.filter(sessionMatchesFilters);
-	const sorted = sortTodaySessions(filtered);
-	const visibleColumns = SESSION_COLUMN_DEFS.filter(c => enabledSessionColumns.has(c.id));
 
-	if (sorted.length === 0) {
+	if (filtered.length === 0) {
 		return `${filterBarHtml}<div style="color: var(--text-secondary); font-size: 13px; padding: 16px;">No sessions match the selected filters.</div>`;
 	}
 
-	const rows = sorted.map((s, idx) => {
-		const title = escapeHtml(s.title || 'Untitled session');
-		const filePath = escapeHtml(s.filePath || '');
-		const hydraFusionBadge = s.models.some(isHydraFusionModel)
-			? '<span class="hydrafusion-session-badge" title="This session used HydraFusion" style="display:inline-block; margin-right:4px; padding:1px 5px; border:1px solid var(--vscode-badge-background, var(--accent-color)); border-radius:999px; background:var(--vscode-badge-background, var(--accent-color)); color:var(--vscode-badge-foreground, var(--bg-primary)); font-size:10px; font-weight:600; line-height:14px; vertical-align:middle;">HydraFusion</span>'
-			: '';
-		const optionalCells = visibleColumns.map(col => {
-			const { html, title: cellTitle } = col.render(s);
-			const alignStyle = col.align === 'right' ? 'text-align:right;' : '';
-			const titleAttr = cellTitle !== undefined ? ` title="${cellTitle}"` : '';
-			return `<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; ${alignStyle}${col.cellStyle || ''}"${titleAttr}>${html}</td>`;
-		}).join('');
-		return `<tr>
-			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; color:var(--text-secondary);">${idx + 1}</td>
-			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="Open viewer for session &quot;${title}&quot;"><a href="#" class="session-title-link" data-file="${filePath}" style="color:var(--link-color, #4fc1ff); text-decoration:none; cursor:pointer;">${hydraFusionBadge}${title}</a></td>
-			${optionalCells}
-		</tr>`;
-	}).join('');
-
-	const headerCells = visibleColumns.map(col => {
-		const alignStyle = col.align === 'right' ? ' text-align:right;' : '';
-		if (!col.sortKey) { return `<th style="padding:6px 8px;${alignStyle}">${col.label}</th>`; }
-		return `<th class="sortable" data-sort="${col.sortKey}" style="padding:6px 8px;${alignStyle}">${col.label}${getSessionSortIndicator(col.sortKey)}</th>`;
-	}).join('');
-
-	return `
-		${filterBarHtml}
-		<div style="overflow-x:auto;">
-		<table class="sessions-table" style="width:100%; border-collapse:collapse; min-width:1050px;">
-			<thead>
-				<tr style="color:var(--text-secondary); font-size:11px; text-align:left;">
-					<th style="padding:6px 8px;">#</th>
-					<th class="sortable" data-sort="title" style="padding:6px 8px;">Title${getSessionSortIndicator('title')}</th>
-					${headerCells}
-				</tr>
-			</thead>
-			<tbody>
-				${rows}
-			</tbody>
-		</table>
-		</div>`;
+	const table = renderDataTable<TodaySessionSummary>({
+		tableId: SESSIONS_TABLE_ID,
+		ariaLabel: 'Recent Sessions',
+		rows: filtered,
+		columns: [
+			{ id: 'rank', label: '#', className: 'session-col-rank', render: (_s, index) => String(index + 1) },
+			{ id: 'title', label: 'Title', className: 'session-col-title', sortValue: s => s.title || '', render: s => ({ html: sessionTitleCellHtml(s) }) },
+			...SESSION_COLUMN_DEFS.map(toSessionDataColumn),
+		],
+		initialSort: { columnId: 'interactions', direction: 'desc' },
+		className: 'sessions-table',
+	});
+	return `${filterBarHtml}${table}`;
 }
 
 /** Builds the "Columns" toggle button and its checkbox dropdown for showing/hiding optional columns. */
@@ -1511,7 +1389,7 @@ function buildSessionColumnsMenuHtml(): string {
 		</div>`;
 }
 
-function setupSessionsTableSort(): void {
+function setupSessionsTableHandlers(): void {
 	// Delegate from the stable panel body so listeners survive lookback re-renders,
 	// which replace the inner #sessions-table-container element.
 	const body = document.getElementById('sessions-panel-body');
@@ -1529,23 +1407,8 @@ function setupSessionsTableSort(): void {
 		}
 		// Handle filter pill / clear-filters clicks
 		if (handleSessionFilterPillClick(e.target as HTMLElement)) {
-			const container = document.getElementById('sessions-table-container');
-			if (container) { setHtml(container, buildSessionsTableHtml(cachedTodaySessions)); }
-			return;
+			rerenderSessionsTableFromFirstPage();
 		}
-		// Handle sortable column header clicks
-		const th = (e.target as HTMLElement).closest<HTMLElement>('th.sortable');
-		if (!th) { return; }
-		const col = th.getAttribute('data-sort') as SessionSortColumn;
-		if (!col) { return; }
-		if (sessionSortColumn === col) {
-			sessionSortDirection = sessionSortDirection === 'desc' ? 'asc' : 'desc';
-		} else {
-			sessionSortColumn = col;
-			sessionSortDirection = 'desc';
-		}
-		const container = document.getElementById('sessions-table-container');
-		if (container) { setHtml(container, buildSessionsTableHtml(cachedTodaySessions)); }
 	});
 	renderSessionsLookbackSelector();
 	setupSessionColumnsMenu();
@@ -1594,6 +1457,7 @@ function renderSessionsLookbackSelector(): void {
 		label: '',
 		onChange: (value) => {
 			sessionsLookback = value as Period;
+			setDataTableState(SESSIONS_TABLE_ID, { page: 1 });
 			refreshSessionsPanelBody();
 		},
 	});
@@ -1643,14 +1507,6 @@ function replaceRecentSessionsCache(raw: unknown): void {
 	for (const period of RECENT_SESSION_PERIODS) {
 		recentSessionsCache[period] = buckets[period] as TodaySessionSummary[];
 	}
-}
-
-function unionFill(map: { [key: string]: number }, keys: string[]): { [key: string]: number } {
-	const result: { [key: string]: number } = { ...map };
-	for (const k of keys) {
-		if (!(k in result)) { result[k] = 0; }
-	}
-	return result;
 }
 
 function coerceNumber(value: any): number {
@@ -1841,40 +1697,6 @@ function sanitizeCorrectionReport(raw: any): CorrectionReport | null {
 		repos,
 		counts: sanitizeCorrectionCounts(raw.counts),
 		sessionsWithMoments: typeof raw.sessionsWithMoments === 'number' ? raw.sessionsWithMoments : repos.reduce((n: number, g: CorrectionRepoGroup) => n + g.sessionsWithMoments, 0),
-	};
-}
-
-function sanitizeRepeatedTaskCluster(raw: any): RepeatedTaskCluster | null {
-	if (!raw || typeof raw !== 'object') { return null; }
-	if (typeof raw.representativePrompt !== 'string' || typeof raw.sessionCount !== 'number' || !Array.isArray(raw.sessions)) { return null; }
-	const sessions: RepeatedTaskSessionRef[] = raw.sessions
-		.filter((s: any) => s && typeof s === 'object' && typeof s.file === 'string')
-		.map((s: any): RepeatedTaskSessionRef => ({
-			file: s.file,
-			title: typeof s.title === 'string' ? s.title : null,
-			lastInteraction: typeof s.lastInteraction === 'string' ? s.lastInteraction : null,
-			repository: typeof s.repository === 'string' ? s.repository : undefined,
-		}));
-	if (sessions.length === 0) { return null; }
-	return {
-		representativePrompt: raw.representativePrompt,
-		// Derive from the sanitized session list so the UI count can never
-		// disagree with it (and NaN/float counts are impossible).
-		sessionCount: sessions.length,
-		repositories: Array.isArray(raw.repositories) ? raw.repositories.filter((r: unknown) => typeof r === 'string') : [],
-		sessions,
-		sharedKeywords: Array.isArray(raw.sharedKeywords) ? raw.sharedKeywords.filter((k: unknown) => typeof k === 'string') : [],
-	};
-}
-
-function sanitizeRepeatedTaskReport(raw: any): RepeatedTaskReport | null {
-	if (!raw || typeof raw !== 'object' || !Array.isArray(raw.clusters)) { return null; }
-	const clusters = raw.clusters.map(sanitizeRepeatedTaskCluster).filter((c: RepeatedTaskCluster | null): c is RepeatedTaskCluster => c !== null);
-	if (clusters.length === 0) { return null; }
-	return {
-		minClusterSize: typeof raw.minClusterSize === 'number' ? raw.minClusterSize : 2,
-		sessionsScanned: typeof raw.sessionsScanned === 'number' ? raw.sessionsScanned : 0,
-		clusters,
 	};
 }
 
@@ -2207,21 +2029,6 @@ function _handleWorktreeRowLinkClick(event: MouseEvent, target: HTMLElement): bo
 	return false;
 }
 
-function _handleWorktreeSortHeaderClick(target: HTMLElement): boolean {
-	const sortHeader = target.closest("[data-wt-sort]") as HTMLElement | null;
-	if (!sortHeader) { return false; }
-	const col = sortHeader.getAttribute("data-wt-sort") as WorktreeSortColumn | null;
-	if (!col) { return true; }
-	if (worktreeSortColumn === col) {
-		worktreeSortDir = worktreeSortDir === "desc" ? "asc" : "desc";
-	} else {
-		worktreeSortColumn = col;
-		worktreeSortDir = col === "repo" ? "asc" : "desc";
-	}
-	updateWorktreeResults();
-	return true;
-}
-
 function _handleWorktreeRepoRowClick(target: HTMLElement): boolean {
 	const repoRow = target.closest(".worktree-repo-row") as HTMLElement | null;
 	if (!repoRow) { return false; }
@@ -2232,18 +2039,13 @@ function _handleWorktreeRepoRowClick(target: HTMLElement): boolean {
 	return true;
 }
 
-function _handleWorktreeTableInteractionClick(target: HTMLElement): boolean {
-	if (_handleWorktreeSortHeaderClick(target)) { return true; }
-	return _handleWorktreeRepoRowClick(target);
-}
-
 function handleWorktreeTabClick(event: MouseEvent): void {
 	const target = event.target as HTMLElement | null;
 	if (!target) { return; }
 	if (_handleWorktreeActionButtonClick(target)) { return; }
 	if (_handleWorktreeRootsListClick(target)) { return; }
 	if (_handleWorktreeRowLinkClick(event, target)) { return; }
-	_handleWorktreeTableInteractionClick(target);
+	_handleWorktreeRepoRowClick(target);
 }
 
 function setupWorktreesHandlers(): void {
@@ -2581,7 +2383,7 @@ function runTabFirstVisitEffects(tab: string): void {
 /**
  * The leaf tab each group was last left on, so re-opening a group returns the user to where they
  * were instead of resetting them to its first tab. Lives only in memory, like `activeTab` itself
- * — neither is written to `vscode.setState()` (`UsageWebviewState` holds only `aboutCollapsed`),
+ * — neither is written to `vscode.setState()` (`UsageWebviewState` holds only `aboutCollapsed` and `mcpPeriodView`),
  * so a panel that is disposed and recreated legitimately starts over at the default tab.
  */
 const lastTabPerGroup: Record<string, string> = {};
@@ -2709,42 +2511,66 @@ const AI_PR_LABEL: Record<string, string> = {
 	'other-ai': '🤖 AI',
 };
 
-/** Renders one repository row of the Repository PRs table. */
-function renderRepoPrRow(r: RepoPrInfo, cell: string, cellCenter: string): string {
+/** Repositories whose AI PR detail list is expanded, so a sort or page change keeps them open. */
+const openRepoPrDetails = new Set<string>();
+
+/** Repository cell: the repo link plus its collapsible AI PR detail list, or the fetch error. */
+function repoPrRepositoryCellHtml(r: RepoPrInfo): string {
 	const repoLink = `<a href="${escapeHtml(r.repoUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--link-color); font-family:'Courier New',monospace; font-size:12px;">${escapeHtml(r.owner)}/${escapeHtml(r.repo)}</a>`;
 	if (r.error) {
-		return `<tr>
-			<td style="${cell} font-family:'Courier New',monospace; font-size:12px;">${repoLink}</td>
-			<td colspan="5" style="${cell} color:var(--text-secondary); font-style:italic; font-size:12px;">${escapeHtml(r.error)}</td>
-		</tr>`;
+		return `${repoLink}<div style="color:var(--text-secondary); font-style:italic; font-size:12px;">${escapeHtml(r.error)}</div>`;
 	}
-	// Collapsible detail list
-	let detailsHtml = '';
-	if (r.aiDetails.length > 0) {
-		const items = r.aiDetails.map(d => {
-			const ccrButton = (d.role === 'reviewer-requested' && d.aiType === 'copilot')
-				? renderCcrCheckButtonHtml(r.owner, r.repo, d.number)
-				: '';
-			const roleLabel = d.role === 'author' ? localize('usage.repoPrs.aiDetailAuthored') : localize('usage.repoPrs.aiDetailReviewRequested');
-			return `<li><a href="${escapeHtml(d.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--link-color);">#${d.number} ${escapeHtml(d.title)}</a> — ${AI_PR_LABEL[d.aiType] ?? escapeHtml(String(d.aiType))} (${escapeHtml(roleLabel)})${ccrButton}</li>`;
-		}).join('');
-		detailsHtml = `
-			<details style="margin-top:4px; font-size:11px;">
-				<summary style="cursor:pointer; color:var(--text-secondary);">Show ${r.aiDetails.length} detail(s)</summary>
-				<ul style="margin:4px 0 0 16px; padding:0; list-style:disc;">${items}</ul>
-			</details>`;
-	}
-	const yours = (r.userAuthoredPrs ?? 0) > 0
-		? `<span style="font-weight:600;">${r.userMergedPrs ?? 0} / ${r.userAuthoredPrs}</span>`
-		: '0';
-	return `<tr>
-		<td style="${cell} font-family:'Courier New',monospace; font-size:12px;">${repoLink}${detailsHtml}</td>
-		<td style="${cellCenter} font-weight:600;">${r.totalPrs}</td>
-		<td style="${cellCenter}">${yours}</td>
-		<td style="${cellCenter}">${r.aiAuthoredPrs > 0 ? `<span style="font-weight:600;">${r.aiAuthoredPrs}</span>` : '0'}</td>
-		<td style="${cellCenter}">${r.aiReviewRequestedPrs > 0 ? `<span style="font-weight:600;">${r.aiReviewRequestedPrs}</span>` : '0'}</td>
-		<td style="${cellCenter}">${buildRevertCellHtml(r)}</td>
-	</tr>`;
+	if (r.aiDetails.length === 0) { return repoLink; }
+	const items = r.aiDetails.map(d => {
+		const ccrButton = (d.role === 'reviewer-requested' && d.aiType === 'copilot')
+			? renderCcrCheckButtonHtml(r.owner, r.repo, d.number)
+			: '';
+		const roleLabel = d.role === 'author' ? localize('usage.repoPrs.aiDetailAuthored') : localize('usage.repoPrs.aiDetailReviewRequested');
+		return `<li><a href="${escapeHtml(d.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--link-color);">#${d.number} ${escapeHtml(d.title)}</a> — ${AI_PR_LABEL[d.aiType] ?? escapeHtml(String(d.aiType))} (${escapeHtml(roleLabel)})${ccrButton}</li>`;
+	}).join('');
+	const key = `${r.owner}/${r.repo}`;
+	return `${repoLink}
+		<details data-repo-pr-details="${escapeHtml(key)}" style="margin-top:4px; font-size:11px;"${openRepoPrDetails.has(key) ? ' open' : ''}>
+			<summary style="cursor:pointer; color:var(--text-secondary);">Show ${r.aiDetails.length} detail(s)</summary>
+			<ul style="margin:4px 0 0 16px; padding:0; list-style:disc;">${items}</ul>
+		</details>`;
+}
+
+/** A centred count column; error rows have no counts, so they render a dash and sort last. */
+function githubCountColumn<Row extends { error?: string }>(
+	id: string, label: string, tip: string | undefined, value: (row: Row) => number, cell: (row: Row) => string,
+): DataTableColumn<Row> {
+	return {
+		id, label, align: 'center', firstSortDirection: 'desc',
+		headerHtml: tip ? `<span title="${escapeHtml(tip)}">${escapeHtml(label)}</span>` : undefined,
+		sortValue: row => row.error ? null : value(row),
+		render: row => row.error ? '—' : { html: cell(row) },
+	};
+}
+
+const boldCount = (value: number): string => value > 0 ? `<span style="font-weight:600;">${value}</span>` : '0';
+
+/** No initialSort: repositories keep the order the host lists them in. */
+function renderRepoPrTable(repos: RepoPrInfo[]): string {
+	return renderDataTable<RepoPrInfo>({
+		tableId: 'repo-prs',
+		ariaLabel: 'AI Activity in Repository PRs',
+		rows: repos,
+		onRender: replayCcrActivityResults,
+		columns: [
+			{ id: 'repo', label: '📂 Repository', sortValue: r => `${r.owner}/${r.repo}`, render: r => ({ html: repoPrRepositoryCellHtml(r) }) },
+			githubCountColumn<RepoPrInfo>('prs', 'PRs', undefined, r => r.totalPrs, r => `<span style="font-weight:600;">${r.totalPrs}</span>`),
+			githubCountColumn<RepoPrInfo>('yours', '🚢 Yours (merged / opened)', 'PRs you opened yourself, shown as merged / opened. Work driven by a local AI assistant lands here, not under Cloud Agent Authored.',
+				r => r.userAuthoredPrs ?? 0,
+				r => (r.userAuthoredPrs ?? 0) > 0 ? `<span style="font-weight:600;">${r.userMergedPrs ?? 0} / ${r.userAuthoredPrs}</span>` : '0'),
+			githubCountColumn<RepoPrInfo>('aiAuthored', '🤖 Cloud Agent Authored', 'PRs where the PR author\'s GitHub login matches a known AI agent (e.g. copilot-swe-agent, claude-code-action, openai-code-agent)',
+				r => r.aiAuthoredPrs, r => boldCount(r.aiAuthoredPrs)),
+			githubCountColumn<RepoPrInfo>('aiReview', '👁 Copilot Review Agent requested†', 'Open PRs where an AI agent was listed as a requested reviewer',
+				r => r.aiReviewRequestedPrs, r => boldCount(r.aiReviewRequestedPrs)),
+			githubCountColumn<RepoPrInfo>('aiReverted', localize('agentic.reverts.header'), localize('agentic.reverts.headerTitle'),
+				r => r.aiRevertedPrs ?? 0, r => buildRevertCellHtml(r)),
+		],
+	});
 }
 
 /**
@@ -2790,35 +2616,13 @@ function renderReposPrContent(data: RepoPrStatsResult): string {
 			</div>`;
 	}
 
-	// Cell style shared across data rows — matches the customization matrix look
-	const cell = 'padding: 6px 8px; border-bottom: 1px solid var(--border-subtle);';
-	const cellCenter = `${cell} text-align: center;`;
-
-	const rows = data.repos.map((r) => renderRepoPrRow(r, cell, cellCenter)).join('');
-
 	return `
 		${repoPrSnapshotFreshnessHtml(data)}
 		<div style="font-size:11px; color:var(--text-secondary); margin-bottom:12px;">
 			Showing PRs created since ${sinceDate}.
 			Reviewer requests are only visible for <strong>open</strong> PRs — the GitHub API clears this field after a PR is merged or closed.
 		</div>
-		<div class="customization-matrix-container">
-			<table class="customization-matrix" style="width:100%; border-collapse:collapse;">
-				<thead>
-					<tr>
-						<th style="text-align:left; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;">📂 Repository</th>
-						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;">PRs</th>
-						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="PRs you opened yourself, shown as merged / opened. Work driven by a local AI assistant lands here, not under Cloud Agent Authored.">🚢 Yours (merged / opened)</th>
-						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="PRs where the PR author's GitHub login matches a known AI agent (e.g. copilot-swe-agent, claude-code-action, openai-code-agent)">🤖 Cloud Agent Authored</th>
-						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="Open PRs where an AI agent was listed as a requested reviewer">👁 Copilot Review Agent requested†</th>
-						${buildRevertHeaderHtml()}
-					</tr>
-				</thead>
-				<tbody>
-					${rows}
-				</tbody>
-			</table>
-		</div>
+		${renderRepoPrTable(data.repos)}
 		<div style="margin-top:8px; font-size:10px; color:var(--text-muted); border-top:1px solid var(--border-subtle); padding-top:8px;">
 			† Copilot Review Agent requested counts are for open PRs only. GitHub removes reviewer data after a PR is merged or closed.<br/>
 			🤖 Cloud Agent Authored = PR author's GitHub login matches a known cloud agent (e.g. <code>copilot-swe-agent</code>, <code>claude-code-action</code>, <code>openai-code-agent</code>).
@@ -2838,6 +2642,9 @@ function updateReposPrPanel(data: RepoPrStatsResult): boolean {
 		</div>
 		${renderReposPrContent(data)}
 	`);
+	// A host refresh rebuilds the buttons; put back pending/answered CCR lookups so an answer does
+	// not vanish and a pending check cannot be submitted twice.
+	replayCcrActivityResults();
 	return true;
 }
 
@@ -2858,29 +2665,37 @@ function agentRepoLabelHtml(r: AgentRepoSummary): string {
   return `${link}${accountOnly}`;
 }
 
-function buildAgentSessionRows(data: AgentSessionsResult, cell: string, cellCenter: string): string {
-  return data.repos.map((r) => {
-    // r.owner, r.repo, r.repoUrl and r.error are pre-sanitized by sanitizeAgentSessionsData
-    const label = agentRepoLabelHtml(r);
-    if (r.error) {
-      return `<tr>
-        <td style="${cell}">${label}</td>
-        <td colspan="3" style="${cell} color:var(--text-secondary); font-style:italic; font-size:12px;">${r.error}</td>
-      </tr>`;
-    }
-    const partialNote = r.partial
-      ? ` <span title="Showing ${r.tasksScanned} of ${r.tasksTotal} tasks — capped to limit API usage" style="color:var(--text-muted); font-size:10px;">(${r.tasksScanned}/${r.tasksTotal} tasks scanned)</span>`
-      : '';
-    const credits = r.totalCredits > 0
-      ? r.totalCredits.toFixed(1)
-      : r.totalPremiumRequests > 0 ? `${r.totalPremiumRequests.toFixed(1)} PR` : '—';
-    return `<tr>
-      <td style="${cell}">${label}${partialNote}</td>
-      <td style="${cellCenter} font-weight:600;">${r.totalTasks}</td>
-      <td style="${cellCenter} font-weight:600;">${r.totalSessions}</td>
-      <td style="${cellCenter}">${credits}</td>
-    </tr>`;
-  }).join('');
+/** No initialSort: repositories keep the order the host lists them in. */
+function renderAgentSessionsTable(repos: AgentRepoSummary[]): string {
+	return renderDataTable<AgentRepoSummary>({
+		tableId: 'agent-sessions',
+		ariaLabel: 'Copilot Cloud Agent Sessions',
+		rows: repos,
+		columns: [
+			{
+				id: 'repo', label: '📂 Repository', sortValue: r => r.unassigned ? null : `${r.owner}/${r.repo}`,
+				// r.owner, r.repo, r.repoUrl and r.error are pre-sanitized by sanitizeAgentSessionsData
+				render: r => {
+					if (r.error) {
+						return { html: `${agentRepoLabelHtml(r)}<div style="color:var(--text-secondary); font-style:italic; font-size:12px;">${r.error}</div>` };
+					}
+					const partialNote = r.partial
+						? ` <span title="Showing ${r.tasksScanned} of ${r.tasksTotal} tasks — capped to limit API usage" style="color:var(--text-muted); font-size:10px;">(${r.tasksScanned}/${r.tasksTotal} tasks scanned)</span>`
+						: '';
+					return { html: `${agentRepoLabelHtml(r)}${partialNote}` };
+				},
+			},
+			githubCountColumn<AgentRepoSummary>('tasks', 'Tasks', 'Number of Copilot cloud agent tasks (each task = one user prompt to the agent)',
+				r => r.totalTasks, r => `<span style="font-weight:600;">${r.totalTasks}</span>`),
+			githubCountColumn<AgentRepoSummary>('sessions', 'Sessions', 'Number of agent sessions (each session = one autonomous coding run)',
+				r => r.totalSessions, r => `<span style="font-weight:600;">${r.totalSessions}</span>`),
+			githubCountColumn<AgentRepoSummary>('credits', 'AI Credits', 'AI credits consumed (1 credit = $0.01). Only available when the API reports usage data.',
+				r => r.totalCredits > 0 ? r.totalCredits : r.totalPremiumRequests,
+				r => r.totalCredits > 0
+					? r.totalCredits.toFixed(1)
+					: r.totalPremiumRequests > 0 ? `${r.totalPremiumRequests.toFixed(1)} PR` : '—'),
+		],
+	});
 }
 
 /**
@@ -2918,8 +2733,6 @@ function renderAgentSessionsContent(data: AgentSessionsResult): string {
 	}
 
 	const sinceDate = new Date(data.since).toLocaleDateString();
-	const cell = 'padding: 6px 8px; border-bottom: 1px solid var(--border-subtle);';
-	const cellCenter = `${cell} text-align: center;`;
 
 	const summaryTotals = data.repos.reduce((acc, r) => {
 		if (!r.error) {
@@ -2932,7 +2745,6 @@ function renderAgentSessionsContent(data: AgentSessionsResult): string {
 	}, { tasks: 0, sessions: 0, credits: 0, premiumRequests: 0 });
 
 	const hasPartial = data.repos.some(r => r.partial && !r.error);
-	const rows = buildAgentSessionRows(data, cell, cellCenter);
 	const tile = 'background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:6px; padding:12px 20px; text-align:center; min-width:80px;';
 
 	return `
@@ -2963,19 +2775,7 @@ function renderAgentSessionsContent(data: AgentSessionsResult): string {
 				? ''
 				: `<strong>Account-wide tasks unavailable:</strong> ${data.accountTasksError ?? 'the /agents/tasks endpoint could not be read'} — only workspace repositories are shown.`}
 		</div>
-		<div class="customization-matrix-container">
-			<table class="customization-matrix" style="width:100%; border-collapse:collapse;">
-				<thead>
-					<tr>
-						<th style="text-align:left; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;">📂 Repository</th>
-						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="Number of Copilot cloud agent tasks (each task = one user prompt to the agent)">Tasks</th>
-						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="Number of agent sessions (each session = one autonomous coding run)">Sessions</th>
-						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="AI credits consumed (1 credit = $0.01). Only available when the API reports usage data.">AI Credits</th>
-					</tr>
-				</thead>
-				<tbody>${rows}</tbody>
-			</table>
-		</div>
+		${renderAgentSessionsTable(data.repos)}
 		<div style="margin-top:8px; font-size:10px; color:var(--text-muted); border-top:1px solid var(--border-subtle); padding-top:8px;">
 			ℹ️ <strong>No double-counting:</strong> These are cloud agent sessions only. CLI/remote sessions and local IDE chat sessions (shown in "My Activity") are excluded.<br/>
 			ℹ️ <strong>Two sources:</strong> your workspace repositories (which also surface tasks other people started there) plus your account-wide agent tasks, which cover repos you don't have open and ad-hoc cloud chat sessions. Tasks seen in both are counted once.<br/>
@@ -2997,87 +2797,6 @@ function updateAgentSessionsPanel(data: AgentSessionsResult): boolean {
 		${renderAgentSessionsContent(data)}
 	`);
 	return true;
-}
-
-function buildCustomizationSectionHtml(matrix: WorkspaceCustomizationMatrix | null): string {
-	if (!matrix || !matrix.workspaces || matrix.workspaces.length === 0) {
-		return `
-			<div class="section">
-				<div class="section-title"><span>🛠️</span><span>Copilot Customization Files</span></div>
-				<div class="section-subtitle">Showing workspace customization status for active workspaces</div>
-				<div style="color: var(--text-muted); padding:12px;">No workspaces with customization files detected in the last 30 days.</div>
-			</div>`;
-	}
-	const workspaceRows = matrix.workspaces.map(ws => {
-		const statuses = ws.typeStatuses ?? {};
-		const hasNoCustomization = Object.values(statuses).every(s => s === '❌');
-		const typeCells = (matrix.customizationTypes ?? []).map(type => {
-			const status = statuses[type.id] || '❓';
-			const statusLabel =
-				status === '✅' ? 'Present and fresh'
-				: status === '⚠️' ? 'Present but stale'
-				: status === '❌' ? 'Missing'
-				: 'Status unknown';
-			return `
-				<td style="position: relative; padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); text-align: center;">
-					${statusBadgeHtml(status, statusLabel)}
-				</td>`;
-		}).join('');
-		return `
-			<tr>
-				<td style="padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); font-family: 'Courier New', monospace; font-size: 12px;">
-					${escapeHtml(ws.workspaceName)}${hasNoCustomization ? ` <span style="font-family: sans-serif; vertical-align: middle;">${statusBadgeHtml('⚠️', 'No customization files')}</span>` : ''}
-				</td>
-				<td style="padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); text-align: center; color: var(--link-color); font-weight: 600;">
-					${ws.sessionCount}
-				</td>
-				${typeCells}
-			</tr>`;
-	}).join('');
-	return `
-		<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px;">
-			<div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">
-				🛠️ Copilot Customization Files
-			</div>
-			<div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-				Showing ${matrix.totalWorkspaces} workspace(s) with Copilot activity in the last 30 days.
-				${matrix.workspacesWithIssues > 0
-					? `<span class="stale-warning" style="display:inline-flex;align-items:center;gap:4px;">${statusBadgeHtml('⚠️')} ${matrix.workspacesWithIssues} workspace(s) have no customization files.</span>`
-					: `<span style="display:inline-flex;align-items:center;gap:4px;">${statusBadgeHtml('✅')} All workspaces have up-to-date customizations.</span>`}
-			</div>
-			<div class="customization-matrix-container">
-				<table class="customization-matrix">
-					<thead>
-						<tr>
-							<th style="text-align: left; padding: 8px; border-bottom: 2px solid var(--border-color);">📂 Workspace</th>
-							<th style="text-align: center; padding: 8px; border-bottom: 2px solid var(--border-color);">Sessions</th>
-							${(matrix.customizationTypes ?? []).map(type => `
-								<th style="text-align: center; padding: 8px; border-bottom: 2px solid var(--border-color);" title="${escapeHtml(type.label)}">
-									${escapeHtml(type.icon)}
-								</th>
-							`).join('')}
-						</tr>
-					</thead>
-					<tbody>
-						${workspaceRows}
-					</tbody>
-				</table>
-			</div>
-			<div style="margin-top: 12px; font-size: 10px; color: var(--text-muted); border-top: 1px solid var(--border-subtle); padding-top: 8px;">
-				<div style="display: flex; gap: 16px; flex-wrap: wrap;">
-					${(matrix.customizationTypes ?? []).map(type => `
-						<span>${escapeHtml(type.icon)} ${escapeHtml(type.label)}</span>
-					`).join('')}
-				</div>
-				<div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-					<span style="display:inline-flex;align-items:center;gap:4px;">${statusBadgeHtml('✅')} = Present &amp; Fresh</span>
-					<span style="color: var(--text-muted);">•</span>
-					<span style="display:inline-flex;align-items:center;gap:4px;">${statusBadgeHtml('⚠️')} = Present but Stale</span>
-					<span style="color: var(--text-muted);">•</span>
-					<span style="display:inline-flex;align-items:center;gap:4px;">${statusBadgeHtml('❌')} = Missing</span>
-				</div>
-			</div>
-		</div>`;
 }
 
 /** Renders a compact three-period model cost breakdown for the Activity tab. */
@@ -3114,7 +2833,7 @@ function buildModelCostSectionHtml(stats: UsageAnalysisStats): string {
 
 	return `
 		<!-- Model Cost Section -->
-		<div class="section">
+		<div class="section" id="section-model-cost">
 			<div class="section-title"><span>💰</span><span>Model Cost Usage</span></div>
 			<div class="section-subtitle">Request distribution across cost levels — low (&lt;$2/M tokens), medium ($2–5/M), high (≥$5/M)</div>
 			<div class="three-column">
@@ -3139,7 +2858,7 @@ function buildThinkingEffortSectionHtml(stats: UsageAnalysisStats): string {
 	if (!effortData) { return ''; }
 	return `
 		<!-- Thinking Effort Section -->
-		<div class="section">
+		<div class="section" id="section-thinking-effort">
 			<div class="section-title"><span>💡</span><span>Thinking Effort (Reasoning)</span></div>
 			<div class="section-subtitle">How often each reasoning effort level was used (requests per level)</div>
 			<div class="three-column">
@@ -3183,9 +2902,6 @@ function renderEffortPeriodHtml(teu: { byEffort: { [effort: string]: number }; s
 }
 
 function buildUsageAllKeysSets(stats: UsageAnalysisStats): {
-	allToolKeys: string[];
-	allMcpToolKeys: string[];
-	allMcpServerKeys: string[];
 	allStandardModels: string[];
 	allHighCostModels: string[];
 	allLowCostModels: string[];
@@ -3193,9 +2909,6 @@ function buildUsageAllKeysSets(stats: UsageAnalysisStats): {
 	allUnknownModels: string[];
 } {
 	return {
-		allToolKeys: [...new Set([...Object.keys(stats.today.toolCalls.byTool), ...Object.keys(stats.last30Days.toolCalls.byTool), ...Object.keys(stats.month.toolCalls.byTool)])].sort(),
-		allMcpToolKeys: [...new Set([...Object.keys(stats.today.mcpTools.byTool), ...Object.keys(stats.last30Days.mcpTools.byTool), ...Object.keys(stats.month.mcpTools.byTool)])].sort(),
-		allMcpServerKeys: [...new Set([...Object.keys(stats.today.mcpTools.byServer), ...Object.keys(stats.last30Days.mcpTools.byServer), ...Object.keys(stats.month.mcpTools.byServer)])].sort(),
 		allStandardModels: [...new Set([...stats.today.modelSwitching.standardModels, ...stats.last30Days.modelSwitching.standardModels, ...stats.month.modelSwitching.standardModels])].sort(),
 		allHighCostModels: [...new Set([...stats.today.modelSwitching.highCostModels, ...stats.last30Days.modelSwitching.highCostModels, ...stats.month.modelSwitching.highCostModels])].sort(),
 		allLowCostModels: [...new Set([...stats.today.modelSwitching.lowCostModels, ...stats.last30Days.modelSwitching.lowCostModels, ...stats.month.modelSwitching.lowCostModels])].sort(),
@@ -3211,7 +2924,7 @@ function buildHealthTabPanelHtml(customizationHtml: string, stats: UsageAnalysis
 			${renderMissedPotential(stats)}
 
 			<!-- Repository Setup Section -->
-			<div class="repo-hygiene-section" style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px;">
+			<div class="repo-hygiene-section" id="section-repo-hygiene" style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px;">
 				<div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">
 					🏗️ Repository Hygiene Analysis
 				</div>
@@ -3238,69 +2951,21 @@ function buildHealthTabPanelHtml(customizationHtml: string, stats: UsageAnalysis
 		</div>`;
 }
 
-function buildMcpToolsSectionHtml(
-	stats: UsageAnalysisStats,
-	allMcpToolKeys: string[],
-	allMcpServerKeys: string[],
-): string {
+function buildMcpToolsSectionHtml(stats: UsageAnalysisStats): string {
 	return `
 		<!-- MCP Tools Section -->
-		<div class="section">
+		<div class="section" id="section-mcp-tools">
 			<div class="section-title"><span>🔌</span><span>MCP Tools</span></div>
 			<div class="section-subtitle">Model Context Protocol (MCP) server and tool usage</div>
 			${buildUnknownMcpToolsBannerHtml(stats)}
-			<div class="three-column">
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.today.mcpTools.total)}</div>
-						${allMcpServerKeys.length > 0 ? `
-							<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.today.mcpTools.byServer, allMcpServerKeys), 200)}</div></div>
-						` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
-					</div>
-				</div>
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📆 Last 30 Days</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.last30Days.mcpTools.total)}</div>
-						${allMcpServerKeys.length > 0 ? `
-							<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.last30Days.mcpTools.byServer, allMcpServerKeys), 200)}</div></div>
-						` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
-					</div>
-				</div>
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Previous Month</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.month.mcpTools.total)}</div>
-						${allMcpServerKeys.length > 0 ? `
-							<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.month.mcpTools.byServer, allMcpServerKeys), 200)}</div></div>
-						` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
-					</div>
-				</div>
-			</div>
-			<div class="three-column" style="margin-top: 12px;">
-				<div>
-					${allMcpToolKeys.length > 0 ? `
-						<div class="list">
-							<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.today.mcpTools.byTool, allMcpToolKeys), 10, lookupMcpToolName)}</div></div>
-						</div>
-					` : ''}
-				</div>
-				<div>
-					${allMcpToolKeys.length > 0 ? `
-						<div class="list">
-							<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.last30Days.mcpTools.byTool, allMcpToolKeys), 10, lookupMcpToolName)}</div></div>
-						</div>
-					` : ''}
-				</div>
-				<div>
-					${allMcpToolKeys.length > 0 ? `
-						<div class="list">
-							<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.month.mcpTools.byTool, allMcpToolKeys), 10, lookupMcpToolName)}</div></div>
-						</div>
-					` : ''}
-				</div>
-			</div>
+			${buildMcpPeriodTablesHtml({
+				byServer: { today: stats.today.mcpTools.byServer, last30Days: stats.last30Days.mcpTools.byServer, lastMonth: stats.lastMonth.mcpTools.byServer },
+				byTool: { today: stats.today.mcpTools.byTool, last30Days: stats.last30Days.mcpTools.byTool, lastMonth: stats.lastMonth.mcpTools.byTool },
+				totals: { today: stats.today.mcpTools.total, last30Days: stats.last30Days.mcpTools.total, lastMonth: stats.lastMonth.mcpTools.total },
+				nameResolver: lookupMcpToolName,
+				serverNameResolver: lookupToolName,
+				view: mcpPeriodView,
+			})}
 		</div>`;
 }
 
@@ -3346,38 +3011,19 @@ function buildCurationSummaryHtml(availableTools: AvailableToolEntry[], unusedTo
 
 function buildUnderusedAgentPluginsHtml(underusedAgentPlugins: ToolCurationAnalysis['underusedAgentPlugins'], windowDays: number): string {
 	if (underusedAgentPlugins.length === 0) { return ''; }
-	const rows = underusedAgentPlugins.map(p => {
-		const manageBtn = `<button class="curation-file-btn" data-command="openAgentPlugins" data-plugin-name="${escapeHtml(p.pluginName)}" style="background:none;border:none;padding:0;cursor:pointer;color:var(--link-color);font-size:11px;text-decoration:underline;" title="Open Extensions view filtered to @agentPlugins ${escapeHtml(p.pluginName)}">Manage Plugin</button>`;
-		const usageClass = p.usedSkillCount === 0 ? '' : 'plugin-has-usage';
-		return `<tr class="${usageClass}">
-			<td style="padding:5px 8px; color:var(--text-primary); font-size:12px; white-space:nowrap;">${escapeHtml(p.pluginName)}</td>
-			<td style="padding:5px 8px; color:var(--text-primary); font-size:12px;">${p.availableSkillCount}</td>
-			<td style="padding:5px 8px; color:var(--text-primary); font-size:12px;">${p.usedSkillCount}</td>
-			<td style="padding:5px 8px; font-size:12px;">${manageBtn}</td>
-		</tr>`;
-	}).join('');
 	const unusedCount = underusedAgentPlugins.filter(p => p.usedSkillCount === 0).length;
 	const usedCount = underusedAgentPlugins.length - unusedCount;
+	const title = `🧩 Agent Plugins in Last ${windowDays} Days (${underusedAgentPlugins.length})`;
 	return `<details style="margin-top:8px;" open>
 		<summary style="cursor:pointer; font-size:13px; font-weight:600; color:var(--text-primary); padding:6px 0;">
-			🧩 Agent Plugins in Last ${windowDays} Days (${underusedAgentPlugins.length})
+			${title}
 		</summary>
-		<style>#plugin-hide-toggle:checked ~ .plugin-table-wrap .plugin-has-usage { display: none; }</style>
-		<div style="display:flex; align-items:center; gap:6px; margin:6px 0;">
-			<input type="checkbox" id="plugin-hide-toggle" checked style="margin:0; cursor:pointer; flex-shrink:0;">
-			<label for="plugin-hide-toggle" style="font-size:12px; color:var(--text-primary); cursor:pointer; user-select:none;">Hide plugins with usage</label>
+		<div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin:6px 0;">
+			${renderAgentPluginsFilter()}
 			<span style="font-size:11px; color:var(--text-secondary);">${unusedCount} with no usage · ${usedCount} with usage</span>
 		</div>
-		<div class="plugin-table-wrap" style="margin-top:8px; overflow-x:auto;">
-			<table style="width:100%; border-collapse:collapse; font-size:12px;">
-				<thead><tr style="border-bottom:1px solid var(--border-color);">
-					<th style="padding:5px 8px; text-align:left; color:var(--text-primary); font-weight:600; font-size:12px;">Plugin</th>
-					<th style="padding:5px 8px; text-align:left; color:var(--text-primary); font-weight:600; font-size:12px;">Skills Available</th>
-					<th style="padding:5px 8px; text-align:left; color:var(--text-primary); font-weight:600; font-size:12px;">Skills Used</th>
-					<th style="padding:5px 8px; text-align:left; color:var(--text-primary); font-weight:600; font-size:12px;">Action</th>
-				</tr></thead>
-				<tbody>${rows}</tbody>
-			</table>
+		<div style="margin-top:8px;">
+			${renderAgentPluginsTable(underusedAgentPlugins, title)}
 			<div style="margin-top:8px; font-size:11px; color:var(--text-secondary);">💡 Click <em>Manage Plugin</em> to open the Extensions view filtered to <code>@agentPlugins</code> where you can uninstall unused plugins to reclaim prompt budget.</div>
 		</div>
 	</details>`;
@@ -3386,32 +3032,6 @@ function buildUnderusedAgentPluginsHtml(underusedAgentPlugins: ToolCurationAnaly
 function buildMemoryFilesSectionHtml(analysis: MemoryFilesAnalysisView | null | undefined): string {
 	try {
 		if (!analysis || analysis.totalFiles === 0) { return ''; }
-
-		const rows = analysis.byWorkspace
-			.slice()
-			.sort((a, b) => b.totalBytes - a.totalBytes)
-			.map(ws => {
-				// The __user__ bucket is the only one that ever carries userCount > 0; its
-				// data-layer workspaceName ("User (global)", used verbatim by the CLI report)
-				// is not localized, so render the localized label here instead.
-				const name = ws.userCount > 0
-					? escapeHtml(localize('memoryFiles.globalWorkspaceLabel'))
-					: escapeHtml(ws.workspaceName ?? ws.workspaceHash ?? localize('memoryFiles.unknownWorkspace'));
-				const staleCount = ws.staleFileCount;
-				// newestMtimeMs is nullable (no files at all), not merely falsy — a real epoch
-				// timestamp of 0 must still be formatted, not treated as "no data".
-				const newest = ws.newestMtimeMs !== null ? formatAbsoluteDate(ws.newestMtimeMs) : '—';
-				return `<tr style="border-bottom:1px solid var(--border-color);">
-					<td style="padding:5px 8px; color:var(--text-primary);">${name}</td>
-					<td style="padding:5px 8px; text-align:right; color:var(--text-primary);">${ws.repoCount}</td>
-					<td style="padding:5px 8px; text-align:right; color:var(--text-primary);">${ws.sessionCount}</td>
-					<td style="padding:5px 8px; text-align:right; color:var(--text-primary);">${ws.userCount}</td>
-					<td style="padding:5px 8px; text-align:right; color:var(--text-primary);">${formatFileSize(ws.totalBytes)}</td>
-					<td style="padding:5px 8px; text-align:right; color:${staleCount > 0 ? 'var(--vscode-editorWarning-foreground, #cca700)' : 'var(--text-primary)'};">${staleCount}</td>
-					<td style="padding:5px 8px; text-align:right; color:var(--text-primary);">${newest}</td>
-				</tr>`;
-			})
-			.join('');
 
 		return `
 			<!-- Memory Files Section -->
@@ -3423,20 +3043,7 @@ function buildMemoryFilesSectionHtml(analysis: MemoryFilesAnalysisView | null | 
 					${analysis.staleFileCount > 0 ? ` · <span style="color:var(--vscode-editorWarning-foreground, #cca700);">${escapeHtml(localizeFormat('memoryFiles.staleSummary', analysis.staleFileCount, analysis.staleDays))}</span>` : ''}
 					${analysis.largeFileCount > 0 ? ` · <span style="color:var(--vscode-editorWarning-foreground, #cca700);">${escapeHtml(localizeFormat('memoryFiles.largeSummary', analysis.largeFileCount, Math.round(analysis.largeFileBytes / 1024)))}</span>` : ''}
 				</div>
-				<div style="overflow-x:auto;">
-					<table style="width:100%; border-collapse:collapse; font-size:12px;">
-						<thead><tr style="border-bottom:1px solid var(--border-color);">
-							<th style="padding:5px 8px; text-align:left; color:var(--text-primary); font-weight:600;">${escapeHtml(localize('memoryFiles.table.workspace'))}</th>
-							<th style="padding:5px 8px; text-align:right; color:var(--text-primary); font-weight:600;">${escapeHtml(localize('memoryFiles.table.repo'))}</th>
-							<th style="padding:5px 8px; text-align:right; color:var(--text-primary); font-weight:600;">${escapeHtml(localize('memoryFiles.table.session'))}</th>
-							<th style="padding:5px 8px; text-align:right; color:var(--text-primary); font-weight:600;">${escapeHtml(localize('memoryFiles.table.global'))}</th>
-							<th style="padding:5px 8px; text-align:right; color:var(--text-primary); font-weight:600;">${escapeHtml(localize('memoryFiles.table.size'))}</th>
-							<th style="padding:5px 8px; text-align:right; color:var(--text-primary); font-weight:600;">${escapeHtml(localize('memoryFiles.table.stale'))}</th>
-							<th style="padding:5px 8px; text-align:right; color:var(--text-primary); font-weight:600;">${escapeHtml(localize('memoryFiles.table.lastUpdated'))}</th>
-						</tr></thead>
-						<tbody>${rows}</tbody>
-					</table>
-				</div>
+				${renderMemoryFilesTable(analysis.byWorkspace)}
 			</div>`;
 	} catch (error) {
 		console.error(`[usage-webview] buildMemoryFilesSectionHtml failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -3474,7 +3081,6 @@ function buildCurationSectionHtml(curation: ToolCurationAnalysis | null | undefi
 			<div id="section-tool-curation" class="section">
 				<div class="section-title"><span>✂️</span><span>Tool Curation</span></div>
 				<div class="section-subtitle" style="color:var(--text-primary); opacity:0.75;">Compare available tools against actual usage to reduce prompt overhead (last ${windowDays} days)</div>
-				<span id="curation-table-status" class="paged-table-status" role="status" aria-live="polite" aria-atomic="true"></span>
 				${buildCurationSummaryHtml(availableTools, unusedTools, estimatedPromptBloat)}
 				${buildUnusedMcpHtml(underusedMcpServers, estimatedPromptBloat, windowDays)}
 				${buildUnderusedAgentPluginsHtml(underusedAgentPlugins, windowDays)}
@@ -3653,48 +3259,6 @@ function usageTabStripInput(stats: UsageAnalysisStats): UsageTabStripInput {
 		correctionSessionCount: stats.correctionReport?.sessionsWithMoments ?? 0,
 		readinessButtonHtml: darkFactoryTab.button(activeTab),
 	};
-}
-
-// ── Skill suggestions (repeated tasks) ──────────────────────────────────────
-
-function buildRepeatedTaskSessionLinkHtml(session: RepeatedTaskSessionRef): string {
-	const title = session.title || session.file.split(/[\\/]/).pop() || session.file;
-	const date = session.lastInteraction ? new Date(session.lastInteraction) : null;
-	const dateLabel = date && !isNaN(date.getTime()) ? date.toLocaleDateString() : '';
-	const repo = session.repository ? ` · ${session.repository}` : '';
-	return `<div style="font-size:11px; color:var(--text-secondary); padding:2px 0; overflow-wrap:anywhere;">${escapeHtml(title)}${escapeHtml(dateLabel ? ` · ${dateLabel}` : '')}${escapeHtml(repo)}</div>`;
-}
-
-function buildRepeatedTaskClusterHtml(cluster: RepeatedTaskCluster): string {
-	const keywords = cluster.sharedKeywords.length > 0
-		? `<div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:4px;">${cluster.sharedKeywords.map(k => `<span style="font-size:10px; padding:1px 7px; border-radius:8px; background:var(--bg-tertiary); color:var(--text-secondary);">${escapeHtml(k)}</span>`).join('')}</div>`
-		: '';
-	return `
-		<div style="margin-top:10px; padding:12px 14px; border-radius:8px; background:var(--bg-tertiary); border:1px solid var(--border-color, transparent);">
-			<div style="display:flex; align-items:flex-start; gap:10px;">
-				<span style="flex-shrink:0; font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px; background:rgba(74,222,128,0.15); border:1px solid rgba(74,222,128,0.5); color:var(--text-primary); white-space:nowrap;">${cluster.sessionCount}× repeated</span>
-				<div style="flex:1; min-width:0; font-size:12px; color:var(--text-primary); font-style:italic; overflow-wrap:anywhere;">&ldquo;${escapeHtml(cluster.representativePrompt)}&rdquo;</div>
-			</div>
-			${keywords}
-			<details style="margin-top:8px;">
-				<summary style="font-size:11px; color:var(--text-secondary); cursor:pointer;">Sessions (${cluster.sessions.length})</summary>
-				<div style="margin-top:4px;">${cluster.sessions.map(buildRepeatedTaskSessionLinkHtml).join('')}</div>
-			</details>
-		</div>`;
-}
-
-/** "Skill suggestions" section for the Tools & Integrations tab (empty string when no candidates). */
-function buildSkillSuggestionsSectionHtml(report: RepeatedTaskReport | null): string {
-	if (!report || report.clusters.length === 0) { return ''; }
-	return `
-		<div class="section" id="section-skill-suggestions">
-			<div class="section-title"><span>🧩</span><span>Skill Suggestions</span></div>
-			<div class="section-subtitle">
-				Tasks you keep prompting for across sessions (first prompt per session, ${report.sessionsScanned} sessions scanned).
-				A repeated task is a good candidate for a reusable skill, prompt file, or custom agent.
-			</div>
-			${report.clusters.map(buildRepeatedTaskClusterHtml).join('')}
-		</div>`;
 }
 
 const CORRECTION_TYPE_META: Record<CorrectionMomentType, { label: string; color: string }> = {
@@ -4051,68 +3615,9 @@ function _handleCurationBtnClick(btn: HTMLButtonElement): void {
 	}
 }
 
-function isCurationTableId(value: string | null): value is CurationTableId {
-	return value === 'mcp' || value === 'builtin' || value === 'skills';
-}
-
-function rerenderCurationTable(tableId: CurationTableId, section: HTMLElement): void {
-	if (!currentCurationAnalysis) { return; }
-	const root = section.querySelector<HTMLElement>(`#paged-table-root-${tableId}`);
-	if (!root) { return; }
-	const focusTarget = getPagedTableFocusTarget(root, document.activeElement);
-	const staging = document.createElement('div');
-	setHtml(staging, renderCurationTable(tableId, currentCurationAnalysis));
-	const replacement = staging.firstElementChild;
-	if (replacement instanceof HTMLElement) {
-		const sorted = Boolean(focusTarget?.kind === 'sort');
-		const announcement = getPagedTableAnnouncement(replacement, sorted);
-		root.replaceWith(replacement);
-		restorePagedTableFocus(replacement, focusTarget);
-		const status = section.querySelector<HTMLElement>('#curation-table-status');
-		if (status) { status.textContent = announcement; }
-	}
-}
-
-function handleCurationSort(target: Element, section: HTMLElement): boolean {
-	const button = target.closest<HTMLButtonElement>('[data-paged-sort]');
-	if (!button) { return false; }
-	const tableId = button.getAttribute('data-paged-table');
-	const columnId = button.getAttribute('data-paged-sort');
-	if (isCurationTableId(tableId) && columnId) {
-		setPagedTableSort(tableId, columnId);
-		rerenderCurationTable(tableId, section);
-	}
-	return true;
-}
-
-function handleCurationPage(target: Element, section: HTMLElement): boolean {
-	const button = target.closest<HTMLButtonElement>('[data-paged-page]');
-	if (!button) { return false; }
-	const tableId = button.getAttribute('data-paged-table');
-	const page = Number(button.getAttribute('data-paged-page'));
-	if (isCurationTableId(tableId) && Number.isFinite(page)) {
-		setPagedTablePage(tableId, page);
-		rerenderCurationTable(tableId, section);
-	}
-	return true;
-}
-
-function handleCurationFilter(target: Element, section: HTMLElement): boolean {
-	const input = target.closest<HTMLInputElement>('[data-paged-table-filter]');
-	if (!input) { return false; }
-	const tableId = input.getAttribute('data-paged-table');
-	const filterId = input.getAttribute('data-paged-table-filter');
-	if (isCurationTableId(tableId) && filterId) {
-		setPagedTableFilter(tableId, filterId, input.checked);
-		rerenderCurationTable(tableId, section);
-	}
-	return true;
-}
-
 function handleCurationClick(event: Event, section: HTMLElement): void {
 	const target = event.target;
 	if (!(target instanceof Element)) { return; }
-	if (handleCurationSort(target, section) || handleCurationPage(target, section) || handleCurationFilter(target, section)) { return; }
 	const button = target.closest<HTMLButtonElement>('.curation-file-btn');
 	if (button) { _handleCurationBtnClick(button); }
 }
@@ -4166,16 +3671,13 @@ function buildUsageRootHtml(
 	sessionsSummaryHtml: string,
 	todayTotalRefs: number,
 	last30DaysTotalRefs: number,
-	allToolKeys: string[],
-	allMcpToolKeys: string[],
-	allMcpServerKeys: string[],
 	allHighCostModels: string[],
 	allLowCostModels: string[],
 	allMediumCostModels: string[],
 	allUnknownModels: string[],
 ): string {
 	return `
-		<style>${themeStyles}</style>
+		<style>${themeStyles}</style><style>${dataTableStyles}</style>
 		<style>${styles}</style>
 		<div class="container">
 			<div class="header">
@@ -4204,7 +3706,7 @@ function buildUsageRootHtml(
 
 			${safeSectionHtml('Recent Sessions', () => buildSessionsTabPanelHtml(stats))}
 			${safeSectionHtml('My Activity', () => buildActivityTabPanelHtml(stats, multiModelHtml, thinkingEffortHtml, sessionsSummaryHtml, todayTotalRefs, last30DaysTotalRefs))}
-			${safeSectionHtml('Tools & Integrations', () => buildToolsTabPanelHtml(stats, allToolKeys, allMcpToolKeys, allMcpServerKeys, allHighCostModels, allLowCostModels, allMediumCostModels, allUnknownModels))}
+			${safeSectionHtml('Tools & Integrations', () => buildToolsTabPanelHtml(stats, allHighCostModels, allLowCostModels, allMediumCostModels, allUnknownModels))}
 			${safeSectionHtml('Workspace Health', () => buildHealthTabPanelHtml(customizationHtml, stats))}
 			${safeSectionHtml('Repository PRs & Cloud Agent', () => buildReposAndAgentTabPanelsHtml())}
 			${safeSectionHtml('AI Readiness', () => darkFactoryTab.panel(activeTab))}
@@ -4332,41 +3834,41 @@ function knownBytes(w: WorktreeResult): number {
 	return w.bytes > 0 ? w.bytes : 0;
 }
 
-function buildWorktreeRowHtml(w: WorktreeResult): string {
-	const pending = isWorktreePending(w);
-	// While a scan is running the values are still being computed; if it stopped (e.g. cancelled)
-	// before this row was enriched, show a neutral dash instead of a misleading "computing…".
-	const pendingLabel = (active: string) => `<span class="worktree-pending">${worktreeScanInProgress ? active : "—"}</span>`;
-	const pushedIcon = w.pushed === "yes" ? "✅" : w.pushed === "no" ? "🔴" : "❓";
-	const pushedCell = pending ? pendingLabel("checking…") : `${pushedIcon} ${escapeHtml(w.pushed)}`;
-	const filesCell = pending ? pendingLabel("…") : escapeHtml(String(w.files));
-	const sizeCell = pending
-		? pendingLabel("computing…")
-		: `<span title="${w.bytes.toLocaleString()} bytes">${formatFileSize(w.bytes)}</span>`;
-	return `<tr>
-    <td title="${escapeHtml(w.path)}" style="font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(w.path)}</td>
-    <td>${escapeHtml(w.branch)}</td>
-    <td>${escapeHtml(w.lastCommit)}</td>
-    <td>${pushedCell}</td>
-    <td>${filesCell}</td>
-    <td>${sizeCell}</td>
-    <td>
-      <a href="#" class="worktree-reveal-link" data-path="${encodeURIComponent(w.path)}">Open</a>
-      <a href="#" class="worktree-delete-link" data-path="${encodeURIComponent(w.path)}" data-branch="${encodeURIComponent(w.branch)}" data-repo="${encodeURIComponent(w.repoLabel)}" data-pushed="${escapeHtml(w.pushed)}" title="Remove via git worktree remove (asks for confirmation)">🗑️ Delete</a>
-    </td>
-  </tr>`;
+/** Pending rows show "…" while a scan runs; a scan that stopped before enriching them shows a dash. */
+function worktreePendingLabel(active: string): string {
+	return `<span class="worktree-pending">${worktreeScanInProgress ? active : "—"}</span>`;
 }
 
-/** The per-worktree details table shown when a repository row is expanded. */
-function buildWorktreeDetailsTableHtml(worktrees: WorktreeResult[]): string {
-	const sorted = [...worktrees].sort((a, b) => knownBytes(b) - knownBytes(a));
-	const rows = sorted.map(buildWorktreeRowHtml).join("");
-	return `<div class="table-container">
-    <table class="session-table">
-      <thead><tr><th>Path</th><th>Branch</th><th>Last Commit</th><th>Pushed</th><th>Files</th><th>Size</th><th>Actions</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-  </div>`;
+const WORKTREE_DETAIL_COLUMNS: DataTableColumn<WorktreeResult>[] = [
+	{ id: "path", label: "Path", className: "worktree-path-cell", sortValue: (w) => w.path, render: (w) => ({ html: `<span title="${escapeHtml(w.path)}">${escapeHtml(w.path)}</span>` }) },
+	{ id: "branch", label: "Branch", sortValue: (w) => w.branch, render: (w) => w.branch },
+	{ id: "lastCommit", label: "Last Commit", sortValue: (w) => sessionTimestamp(w.lastCommitDate ?? undefined), render: (w) => w.lastCommit },
+	{
+		id: "pushed", label: "Pushed", sortValue: (w) => (isWorktreePending(w) ? null : w.pushed),
+		render: (w) => ({ html: isWorktreePending(w) ? worktreePendingLabel("checking…") : `${w.pushed === "yes" ? "✅" : w.pushed === "no" ? "🔴" : "❓"} ${escapeHtml(w.pushed)}` }),
+	},
+	{ id: "files", label: "Files", align: "right", sortValue: (w) => (isWorktreePending(w) ? null : w.files), render: (w) => (isWorktreePending(w) ? { html: worktreePendingLabel("…") } : String(w.files)) },
+	{
+		id: "size", label: "Size", align: "right", sortValue: (w) => (isWorktreePending(w) ? null : w.bytes),
+		render: (w) => ({ html: isWorktreePending(w) ? worktreePendingLabel("computing…") : `<span title="${w.bytes.toLocaleString()} bytes">${formatFileSize(w.bytes)}</span>` }),
+	},
+	{
+		id: "actions", label: "Actions",
+		render: (w) => ({ html: `<a href="#" class="worktree-reveal-link" data-path="${encodeURIComponent(w.path)}">Open</a>
+      <a href="#" class="worktree-delete-link" data-path="${encodeURIComponent(w.path)}" data-branch="${encodeURIComponent(w.branch)}" data-repo="${encodeURIComponent(w.repoLabel)}" data-pushed="${escapeHtml(w.pushed)}" title="Remove via git worktree remove (asks for confirmation)">🗑️ Delete</a>` }),
+	},
+];
+
+/** The per-worktree details table shown when a repository row is expanded; one stable table per repository. */
+function buildWorktreeDetailsTableHtml(repoLabel: string, worktrees: WorktreeResult[]): string {
+	return renderDataTable<WorktreeResult>({
+		tableId: `worktree-details-${encodeURIComponent(repoLabel)}`,
+		ariaLabel: repoLabel,
+		rows: worktrees,
+		columns: WORKTREE_DETAIL_COLUMNS,
+		initialSort: { columnId: "size", direction: "desc" },
+		className: "data-table--compact",
+	});
 }
 
 /** Size cell text with a trailing "…" hint while any worktree in the set is still being sized. */
@@ -4391,47 +3893,46 @@ function buildWorktreeRepoCleanupButtonHtml(repoLabel: string, worktrees: Worktr
     >🧹 Clean up (${pushedCount})</button>`;
 }
 
-/**
- * A repository's summary row (Repository | Worktrees | Size | Actions) plus a details row that
- * holds the per-worktree table. The details row is hidden unless the repo is in
- * worktreeExpandedRepos.
- */
-function buildWorktreeRepoRowsHtml(repoLabel: string, worktrees: WorktreeResult[]): string {
-	const expanded = worktreeExpandedRepos.has(repoLabel);
-	const caret = expanded ? "▼" : "▶";
-	const repoAttr = escapeHtml(repoLabel);
-	const summaryRow = `<tr class="worktree-repo-row${expanded ? " expanded" : ""}" data-repo="${repoAttr}" aria-expanded="${expanded}">
-    <td><span class="worktree-caret">${caret}</span> ${escapeHtml(repoLabel)}</td>
-    <td>${worktrees.length}</td>
-    <td>${worktreeSizeText(worktrees)}</td>
-    <td class="worktree-repo-actions">${buildWorktreeRepoCleanupButtonHtml(repoLabel, worktrees)}</td>
-  </tr>`;
-	const detailsRow = `<tr class="worktree-repo-details" data-repo="${repoAttr}"${expanded ? "" : ' style="display: none;"'}>
-    <td colspan="4">${buildWorktreeDetailsTableHtml(worktrees)}</td>
-  </tr>`;
-	return summaryRow + detailsRow;
-}
-
-function getWorktreeSortIndicator(col: WorktreeSortColumn): string {
-	if (worktreeSortColumn !== col) { return ""; }
-	return worktreeSortDir === "desc" ? " ▼" : " ▲";
-}
-
 /** Sum of the known (enriched) bytes across a repository's worktrees. */
 function groupKnownBytes(worktrees: WorktreeResult[]): number {
 	return worktrees.reduce((s, w) => s + knownBytes(w), 0);
 }
 
-/** Compare two [repoLabel, worktrees] groups per the active sort column/direction. */
-function compareWorktreeGroups(a: [string, WorktreeResult[]], b: [string, WorktreeResult[]]): number {
-	const dir = worktreeSortDir === "desc" ? -1 : 1;
-	if (worktreeSortColumn === "repo") {
-		return dir * a[0].localeCompare(b[0]);
-	}
-	const value = (g: WorktreeResult[]) => (worktreeSortColumn === "count" ? g.length : groupKnownBytes(g));
-	const diff = value(a[1]) - value(b[1]);
-	// Tie-break by repo name (ascending) so equal groups keep a stable order.
-	return diff !== 0 ? dir * diff : a[0].localeCompare(b[0]);
+type WorktreeRepoGroup = { repo: string; worktrees: WorktreeResult[] };
+
+/**
+ * The repository table (Repository | Worktrees | Size | Actions). An expanded repository (one in
+ * worktreeExpandedRepos) gets a details row holding its per-worktree table right after it, so the
+ * expansion moves with the repository when the table is sorted or paged.
+ */
+function buildWorktreeRepoTableHtml(groups: Map<string, WorktreeResult[]>): string {
+	// Pre-sorted by name so repositories with equal counts or sizes keep a stable, alphabetical order.
+	const rows: WorktreeRepoGroup[] = [...groups.entries()]
+		.map(([repo, worktrees]) => ({ repo, worktrees }))
+		.sort((a, b) => a.repo.localeCompare(b.repo));
+	return renderDataTable<WorktreeRepoGroup>({
+		tableId: "worktree-repos",
+		ariaLabel: "📦 Repositories",
+		rows,
+		columns: [
+			{
+				id: "repo", label: "Repository", sortValue: (g) => g.repo,
+				render: (g) => ({ html: `<span class="worktree-caret">${worktreeExpandedRepos.has(g.repo) ? "▼" : "▶"}</span> ${escapeHtml(g.repo)}` }),
+			},
+			{ id: "count", label: "Worktrees", align: "right", sortValue: (g) => g.worktrees.length, render: (g) => String(g.worktrees.length) },
+			{ id: "size", label: "Size", align: "right", sortValue: (g) => groupKnownBytes(g.worktrees), render: (g) => ({ html: worktreeSizeText(g.worktrees) }) },
+			{ id: "actions", label: "Actions", className: "worktree-repo-actions", render: (g) => ({ html: buildWorktreeRepoCleanupButtonHtml(g.repo, g.worktrees) }) },
+		],
+		initialSort: { columnId: "count", direction: "desc" },
+		className: "worktree-repo-table",
+		rowOptions: (g) => {
+			const expanded = worktreeExpandedRepos.has(g.repo);
+			return { className: `worktree-repo-row${expanded ? " expanded" : ""}`, attributes: { "data-repo": g.repo, "aria-expanded": String(expanded) } };
+		},
+		afterRow: (g) => worktreeExpandedRepos.has(g.repo)
+			? `<tr class="worktree-repo-details" data-repo="${escapeHtml(g.repo)}"><td colspan="4">${buildWorktreeDetailsTableHtml(g.repo, g.worktrees)}</td></tr>`
+			: "",
+	});
 }
 
 /**
@@ -4626,20 +4127,7 @@ function renderWorktreeResults(): string {
     <div class="summary-card"><div class="summary-label">💾 Total Size</div><div class="summary-value" title="${totalBytes.toLocaleString()} bytes">${totalSizeHtml}</div></div>
     ${renderWorktreeCleanupCard()}
   </div>`;
-	const sortedGroups = [...groups.entries()].sort(compareWorktreeGroups);
-	const repoRows = sortedGroups.map(([repo, wts]) => buildWorktreeRepoRowsHtml(repo, wts)).join("");
-	const table = `<div class="table-container">
-    <table class="session-table worktree-repo-table">
-      <thead><tr>
-        <th class="sortable" data-wt-sort="repo">Repository${getWorktreeSortIndicator("repo")}</th>
-        <th class="sortable" data-wt-sort="count">Worktrees${getWorktreeSortIndicator("count")}</th>
-        <th class="sortable" data-wt-sort="size">Size${getWorktreeSortIndicator("size")}</th>
-        <th>Actions</th>
-      </tr></thead>
-      <tbody>${repoRows}</tbody>
-    </table>
-  </div>`;
-	return summary + renderWorktreeCleanupStatus() + table;
+	return summary + renderWorktreeCleanupStatus() + buildWorktreeRepoTableHtml(groups);
 }
 
 function buildWorktreesTabPanelHtml(): string {
@@ -4844,7 +4332,7 @@ function buildBillingComparisonSectionHtml(stats: UsageAnalysisStats): string {
 	const deltaHtml = _billingCoverageAnalysisHtml(api, copilotCostUsd, nonCopilotCostUsd);
 
 	return `
-		<div class="section">
+		<div class="section" id="section-billing-coverage">
 			<div class="section-title"><span>💳</span><span>AI Billing Coverage</span></div>
 			<div class="section-subtitle">Compare what the GitHub Copilot API reports across all channels with what the extension can track from local IDE session logs, alongside estimated costs from other AI providers.</div>
 			${apiHtml}
@@ -5073,7 +4561,7 @@ function buildContextWindowSectionHtml(stats: UsageAnalysisStats): string {
 	const tier30 = cw30 && cw30.maxRequestInputTokens > 0 ? _tierInfoForModels(cw30.maxRequestModels) : null;
 	const bar = cw30 && tier30 ? _renderContextWindowBar(cw30.maxRequestInputTokens, tier30) : '';
 	return `
-		<div class="section">
+		<div class="section" id="section-context-window">
 			<div class="section-title"><span>🪟</span><span>Context Window &amp; Long-Context Pricing</span></div>
 			<div class="section-subtitle">How close your largest requests come to the long-context price line. Models with tiered pricing bill higher input rates once a request exceeds their default-tier threshold.</div>
 			<div class="three-column">
@@ -5190,13 +4678,17 @@ function buildUnknownMcpToolsBannerHtml(stats: UsageAnalysisStats): string {
 	if (unknownTools.length === 0) { return ''; }
 	const issueUrl = createMcpToolIssueUrl(unknownTools, stats.toolCallsByEditor);
 	const toolListHtml = unknownTools.map(tool => {
-		const todayCount = (stats.today.toolCalls.byTool[tool] || 0) + (stats.today.mcpTools.byTool[tool] || 0);
-		const last30Count = (stats.last30Days.toolCalls.byTool[tool] || 0) + (stats.last30Days.mcpTools.byTool[tool] || 0);
-		const monthCount = (stats.month.toolCalls.byTool[tool] || 0) + (stats.month.mcpTools.byTool[tool] || 0);
+		// Server ids are collected alongside tool ids, so count them from byServer too.
+		const countIn = (p: UsageAnalysisPeriod): number => (p.toolCalls.byTool[tool] || 0) + (p.mcpTools.byTool[tool] || 0) + (p.mcpTools.byServer[tool] || 0);
+		const todayCount = countIn(stats.today);
+		const last30Count = countIn(stats.last30Days);
+		const monthCount = countIn(stats.month);
+		const lastMonthCount = countIn(stats.lastMonth);
 		const countParts: string[] = [];
 		if (todayCount > 0) { countParts.push(`${todayCount} today`); }
 		if (last30Count > todayCount) { countParts.push(`${last30Count} in the last 30d`); }
 		if (monthCount > last30Count) { countParts.push(`${monthCount} this month`); }
+		if (lastMonthCount > 0) { countParts.push(`${lastMonthCount} last month`); }
 		const editors = formatToolEditors(tool, stats.toolCallsByEditor);
 		if (editors) { countParts.push(editors); }
 		const countHtml = countParts.length > 0 ? `<span style="color:var(--text-muted);"> (${escapeHtml(countParts.join(' | '))})</span>` : '';
@@ -5236,8 +4728,6 @@ let efficiencyPeriod: EfficiencyPeriodKey = 'last30Days';
 let efficiencyMetric: EfficiencyMetricKey = 'cost';
 let efficiencyBubbleMetric: EfficiencyBubbleMetricKey = 'calls';
 let efficiencyColorMode: EfficiencyColorMode = 'vendor';
-let efficiencySortColumn: EfficiencySortColumn = 'calls';
-let efficiencySortDirection: 'asc' | 'desc' = 'desc';
 let cachedModelEfficiency: Partial<Record<EfficiencyPeriodKey, ModelEfficiencyUsage | undefined>> = {};
 let efficiencyFilterLowUsage = true;
 /** Whether the collapsed "Other models" long-tail group is expanded. Persists across re-renders. */
@@ -5312,27 +4802,11 @@ const EFFICIENCY_COLUMN_DEFS: EfficiencyColumnDef[] = [
 	{ sortKey: 'cacheHitRate', label: 'Cache hit', title: 'Cache-read share of input tokens', sortValue: row => row.rates.cacheHitRate, render: row => formatRatePercent(row.rates.cacheHitRate) },
 ];
 
-function getEfficiencySortIndicator(column: EfficiencySortColumn): string {
-	if (efficiencySortColumn !== column) { return ''; }
-	return efficiencySortDirection === 'desc' ? ' ▼' : ' ▲';
-}
-
-function compareEfficiencyRows(a: EfficiencyRow, b: EfficiencyRow, column: EfficiencyColumnDef): number {
-	const av = column.sortValue(a);
-	const bv = column.sortValue(b);
-	if (av === null && bv === null) { return 0; }
-	if (av === null) { return 1; }
-	if (bv === null) { return -1; }
-	const cmp = typeof av === 'string' || typeof bv === 'string'
-		? String(av).localeCompare(String(bv))
-		: av - bv;
-	return efficiencySortDirection === 'desc' ? -cmp : cmp;
-}
-
+/** Rows by descending local use: the leaderboard's default order and the chart's input. */
 function buildEfficiencyRows(usage: ModelEfficiencyUsage): EfficiencyRow[] {
-	const rows = Object.entries(usage).map(([model, counters]) => ({ model, counters, rates: deriveModelEfficiencyRates(counters) }));
-	const column = EFFICIENCY_COLUMN_DEFS.find(item => item.sortKey === efficiencySortColumn) ?? EFFICIENCY_COLUMN_DEFS[1];
-	return rows.sort((a, b) => compareEfficiencyRows(a, b, column));
+	return Object.entries(usage)
+		.map(([model, counters]) => ({ model, counters, rates: deriveModelEfficiencyRates(counters) }))
+		.sort((a, b) => b.counters.calls - a.counters.calls);
 }
 
 function filterLowUsageRows(rows: EfficiencyRow[], usage: ModelEfficiencyUsage): { rows: EfficiencyRow[]; hiddenNote: string } {
@@ -5476,31 +4950,56 @@ function buildChartControlsHtml(): string {
 	</div>`;
 }
 
-function buildEfficiencyTableRowsHtml(rows: EfficiencyRow[], totalCalls: number): string {
-	return rows.map(row => {
-		const cells = EFFICIENCY_COLUMN_DEFS.map(column => `<td>${column.render(row, totalCalls)}</td>`).join('');
-		return `<tr style="--model-color:${getEfficiencyColor(row.model)}">${cells}</tr>`;
-	}).join('');
+const EFFICIENCY_TABLE_ID = 'model-leaderboard';
+const EFFICIENCY_OTHER_TABLE_ID = 'model-leaderboard-other';
+/** The sort both leaderboard tables last agreed on, as `column:direction`. */
+let efficiencySharedSort = 'calls:desc';
+
+function efficiencyDataColumns(totalCalls: number): DataTableColumn<EfficiencyRow>[] {
+	return EFFICIENCY_COLUMN_DEFS.map((column): DataTableColumn<EfficiencyRow> => ({
+		id: column.sortKey,
+		label: column.label,
+		headerHtml: `<span title="${escapeHtml(column.title)}">${escapeHtml(column.label)}</span>`,
+		align: column.sortKey === 'model' || column.sortKey === 'calls' ? 'left' : 'right',
+		firstSortDirection: column.sortKey === 'model' ? 'asc' : 'desc',
+		className: column.sortKey === 'model' ? 'model-leaderboard-model' : undefined,
+		sortValue: column.sortValue,
+		render: row => ({ html: column.render(row, totalCalls) }),
+	}));
 }
 
-function buildEfficiencyTableHeadersHtml(): string {
-	return EFFICIENCY_COLUMN_DEFS.map(column =>
-		`<th class="sortable" data-eff-sort="${column.sortKey}" title="${column.title}">${column.label}${getEfficiencySortIndicator(column.sortKey)}</th>`
-	).join('');
+/** One leaderboard table; the main and "Other models" tables share their sort order. */
+function renderEfficiencyTable(tableId: string, peerTableId: string, rows: EfficiencyRow[], totalCalls: number): string {
+	return renderDataTable<EfficiencyRow>({
+		tableId,
+		ariaLabel: 'Local Model Leaderboard',
+		rows,
+		columns: efficiencyDataColumns(totalCalls),
+		initialSort: { columnId: 'calls', direction: 'desc' },
+		className: 'model-leaderboard-table',
+		rootClassName: 'model-leaderboard-table-wrap',
+		rowOptions: row => ({ attributes: { style: `--model-color:${getEfficiencyColor(row.model)}` } }),
+		onStateChange: state => {
+			// Paging one table must not reset the other; only a changed sort order is shared.
+			const sortKey = `${state.sortColumn}:${state.sortDirection}`;
+			if (sortKey === efficiencySharedSort) { return; }
+			efficiencySharedSort = sortKey;
+			setDataTableState(peerTableId, { sortColumn: state.sortColumn, sortDirection: state.sortDirection, page: 1 });
+			rerenderDataTable(peerTableId);
+		},
+	});
 }
 
 function buildEfficiencyTableHtml(rows: EfficiencyRow[], totalCalls: number, longTailModels: Set<string>): string {
 	const mainRows = longTailModels.size > 0 ? rows.filter(row => !longTailModels.has(row.model)) : rows;
 	const otherRows = longTailModels.size > 0 ? rows.filter(row => longTailModels.has(row.model)) : [];
-	const headers = buildEfficiencyTableHeadersHtml();
-	const table = `<div class="model-leaderboard-table-wrap"><table class="model-leaderboard-table"><thead><tr>${headers}</tr></thead><tbody>${buildEfficiencyTableRowsHtml(mainRows, totalCalls)}</tbody></table></div>`;
+	const table = renderEfficiencyTable(EFFICIENCY_TABLE_ID, EFFICIENCY_OTHER_TABLE_ID, mainRows, totalCalls);
 	if (otherRows.length === 0) { return table; }
 	const otherCalls = otherRows.reduce((sum, row) => sum + row.counters.calls, 0);
 	const otherShare = totalCalls > 0 ? otherCalls / totalCalls : 0;
-	const otherTable = `<div class="model-leaderboard-table-wrap"><table class="model-leaderboard-table"><thead><tr>${headers}</tr></thead><tbody>${buildEfficiencyTableRowsHtml(otherRows, totalCalls)}</tbody></table></div>`;
 	return `${table}<details class="model-leaderboard-other" id="model-leaderboard-other"${efficiencyOtherModelsOpen ? ' open' : ''}>
 		<summary>Other models (${otherRows.length}, ${formatRatePercent(otherShare)} of turns)</summary>
-		${otherTable}
+		${renderEfficiencyTable(EFFICIENCY_OTHER_TABLE_ID, EFFICIENCY_TABLE_ID, otherRows, totalCalls)}
 	</details>`;
 }
 
@@ -5562,18 +5061,6 @@ function rerenderModelEfficiencyContent(): void {
 	if (content) { setHtml(content, buildModelEfficiencyContentHtml()); }
 }
 
-function handleEfficiencySortClick(th: HTMLElement): void {
-	const column = th.getAttribute('data-eff-sort') as EfficiencySortColumn | null;
-	if (!column) { return; }
-	if (efficiencySortColumn === column) {
-		efficiencySortDirection = efficiencySortDirection === 'desc' ? 'asc' : 'desc';
-	} else {
-		efficiencySortColumn = column;
-		efficiencySortDirection = column === 'model' ? 'asc' : 'desc';
-	}
-	rerenderModelEfficiencyContent();
-}
-
 /**
  * Remembers whether the "Other references" disclosure is open.
  *
@@ -5591,11 +5078,11 @@ function setupContextRefSection(): void {
 	}, true);
 }
 
-/** Wires sortable headers, chart controls, and the low-usage filter. */
+/** Wires chart controls and the low-usage filter; the leaderboard tables sort themselves. */
 function setupModelEfficiencySection(): void {
 	const section = document.getElementById('section-model-efficiency');
 	if (!section) { return; }
-	// The "Other models" <details> is recreated on every re-render (sort, filter toggle, etc.),
+	// The "Other models" <details> is recreated on every re-render (period, filter toggle, etc.),
 	// which would otherwise always snap back to collapsed. `toggle` doesn't bubble, so listen
 	// during the capture phase to catch it regardless of which re-rendered element raises it.
 	section.addEventListener('toggle', (event) => {
@@ -5606,8 +5093,6 @@ function setupModelEfficiencySection(): void {
 	}, true);
 	section.addEventListener('click', (event) => {
 		const target = event.target as HTMLElement;
-		const header = target.closest<HTMLElement>('th[data-eff-sort]');
-		if (header) { handleEfficiencySortClick(header); return; }
 		const metric = target.closest<HTMLButtonElement>('button[data-eff-metric]')?.dataset.effMetric as EfficiencyMetricKey | undefined;
 		if (metric && EFFICIENCY_METRICS.some(item => item.key === metric)) {
 			efficiencyMetric = metric;
@@ -5631,9 +5116,6 @@ function setupModelEfficiencySection(): void {
 
 function buildToolsTabPanelHtml(
 	stats: UsageAnalysisStats,
-	allToolKeys: string[],
-	allMcpToolKeys: string[],
-	allMcpServerKeys: string[],
 	allHighCostModels: string[],
 	allLowCostModels: string[],
 	allMediumCostModels: string[],
@@ -5642,42 +5124,35 @@ function buildToolsTabPanelHtml(
 	return `
 		<div id="tab-panel-tools" class="tab-panel"${activeTab !== 'tools' ? ' style="display:none"' : ''}>
 			<!-- Tool Calls Section -->
-			<div class="section">
+			<div class="section" id="section-tool-usage">
 				<div class="section-title"><span>🔧</span><span>Tool Usage</span></div>
 				<div class="section-subtitle">Functions and tools invoked by Copilot during interactions${hideAutomaticToolCalls ? ' (automatic tool calls hidden — disable "Hide Automatic Tool Calls" in settings to show them)' : ''}</div>
-				<div class="three-column">
-					<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.today.toolCalls.total)}</div>
-						${renderToolsTable(unionFill(stats.today.toolCalls.byTool, allToolKeys), 10, lookupToolName, true)}
-					</div>
-				</div>
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📆 Last 30 Days</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.last30Days.toolCalls.total)}</div>
-							${renderToolsTable(unionFill(stats.last30Days.toolCalls.byTool, allToolKeys), 10, lookupToolName, true)}
-						</div>
-					</div>
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Previous Month</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.month.toolCalls.total)}</div>
-							${renderToolsTable(unionFill(stats.month.toolCalls.byTool, allToolKeys), 10, lookupToolName, true)}
-						</div>
-					</div>
-				</div>
+				${buildToolPeriodTableHtml(
+					{ today: stats.today.toolCalls.byTool, last30Days: stats.last30Days.toolCalls.byTool, lastMonth: stats.lastMonth.toolCalls.byTool },
+					{ today: stats.today.toolCalls.total, last30Days: stats.last30Days.toolCalls.total, lastMonth: stats.lastMonth.toolCalls.total },
+					{
+						tableId: 'tool-usage-periods',
+						ariaLabelKey: 'usage.toolPeriod.ariaToolUsage',
+						limitPerPeriod: 10,
+						nameResolver: lookupToolName,
+						hiddenIds: hideAutomaticToolCalls ? AUTOMATIC_TOOL_SET_WV : undefined,
+						autoIds: AUTOMATIC_TOOL_SET_WV,
+						firstColumnKey: 'usage.toolPeriod.colTool',
+						totalLabelKey: 'usage.toolPeriod.totalToolCalls',
+						emptyKey: 'usage.toolPeriod.emptyTools',
+						emptyHiddenKey: 'usage.toolPeriod.emptyToolsHidden',
+					},
+				)}
 			</div>
 
 			${safeSectionHtml(localize('usage.tab.tools'), () => buildToolExecutionSectionsHtml({ toolCalls: stats.last30Days.toolCalls, mcpTools: stats.last30Days.mcpTools, resolveToolName: lookupToolName, hiddenTools: hideAutomaticToolCalls ? AUTOMATIC_TOOL_SET_WV : undefined }))}
-			${buildMcpToolsSectionHtml(stats, allMcpToolKeys, allMcpServerKeys)}
+			${buildMcpToolsSectionHtml(stats)}
 			${buildCurationSectionHtml(currentCurationAnalysis ?? stats.curationAnalysis)}
 			${buildMemoryFilesSectionHtml(currentMemoryFilesAnalysis ?? stats.memoryFilesAnalysis)}
 			${buildServerMemoriesSectionHtml(currentServerMemoriesAnalysis ?? stats.serverMemoriesAnalysis)}
 			${buildSkillSuggestionsSectionHtml(stats.repeatedTasks ?? null)}
 			<!-- Multi-Model Usage Section -->
-			<div class="section">
+			<div class="section" id="section-multi-model">
 				<div class="section-title"><span>🔀</span><span>Multi-Model Usage</span></div>
 				<div class="section-subtitle">Track model diversity and switching patterns in your conversations</div>
 				<div class="three-column">
@@ -5727,6 +5202,7 @@ function syncRenderLayoutState(stats: UsageAnalysisStats): WorkspaceCustomizatio
 	if (Array.isArray(stats.currentWorkspacePaths)) {
 		currentWorkspacePaths = stats.currentWorkspacePaths;
 	}
+	currentRepeatedTasks = stats.repeatedTasks ?? null;
 	// Persist curation analysis across refreshes — periodic updateStats may omit it
 	if (stats.curationAnalysis) {
 		currentCurationAnalysis = stats.curationAnalysis;
@@ -5766,7 +5242,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	const thinkingEffortHtml = safeSectionHtml('Thinking Effort', () => buildThinkingEffortSectionHtml(stats));
 	const sessionsSummaryHtml = `
 		<!-- Summary Section -->
-		<div class="section">
+		<div class="section" id="section-sessions-summary">
 			<div class="section-title"><span>📈</span><span>Sessions Summary</span></div>
 			<div class="stats-grid">
 				<div class="stat-card"><div class="stat-label">📅 Today Sessions</div><div class="stat-value">${formatNumber(stats.today.sessions)}</div></div>
@@ -5784,9 +5260,6 @@ function renderLayout(stats: UsageAnalysisStats): void {
 		sessionsSummaryHtml,
 		todayTotalRefs,
 		last30DaysTotalRefs,
-		allKeys.allToolKeys,
-		allKeys.allMcpToolKeys,
-		allKeys.allMcpServerKeys,
 		allKeys.allHighCostModels,
 		allKeys.allLowCostModels,
 		allKeys.allMediumCostModels,
@@ -5796,8 +5269,10 @@ function renderLayout(stats: UsageAnalysisStats): void {
 
 	wireNavigationButtons();
 	wireAboutInfoToggle();
+	wireMcpPeriodToggle();
 	wireRepositoryButtons();
 	wireCurationButtons();
+	wireSkillSuggestions(skillSuggestionsWiring);
 	renderRepositoryHygienePanels();
 	// Before setupTabs(): its first-visit replay marks new insights as seen when the render opens
 	// on the Insights tab (a deep link can), and that reads currentInsights. Assigned after, the
@@ -5835,7 +5310,7 @@ function wireAboutInfoToggle(): void {
 		body.style.display = aboutCollapsed ? 'none' : '';
 		toggle.setAttribute('aria-expanded', String(!aboutCollapsed));
 		if (chevron) { chevron.textContent = aboutCollapsed ? '▸' : '▾'; }
-		vscode.setState({ ...(vscode.getState() ?? {}), aboutCollapsed });
+		usageState.patch({ aboutCollapsed });
 	};
 	toggle.addEventListener('click', applyToggle);
 	toggle.addEventListener('keydown', (event: KeyboardEvent) => {
@@ -5844,6 +5319,26 @@ function wireAboutInfoToggle(): void {
 			applyToggle();
 		}
 	});
+}
+
+/** Wires the MCP Tools By Server / By Tool toggle: client-side only, selection persisted via webview state. */
+function wireMcpPeriodToggle(): void {
+	const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button[data-mcp-view]'));
+	for (const button of buttons) {
+		button.addEventListener('click', () => {
+			const view = button.dataset.mcpView;
+			if (!isMcpPeriodView(view)) { return; }
+			mcpPeriodView = view;
+			for (const other of buttons) {
+				const active = other.dataset.mcpView === view;
+				other.classList.toggle('active', active);
+				other.setAttribute('aria-pressed', String(active));
+			}
+			document.getElementById('mcp-period-server')?.toggleAttribute('hidden', view !== 'server');
+			document.getElementById('mcp-period-tool')?.toggleAttribute('hidden', view !== 'tool');
+			usageState.patch({ mcpPeriodView: view });
+		});
+	}
 }
 
 /** Wires up top-level navigation toolbar buttons (refresh, details, chart, etc.). */
@@ -5948,6 +5443,13 @@ function wireRepositoryButtons(): void {
 	// Delegated on the persistent container (its innerHTML is replaced wholesale on every
 	// `updateReposPrPanel` re-render) so this keeps working across refreshes without rewiring.
 	wireCcrActivityButtons('repos-pr-content', (message) => vscode.postMessage(message));
+	// `toggle` does not bubble, so listen in the capture phase.
+	document.getElementById('repos-pr-content')?.addEventListener('toggle', event => {
+		const details = event.target instanceof HTMLDetailsElement ? event.target : null;
+		const key = details?.getAttribute('data-repo-pr-details');
+		if (!details || !key) { return; }
+		if (details.open) { openRepoPrDetails.add(key); } else { openRepoPrDetails.delete(key); }
+	}, true);
 }
 
 /** Wires up copy-to-clipboard buttons (class `cf-copy`). */
@@ -6004,7 +5506,7 @@ function handleUpdateStats(message: any): void {
 		// CLI-backed hosts include all buckets; VS Code omits them and keeps using lazy loading.
 		replaceRecentSessionsCache(sanitized.recentSessions);
 		renderLayout(sanitized);
-		setupSessionsTableSort();
+		setupSessionsTableHandlers();
 		renderRepositoryHygienePanels();
 	} else {
 		traceCurationOnce('update-invalid-sanitized', 'handleUpdateStats.sanitizeReturnedNull');
@@ -6033,7 +5535,7 @@ function handleUpdateAccountBudgets(message: { accountBudgets?: unknown; copilot
 	if (balanceChanged || wasShown !== billingSectionHasContent(lastRenderedStats)) {
 		// The section appeared, disappeared or changed its balance card: re-render it, not just the list.
 		renderLayout(lastRenderedStats);
-		setupSessionsTableSort();
+		setupSessionsTableHandlers();
 	} else if (container) {
 		setHtml(container, buildAccountBudgetsHtml(accounts, !!lastRenderedStats.copilotApiBalance));
 	}
@@ -6058,7 +5560,7 @@ function handleHighlightUnknownTools(): void {
 	activateUsageTab('tools');
 	const el = document.getElementById('unknown-mcp-tools-section');
 	if (el) {
-		el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		el.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'center' });
 		flashAnchorHighlight(el);
 	}
 }
@@ -6168,6 +5670,10 @@ function handleExtensionMessage(message: any): void {
 			handleUpdateAccountBudgets(message); break;
 		case 'switchTab':
 			handleSwitchTab(message); break;
+		case 'cancelPendingNavigation':
+			// The user opened Usage Analysis itself; a deep link still waiting for its
+			// section must not scroll them away from it later.
+			clearFocusedInsightAnchor(); break;
 		default:
 			handleWorktreeMessage(message); break;
 	}
@@ -6189,6 +5695,7 @@ function applySessionsTabPreset(preset: any): void {
 	sessionFilterVendors.clear();
 	sessionFilterModels.clear();
 	sessionFilterHydraFusionOnly = false;
+	setDataTableState(SESSIONS_TABLE_ID, { page: 1 });
 	enableSessionColumn('contextFill');
 	if (preset.lookback && PERIOD_LABELS[preset.lookback as Period]) {
 		sessionsLookback = preset.lookback as SessionsLookback;
@@ -6233,7 +5740,11 @@ function handleSwitchTab(message: any): void {
 	// its loading state the tab bar doesn't exist, so btn.click() below silently no-ops and
 	// the later renderLayout would land on the default tab — swallowing e.g. the worktree
 	// notification's "Show Me" action. With activeTab set, the eventual render honors it.
+	// A newer host navigation supersedes a deferred scroll still queued for an older one,
+	// even when this one's own section has not rendered yet.
+	cancelPendingAnchorScroll();
 	pendingTabAnchor = typeof message.anchor === 'string' && message.anchor ? message.anchor : null;
+	pendingTabAnchorExpiresAt = Date.now() + PENDING_ANCHOR_TTL_MS;
 	// activateUsageTab sets activeTab even when it finds no panel, so a switch that arrives
 	// during the loading state is still honored by the render that follows.
 	activateUsageTab(tab);
@@ -6254,19 +5765,26 @@ function handleSwitchTab(message: any): void {
 
 function scrollToPendingTabAnchor(): void {
 	if (!pendingTabAnchor) { return; }
+	if (Date.now() > pendingTabAnchorExpiresAt) {
+		// The section never rendered in time. Landing on it minutes later, on some
+		// unrelated stats refresh, would yank the user away from whatever they are reading.
+		pendingTabAnchor = null;
+		return;
+	}
 	const anchor = document.getElementById(pendingTabAnchor);
 	if (anchor) {
 		pendingTabAnchor = null;
 		lastAnchorScrollTarget = anchor;
+		// Only one deferred scroll may be in flight: a newer target replaces an older one.
+		cancelPendingAnchorScroll();
 		const timer = setTimeout(() => {
-			if (pendingInsightScrollTimer === timer) { pendingInsightScrollTimer = null; }
-			anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+			if (pendingAnchorScrollTimer === timer) { pendingAnchorScrollTimer = null; }
+			anchor.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'start' });
 			flashAnchorHighlight(anchor);
 		}, 50);
-		// Only an insight scroll is tracked, and so only it is cancellable: navigating away inside
-		// the defer would otherwise still scroll and flash the card the user just left behind.
-		// Section anchors keep their existing fire-and-forget behaviour.
-		if (isInsightCardAnchor(anchor.id)) { pendingInsightScrollTimer = timer; }
+		// Tracked for every anchor, so navigating away inside the defer — or the host cancelling
+		// with cancelPendingNavigation — stops it scrolling and flashing what the user left behind.
+		pendingAnchorScrollTimer = timer;
 	}
 }
 
@@ -6296,20 +5814,27 @@ function flashAnchorHighlight(element: HTMLElement): void {
 }
 
 /**
- * Forgets a pending insight deep link, so nothing later scrolls the user back to that card.
+ * Forgets any pending deep link — an insight card or a section — so nothing later scrolls the
+ * user away from where they chose to look. Called on the user's own navigation (tab and group
+ * clicks) and when the host cancels (`cancelPendingNavigation`); `handleSwitchTab` never calls
+ * it, so the host's own navigation keeps the anchor it just requested.
  *
- * Both halves have to go. A link whose card did not exist yet is still sitting in
+ * Both halves have to go. A link whose target did not exist yet is still sitting in
  * `pendingTabAnchor`, which `renderLayout` consumes without consulting the active tab — so
- * leaving it set would aim a later render at a card on a tab the user has left. Static section
- * anchors are left alone, keeping the behaviour change confined to insight deep links: the other
- * `switchTab` callers target a section on the tab they are navigating to.
+ * leaving it set would aim a later render at a section or card on a tab the user has left
+ * (a conditional section such as Thinking Effort can appear on a much later stats load).
  */
 function clearFocusedInsightAnchor(): void {
 	focusedInsightAnchor = null;
-	if (pendingTabAnchor && isInsightCardAnchor(pendingTabAnchor)) { pendingTabAnchor = null; }
-	if (pendingInsightScrollTimer !== null) {
-		clearTimeout(pendingInsightScrollTimer);
-		pendingInsightScrollTimer = null;
+	pendingTabAnchor = null;
+	cancelPendingAnchorScroll();
+}
+
+/** Stops a deferred anchor scroll that has not fired yet, if any. */
+function cancelPendingAnchorScroll(): void {
+	if (pendingAnchorScrollTimer !== null) {
+		clearTimeout(pendingAnchorScrollTimer);
+		pendingAnchorScrollTimer = null;
 	}
 }
 
@@ -6681,62 +6206,30 @@ function computeWorkspaceHealthGrouping(workspaces: WorkspaceCustomizationRow[])
 }
 
 function renderRepoListPane(listPane: HTMLElement, visibleWorkspaces: WorkspaceCustomizationRow[], hasSelectedRepository: boolean, otherWorkspaces: WorkspaceCustomizationRow[] = [], canCollapse: boolean = false): void {
-	const colStyles = {
-		sessions: 'width: 60px; text-align: right; flex-shrink: 0; font-size: 11px; color: var(--text-primary);',
-		interactions: 'width: 80px; text-align: right; flex-shrink: 0; font-size: 11px; color: var(--text-primary);',
-		score: 'width: 60px; text-align: right; flex-shrink: 0; font-size: 11px; color: var(--text-primary);',
-	};
-	const headerHtml = `
-		<div style="padding: 4px 12px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border-color); background: var(--bg-secondary);">
-			<div style="flex: 1; min-width: 0; font-size: 10px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Repository</div>
-			<div style="${colStyles.sessions} font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Sessions</div>
-			<div style="${colStyles.interactions} font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Interactions</div>
-			<div style="${colStyles.score} font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Score</div>
-			<div style="width: 110px; flex-shrink: 0;"></div>
-		</div>
-	`;
-	setHtml(listPane, headerHtml + visibleWorkspaces.map((ws, idx) => {
+	const rows: RepoHygieneListRow[] = visibleWorkspaces.map(ws => {
 		const record = repoAnalysisState.get(ws.workspacePath);
 		const inFlight = repoAnalysisInFlight.has(ws.workspacePath);
 		const hasResult = !!record?.data?.summary;
-		const scoreLabel = getScoreLabel(ws.workspacePath);
-		const buttonLabel = inFlight ? 'Analyzing…' : hasResult ? 'Details' : 'Analyze';
-		const buttonAction = hasResult && !inFlight ? 'details' : 'analyze';
-		const isCurrentSelection = selectedRepoPath === ws.workspacePath && hasSelectedRepository;
-		const buttonDisabled = inFlight || isCurrentSelection;
-		const buttonAppearance = inFlight ? ' appearance="secondary"' : '';
-		const sessions = Number(ws.sessionCount) || 0;
-		const interactions = Number(ws.interactionCount) || 0;
-		return `
-			<div class="repo-item" style="padding: 6px 12px; border-bottom: ${idx < visibleWorkspaces.length - 1 ? '1px solid var(--border-subtle)' : 'none'}; display: flex; align-items: center; gap: 10px;">
-				<div style="flex: 1; min-width: 0;">
-					<div class="repo-name" style="font-size: 12px; font-weight: 600; color: var(--text-primary); font-family: 'Courier New', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(ws.workspacePath)}">
-						${escapeHtml(ws.workspaceName)}
-					</div>
-				</div>
-				<div style="${colStyles.sessions}">${sessions}</div>
-				<div style="${colStyles.interactions}">${interactions}</div>
-				<div style="${colStyles.score}">${escapeHtml(scoreLabel)}</div>
-				<vscode-button class="btn-repo-action" data-action="${buttonAction}" data-workspace-path="${escapeHtml(ws.workspacePath)}" ${buttonDisabled ? 'disabled="true"' : ''}${buttonAppearance} style="width: 110px; flex-shrink: 0;">
-					${buttonLabel}
-				</vscode-button>
-			</div>
-		`;
-	}).join('') + (otherWorkspaces.length > 0 ? `
-		<div class="repo-item repo-item-other" style="padding: 6px 12px; border-top: 1px solid var(--border-color); display: flex; align-items: center; gap: 10px; background: var(--bg-secondary);">
-			<div style="flex: 1; min-width: 0; font-size: 12px; font-style: italic; color: var(--text-secondary);">
-				Other (${otherWorkspaces.length} repositor${otherWorkspaces.length === 1 ? 'y' : 'ies'} with low activity)
-			</div>
-			<div style="${colStyles.sessions}">${otherWorkspaces.reduce((sum, ws) => sum + (Number(ws.sessionCount) || 0), 0)}</div>
-			<div style="${colStyles.interactions}">${otherWorkspaces.reduce((sum, ws) => sum + (Number(ws.interactionCount) || 0), 0)}</div>
-			<div style="${colStyles.score}">—</div>
-			<vscode-button id="btn-show-other-workspaces" appearance="secondary" style="width: 110px; flex-shrink: 0;">Show all</vscode-button>
-		</div>
-	` : showAllWorkspacesInHealth && !hasSelectedRepository && canCollapse ? `
-		<div class="repo-item repo-item-other" style="padding: 6px 12px; border-top: 1px solid var(--border-color); display: flex; align-items: center; justify-content: flex-end;">
-			<vscode-button id="btn-collapse-other-workspaces" appearance="secondary" style="width: 110px; flex-shrink: 0;">Show less</vscode-button>
-		</div>
-	` : ''));
+		return {
+			workspaceName: ws.workspaceName,
+			workspacePath: ws.workspacePath,
+			sessions: Number(ws.sessionCount) || 0,
+			interactions: Number(ws.interactionCount) || 0,
+			scoreLabel: getScoreLabel(ws.workspacePath),
+			action: hasResult && !inFlight ? 'details' : 'analyze',
+			actionLabel: inFlight ? 'Analyzing…' : hasResult ? 'Details' : 'Analyze',
+			actionDisabled: inFlight || (selectedRepoPath === ws.workspacePath && hasSelectedRepository),
+			actionSecondary: inFlight,
+		};
+	});
+	const other = otherWorkspaces.length > 0
+		? {
+			count: otherWorkspaces.length,
+			sessions: otherWorkspaces.reduce((sum, ws) => sum + (Number(ws.sessionCount) || 0), 0),
+			interactions: otherWorkspaces.reduce((sum, ws) => sum + (Number(ws.interactionCount) || 0), 0),
+		}
+		: undefined;
+	setHtml(listPane, renderRepoHygieneListTable({ rows, other, showCollapse: !other && showAllWorkspacesInHealth && !hasSelectedRepository && canCollapse }));
 }
 
 function renderRepoDetailSuccess(detailsPane: HTMLElement, record: any, workspaceName: string): void {
@@ -6944,7 +6437,7 @@ async function bootstrap(): Promise<void> {
 		initialData.correctionReport = sanitizeCorrectionReport(initialData.correctionReport);
 	}
 	renderLayout(initialData);
-	setupSessionsTableSort();
+	setupSessionsTableHandlers();
 
 	// Event delegation for suppress-tool buttons (rendered dynamically in the tools section)
 	document.addEventListener('click', (event) => {

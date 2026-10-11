@@ -7,29 +7,34 @@ import * as path from 'path';
 import * as os from 'os';
 import chalk from 'chalk';
 import { SessionDiscovery } from '../../src/sessionDiscovery';
-import { buildAdapterRegistry, createDataAccessInstances } from '../../src/adapters';
-import type { IEcosystemAdapter } from '../../src/ecosystemAdapter';
-import { isMcpTool, extractMcpServerName, resolveDebugLogCandidatePaths, resolveExactWorkspacePath } from '../../src/workspaceHelpers';
+import { findWorkspacePathForDiscoveredPath, type IEcosystemAdapter } from '../../src/ecosystemAdapter';
+import { findRepositoryRemoteForFolder, resolveExactWorkspacePath } from '../../src/workspaceHelpers';
 import { resolveFileUri } from '../../src/workspacePathResolver';
-import { parseSessionFileContent } from '../../src/sessionParser';
-import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, extractAllTokensFromDebugLog } from '../../src/tokenEstimation';
-import { extractCopilotCliSessionId, getCopilotCliExactUsage } from '../../src/copilotCliOtel';
-import { extractDailyFractions } from '../../src/dailyAttribution';
+import { calculateEstimatedCost } from '../../src/tokenEstimation';
 import { toLocalDayKey } from '../../src/utils/dayKeys';
-import { isJetBrainsSessionPath } from '../../src/adapters/adapterPredicates';
-import { parseJetBrainsPartition } from '../../src/jetbrains';
-import type { DetailedStats, ModelUsage, UsageAnalysisStats, WorkspaceCustomizationMatrix, TodaySessionSummary } from '../../src/types';
-import { analyzeSessionUsage, mergeUsageAnalysis, getModelUsageFromSession } from '../../src/usageAnalysis';
-import { addModelUsage, scaleModelUsage, preserveAutoRouting, reconcileModelUsageToActualTokens } from '../../src/statsHelpers';
+import type { DetailedStats, UsageAnalysisStats, WorkspaceCustomizationMatrix, WorkspaceCustomizationRow, TodaySessionSummary } from '../../src/types';
+import { analyzeSessionUsage, mergeUsageAnalysis } from '../../src/usageAnalysis';
+import { addModelUsage, scaleModelUsage } from '../../src/statsHelpers';
 import { calculateEnvironmentalImpact } from '../../src/environmentalImpact';
-import { withErrorRecovery } from '../../src/utils/errors';
+import { withErrorRecovery, withErrorRecoverySync } from '../../src/utils/errors';
 import { buildRecentSessionBuckets, type RecentSessionBucketItem } from '../../src/recentSessions';
-import * as vscodeStub from './vscode-stub';
+import { groupWorkspaces, groupFolders, detectArtefactWorkspaceNames, type WorkspaceGroupingProbes, type WorkspaceUsageEntry } from '../../src/workspaceGrouping';
+import { prefetchWorkspaceGroupingProbes } from '../../src/workspaceGroupingProbes';
+import { getTimeWindowStartDate } from '../../src/timeWindows';
+import { buildRepeatedTaskReport, type RepeatedTaskSessionSource } from '../../src/repeatedTasks';
 import { loadCache, saveCache, disableCache, getCached, setCached, getCacheStats } from './cliCache';
+import {
+	getEcosystems,
+	modelPricing,
+	tokenEstimators,
+	statSessionFile,
+	getSessionBackingPath,
+	processSessionFile as processSessionFileWith,
+	type SessionDataCache,
+} from './sessionProcessing';
+export { readDebugLogTokensForSession, getSessionBackingPath } from './sessionProcessing';
 
 // Import JSON data files
-import tokenEstimatorsData from '../../src/tokenEstimators.json';
-import modelPricingData from '../../src/modelPricing.json';
 import toolNamesData from '../../src/toolNames.json';
 
 // Pure analysis helpers from analysis.ts
@@ -38,7 +43,6 @@ import {
 	type DailyEntry,
 	type PeriodStats,
 	effectiveTokens,
-	getEditorSourceFromPath,
 	runWithConcurrency,
 	createEmptyPeriodStats,
 	aggregateIntoPeriod,
@@ -50,8 +54,7 @@ import {
 export type { SessionData, DailyEntry } from './analysis';
 export { effectiveTokens, buildChartPayload, fmt, formatTokens } from './analysis';
 
-const tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
-const modelPricing = modelPricingData.pricing as { [key: string]: any };
+const cliSessionCache: SessionDataCache = { get: getCached, set: setCached };
 const toolNameMap = toolNamesData as { [key: string]: string };
 
 /** Logging functions for the CLI context */
@@ -78,21 +81,6 @@ async function readJsonFile<T>(filePath: string): Promise<T | null> {
 	}
 }
 
-/** Synchronous lazy-initialized ecosystem registry — created once on first use. */
-let _ecosystems: IEcosystemAdapter[] | null = null;
-
-/** Returns the shared ecosystem adapter registry, creating it on first call. */
-function getEcosystems(): IEcosystemAdapter[] {
-	if (_ecosystems) { return _ecosystems; }
-	const fakeUri = vscodeStub.Uri.file(__dirname);
-	_ecosystems = buildAdapterRegistry({
-		...createDataAccessInstances(fakeUri as any),
-		estimateTokens: (t, m) => estimateTokensFromText(t, m ?? 'gpt-4', tokenEstimators),
-		isMcpTool,
-		extractMcpServerName,
-	});
-	return _ecosystems;
-}
 /** Create session discovery instance for CLI */
 function createSessionDiscovery(): SessionDiscovery {
 	return new SessionDiscovery({ log, warn, error, ecosystems: getEcosystems() });
@@ -104,84 +92,185 @@ export async function discoverSessionFiles(): Promise<string[]> {
 	return discovery.getCopilotSessionFiles();
 }
 
+/** Instruction files that satisfy the CLI's "has customization" check (case-insensitive). */
+/** The customization type the CLI's instructions-file check reports (same id as the extension's). */
+const CLI_INSTRUCTIONS_TYPE = { id: 'instructions', icon: '📋', label: 'Instructions' };
+
+const INSTRUCTION_PATHS = ['.github/copilot-instructions.md', 'AGENTS.md', 'CLAUDE.md', '.claude/CLAUDE.md'];
+
+/** Workspace folder a session belongs to, or undefined when it cannot be resolved. */
+/**
+ * Interactions of a session that counts towards workspace usage, or 0 when it does not: the
+ * extension only counts sessions with at least one interaction in its last-30-days window, so
+ * old or empty sessions must not add CLI workspaces, remotes or session counts either.
+ */
+async function recentSessionInteractions(activity: SessionActivityLookup, cutoff: Date): Promise<number> {
+	try {
+		const own = await activity.lastActivity();
+		const isVirtual = getSessionBackingPath(activity.file) !== activity.file;
+		const stats = await statSessionFile(activity.file);
+		if (!sessionActiveSince(stats.mtime, own, cutoff, isVirtual)) { return 0; }
+		const data = await processSessionFile(activity.file);
+		if (!data) { return 0; }
+		if (isVirtual) { return sessionActiveSince(data.lastModified, own, cutoff, true) ? data.interactions : 0; }
+		// A regular file is placed by its last day of real activity, like the extension: the owning
+		// adapter's recorded last interaction (e.g. Pi, whose daily split is otherwise synthesised
+		// from the mtime), else its daily activity. A recently copied or touched old log does not count.
+		const adapterLastInteraction = (await activity.meta())?.lastInteraction;
+		return sessionLastActivityDay(data.dailyFractions, data.lastModified, adapterLastInteraction) >= toLocalDayKey(cutoff) ? data.interactions : 0;
+	} catch {
+		return 0;
+	}
+}
+
+/**
+ * The latest day a session had activity on: the adapter's recorded last interaction when it is a
+ * valid timestamp, else its last daily-fraction day, else its file mtime's day.
+ */
+export function sessionLastActivityDay(dailyFractions: Record<string, number> | undefined, fallback: Date, adapterLastInteraction?: string | null): string {
+	const recorded = adapterLastInteraction ? new Date(adapterLastInteraction) : undefined;
+	if (recorded && !Number.isNaN(recorded.getTime())) { return toLocalDayKey(recorded); }
+	const days = Object.keys(dailyFractions ?? {}).sort();
+	return days.length > 0 ? days[days.length - 1] : toLocalDayKey(fallback);
+}
+
+/**
+ * Whether a session's own activity is on or after `cutoff`. A DB-backed (virtual) session
+ * shares its database's mtime, which moves whenever any session in it changes, so only its own
+ * last activity from the adapter counts — and a virtual session whose activity is unknown does
+ * not qualify, rather than borrowing the database mtime (Cursor, for one, may report none).
+ * Regular files use their own mtime. Unlike `isActiveSince()`, a recent database mtime alone
+ * never admits a session, or every historical session in an active database would count.
+ */
+export function sessionActiveSince(fileMtime: Date, ownLastActivity: Date | null, cutoff: Date, isVirtual = false): boolean {
+	if (ownLastActivity) { return ownLastActivity >= cutoff; }
+	return !isVirtual && fileMtime >= cutoff;
+}
+
+/**
+ * A session's workspace folder and git remote. The owning adapter's metadata comes first
+ * (Copilot CLI, OpenCode, Crush and the other adapter-backed editors record both); the
+ * format-specific fallbacks below cover Claude Code JSONL and VS Code chatSessions files.
+ */
+export async function resolveSessionWorkspace(activity: SessionActivityLookup, claudeBasePath: string): Promise<{ path: string; repository?: string } | undefined> {
+	const meta = await activity.meta();
+	// The adapter's own workspace first; then Copilot CLI events.jsonl, discovered by its adapter
+	// but not handled by it (so getMeta() knows nothing), whose adjacent workspace.yaml the adapter
+	// still reads through this hook; then the Claude Code JSONL / VS Code chatSessions fallbacks.
+	const workspacePath = meta?.workspacePath
+		?? await findWorkspacePathForDiscoveredPath(getEcosystems(), activity.file)
+		?? await resolveSessionWorkspacePath(activity.file, claudeBasePath);
+	if (!workspacePath) { return undefined; }
+	// The adapter's recorded remote, else the workspace folder's own repository (walking up for a
+	// sub-folder workspace) — the same shared rule as the extension's analysis, for adapter-backed
+	// and VS Code sessions alike; never a referenced file, which can live in another repository.
+	const repository = meta?.repository ?? await withErrorRecovery(
+		() => findRepositoryRemoteForFolder(workspacePath),
+		undefined,
+		`buildCustomizationMatrix repository(${workspacePath})`
+	);
+	return { path: workspacePath, ...(repository ? { repository } : {}) };
+}
+
+/** The `cwd` recorded in the first lines of a Claude Code session JSONL. */
+async function readClaudeSessionCwd(sessionFile: string): Promise<string | undefined> {
+	const content = await withErrorRecovery(
+		() => fs.promises.readFile(sessionFile, 'utf-8'),
+		null,
+		`buildCustomizationMatrix readFile(${sessionFile})`
+	);
+	for (const line of (content ?? '').split('\n').slice(0, 30)) {
+		if (!line.trim()) { continue; }
+		try {
+			const event = JSON.parse(line);
+			if (event.cwd && typeof event.cwd === 'string') { return event.cwd; }
+		} catch { /* skip malformed lines */ }
+	}
+	return undefined;
+}
+
+async function resolveSessionWorkspacePath(sessionFile: string, claudeBasePath: string): Promise<string | undefined> {
+	// Claude Code session: ~/.claude/projects/<hash>/<uuid>.jsonl
+	if (sessionFile.startsWith(claudeBasePath + path.sep) || sessionFile.startsWith(claudeBasePath + '/')) {
+		return readClaudeSessionCwd(sessionFile);
+	}
+
+	// VS Code session: .../workspaceStorage/<hash>/chatSessions/<file>
+	const chatSessionsDir = path.dirname(sessionFile);
+	if (path.basename(chatSessionsDir) !== 'chatSessions') { return undefined; }
+	const workspaceJson = await readJsonFile<{ folder?: string }>(path.join(path.dirname(chatSessionsDir), 'workspace.json'));
+	const folderUri = workspaceJson?.folder;
+	if (!folderUri || !folderUri.startsWith('file://')) { return undefined; }
+	return resolveFileUri(folderUri) || undefined;
+}
+
 /**
  * Builds a WorkspaceCustomizationMatrix from session file paths.
  *
- * - For VS Code sessions: derives workspace folder from workspaceStorage/<hash>/workspace.json,
- *   then checks for AGENTS.md, CLAUDE.md, or .github/copilot-instructions.md.
+ * - For VS Code sessions: derives workspace folder from workspaceStorage/<hash>/workspace.json.
  * - For Claude Code sessions (~/.claude/projects/<hash>/): reads the JSONL to extract the
- *   `cwd` workspace path, then checks for CLAUDE.md there.
+ *   `cwd` workspace path.
+ *
+ * Folders are then grouped with the shared `groupWorkspaces()` (src/workspaceGrouping.ts) — the
+ * same rules the VS Code extension uses — so worktrees and clones of one repository count once.
+ * A group has an issue when none of its folders has AGENTS.md, CLAUDE.md, or
+ * .github/copilot-instructions.md.
  */
-export async function buildCustomizationMatrix(sessionFiles: string[]): Promise<WorkspaceCustomizationMatrix | undefined> {
-	const workspacePaths = new Set<string>();
+export async function buildCustomizationMatrix(
+	sessionFiles: string[],
+	probes?: WorkspaceGroupingProbes,
+	now: Date = new Date(),
+): Promise<WorkspaceCustomizationMatrix | undefined> {
 	const claudeBasePath = path.join(os.homedir(), '.claude', 'projects');
-
+	// The extension's last-30-days window (30 calendar dates including today), from the shared helper.
+	const cutoff = getTimeWindowStartDate('last30', now)!;
+	// One entry per session; the grouping sums sessions of the same folder.
+	const entries: WorkspaceUsageEntry[] = [];
 	for (const sessionFile of sessionFiles) {
-		// Claude Code session: ~/.claude/projects/<hash>/<uuid>.jsonl
-		if (sessionFile.startsWith(claudeBasePath + path.sep) || sessionFile.startsWith(claudeBasePath + '/')) {
-			const content = await withErrorRecovery(
-				() => fs.promises.readFile(sessionFile, 'utf-8'),
-				null,
-				`buildCustomizationMatrix readFile(${sessionFile})`
-			);
-			if (content !== null) {
-				const lines = content.split('\n').slice(0, 30);
-				for (const line of lines) {
-					if (!line.trim()) { continue; }
-					try {
-						const event = JSON.parse(line);
-						if (event.cwd && typeof event.cwd === 'string') {
-							workspacePaths.add(event.cwd);
-							break;
-						}
-					} catch { /* skip malformed lines */ }
-				}
-			}
-			continue;
-		}
-
-		// VS Code session: .../workspaceStorage/<hash>/chatSessions/<file>
-		const chatSessionsDir = path.dirname(sessionFile);
-		if (path.basename(chatSessionsDir) !== 'chatSessions') { continue; }
-		const hashDir = path.dirname(chatSessionsDir);
-		const workspaceJsonPath = path.join(hashDir, 'workspace.json');
-
-		const workspaceJson = await readJsonFile<{ folder?: string }>(workspaceJsonPath);
-		if (!workspaceJson) { continue; }
-		const folderUri: string | undefined = workspaceJson.folder;
-		if (!folderUri || !folderUri.startsWith('file://')) { continue; }
-
-		const folderPath = resolveFileUri(folderUri);
-		if (folderPath) { workspacePaths.add(folderPath); }
+		// One memoized adapter lookup per session, shared by the activity check and the metadata read.
+		const activity = createSessionActivityLookup(sessionFile);
+		const interactions = await recentSessionInteractions(activity, cutoff);
+		if (interactions === 0) { continue; }
+		const workspace = await resolveSessionWorkspace(activity, claudeBasePath);
+		if (!workspace) { continue; }
+		// Normalised like the extension's trackWorkspaceForSession(), so both feed the grouping the same keys.
+		entries.push({ path: path.normalize(workspace.path), sessionCount: 1, interactionCount: interactions, repository: workspace.repository });
 	}
+	if (entries.length === 0) { return undefined; }
 
-	if (workspacePaths.size === 0) { return undefined; }
+	const groups = groupWorkspaces(entries, probes ?? await prefetchWorkspaceGroupingProbes(entries));
+	const hasInstructions = (wsPath: string): boolean => withErrorRecoverySync(
+		// Same case-insensitive resolution as the shared customization scanner, so the CLI
+		// accepts every spelling the extension does (including on case-sensitive filesystems).
+		() => INSTRUCTION_PATHS.some(p => resolveExactWorkspacePath(wsPath, p, true) !== undefined),
+		false,
+		`buildCustomizationMatrix workspace check(${wsPath})`
+	);
 
 	let workspacesWithIssues = 0;
-	for (const wsPath of workspacePaths) {
-		const hasIssues = await withErrorRecovery(
-			async () => {
-				// Same case-insensitive resolution as the shared customization scanner, so the CLI
-				// accepts every spelling the extension does (including on case-sensitive filesystems).
-				const instructionPaths = [
-					'.github/copilot-instructions.md',
-					'AGENTS.md',
-					'CLAUDE.md',
-					'.claude/CLAUDE.md',
-				];
-				return !instructionPaths.some(p => resolveExactWorkspacePath(wsPath, p, true) !== undefined);
-			},
-			true,
-			`buildCustomizationMatrix workspace check(${wsPath})`
-		);
-		if (hasIssues) { workspacesWithIssues++; }
-	}
+	const workspaces: WorkspaceCustomizationRow[] = groups.map(group => {
+		const folders = groupFolders(group);
+		const customized = folders.some(hasInstructions);
+		if (!customized) { workspacesWithIssues++; }
+		return {
+			workspacePath: group.canonicalPath,
+			workspaceName: group.displayName,
+			sessionCount: group.sessionCount,
+			interactionCount: group.interactionCount,
+			// The one type the CLI checks, from the same group-wide test as workspacesWithIssues, so
+			// the shared scorer never mistakes a customized repository for a missing one.
+			typeStatuses: { [CLI_INSTRUCTIONS_TYPE.id]: customized ? '✅' : '❌' },
+			...(folders.length > 1 ? { memberPaths: folders } : {}),
+		};
+	});
+	const ungrouped = detectArtefactWorkspaceNames(groups).map(a => a.displayName);
 
 	return {
-		customizationTypes: [],
-		workspaces: [],
-		totalWorkspaces: workspacePaths.size,
+		customizationTypes: [CLI_INSTRUCTIONS_TYPE],
+		workspaces,
+		totalWorkspaces: workspaces.length,
 		workspacesWithIssues,
+		...(ungrouped.length > 0 ? { ungroupedWorkspaceNames: ungrouped } : {}),
 	};
 }
 
@@ -189,30 +278,6 @@ export async function buildCustomizationMatrix(sessionFiles: string[]): Promise<
 export function getDiagnosticPaths(): { path: string; exists: boolean; source: string }[] {
 	const discovery = createSessionDiscovery();
 	return discovery.getDiagnosticCandidatePaths();
-}
-
-/**
- * Token estimation wrapper that uses the shared tokenEstimators data.
- */
-function estimateTokens(text: string, model?: string): number {
-	return estimateTokensFromText(text, model || 'gpt-4', tokenEstimators);
-}
-
-/**
- * Model resolver wrapper.
- */
-function resolveModel(request: any): string {
-	return getModelFromRequest(request, modelPricing);
-}
-
-/**
- * The real file behind a discovered session path. DB-backed editors (OpenCode,
- * Crush, ...) report virtual paths like `opencode.db#<id>`, which do not exist
- * on disk; ordinary session files are returned unchanged.
- */
-export function getSessionBackingPath(filePath: string): string {
-	const eco = getEcosystems().find(e => e.handles(filePath));
-	return eco ? eco.getBackingPath(filePath) : filePath;
 }
 
 /** What an adapter knows about one session beyond its token counts. */
@@ -249,53 +314,6 @@ export async function getSessionLastActivity(filePath: string): Promise<Date | n
 }
 
 /**
- * Stat a session file, handling DB virtual paths (OpenCode and Crush).
- * Virtual DB paths are resolved to the actual DB file.
- */
-async function statSessionFile(filePath: string): Promise<fs.Stats> {
-	const eco = getEcosystems().find(e => e.handles(filePath));
-	if (eco) { return eco.stat(filePath); }
-	return fs.promises.stat(filePath);
-}
-
-/**
- * Read token counts from a Copilot Chat debug log file for a given session file.
- *
- * Agent-mode sessions make multiple LLM API calls per user turn. Only the last
- * call's tokens are stored in the chat session file; the debug log records every
- * call. Using debug log data gives the true session total, matching VS Code's behavior.
- *
- * Returns null if no debug log exists or if no llm_request events are found.
- */
-export async function readDebugLogTokensForSession(sessionFilePath: string, verbose = false): Promise<{
-	inputTokens: number; outputTokens: number; cachedTokens: number;
-	modelBreakdown: Record<string, { inputTokens: number; outputTokens: number; cachedTokens: number }>;
-} | null> {
-	// Shared with the VS Code extension: returns undefined unless the file is UUID-named
-	// inside workspaceStorage/<hash>, and keeps the platform's native separators.
-	const candidatePaths = resolveDebugLogCandidatePaths(sessionFilePath);
-	if (!candidatePaths) { return null; }
-	const sessionId = path.basename(sessionFilePath, path.extname(sessionFilePath));
-
-	for (const debugLogPath of candidatePaths) {
-		try {
-			const content = await fs.promises.readFile(debugLogPath, 'utf8');
-			const result = extractAllTokensFromDebugLog(content);
-			if (result) {
-				if (verbose) {
-					console.error(`  ✓ Found debug log: ${sessionId} (tokens: ${result.inputTokens + result.outputTokens})`);
-				}
-				return result;
-			}
-		} catch { /* file doesn't exist — try next variant */ }
-	}
-	if (verbose) {
-		console.error(`  ✗ No debug log found: ${sessionId}`);
-	}
-	return null;
-}
-
-/**
  * Extract per-UTC-day fractions from session content using interaction timestamps.
  * Fractions sum to 1.0. Falls back to { [fallbackDateKey]: 1.0 } when no timestamps found.
  *
@@ -309,163 +327,12 @@ export async function readDebugLogTokensForSession(sessionFilePath: string, verb
  */
 
 /**
- * Process a single session file and extract its data.
+ * Process a single session file and extract its data, using the CLI's disk-backed cache.
+ * The parsing itself lives in sessionProcessing.ts so the library entry point can reuse it
+ * without the CLI's console/chalk dependencies.
  */
 export async function processSessionFile(filePath: string, verbose = false): Promise<SessionData | null> {
-	try {
-		const stats = await statSessionFile(filePath);
-
-		// Check the cache before doing any parsing
-		const cached = getCached(filePath, stats.mtimeMs, stats.size);
-		if (cached) {
-			return cached;
-		}
-
-		// Dispatch to ecosystem adapters (OpenCode, Crush, VS, Continue, ClaudeDesktop, ClaudeCode, MistralVibe)
-		const eco = getEcosystems().find(e => e.handles(filePath));
-		if (eco) {
-			const [tokenResult, interactions, modelUsage] = await Promise.all([
-				eco.getTokens(filePath),
-				eco.countInteractions(filePath),
-				eco.getModelUsage(filePath),
-			]);
-			const mtimeDateKey = toLocalDayKey(stats.mtime);
-			const ecoResult: SessionData = {
-				file: filePath,
-				tokens: tokenResult.actualTokens > 0 ? tokenResult.actualTokens : tokenResult.tokens,
-				thinkingTokens: tokenResult.thinkingTokens,
-				actualTokens: tokenResult.actualTokens,
-				interactions,
-				modelUsage,
-				lastModified: stats.mtime,
-				editorSource: getEditorSourceFromPath(filePath),
-				dailyFractions: (await eco.getDailyFractions?.(filePath)) ?? { [mtimeDateKey]: 1.0 },
-			};
-			setCached(filePath, stats.mtimeMs, stats.size, ecoResult);
-			return ecoResult;
-		}
-
-		const content = await fs.promises.readFile(filePath, 'utf-8');
-
-		if (!content.trim()) {
-			return null;
-		}
-
-		const isJsonl = filePath.endsWith('.jsonl') || isJsonlContent(content);
-
-		let tokens = 0;
-		let thinkingTokens = 0;
-		let actualTokens = 0;
-		let interactions = 0;
-		let fileModelUsage: ModelUsage = {};
-
-		if (isJsonl) {
-			const exactUsage = extractCopilotCliSessionId(filePath) ? await getCopilotCliExactUsage(filePath) : null;
-			const result = estimateTokensFromJsonlSession(content, exactUsage);
-			// Prefer actualTokens (from session.shutdown modelMetrics) over estimated tokens,
-			// matching VS Code's logic: actualTokens > 0 ? actualTokens : estimatedTokens
-			tokens = result.actualTokens > 0 ? result.actualTokens : result.tokens;
-			thinkingTokens = result.thinkingTokens;
-			actualTokens = result.actualTokens;
-
-			// Always derive model attribution via getModelUsageFromSession — the single shared
-			// entry point that handles all JSONL formats (event-format CLI sessions, delta-format
-			// VS Code Chat sessions). This mirrors VS Code's getSessionFileDataCached, which calls
-			// getModelUsageFromSession in parallel with estimateTokensFromSession rather than
-			// relying on estimateTokensFromJsonlSession.modelUsage (which is empty for delta-format).
-			fileModelUsage = await getModelUsageFromSession(
-				{ warn, tokenEstimators, modelPricing, ecosystems: getEcosystems() },
-				filePath,
-				content
-			);
-
-			// JetBrains partition files use a proprietary format not handled by getModelUsageFromSession.
-			// Fall back to the JetBrains-specific parser which reads model names from
-			// assistant.turn_start events. When no model hint is detectable (ask-mode without
-			// tool calls), attribute to 'unknown' — calculateEstimatedCost falls back to
-			// gpt-4o-mini pricing for unrecognised model names.
-			if (Object.keys(fileModelUsage).length === 0 && isJetBrainsSessionPath(filePath)) {
-				const jbResult = parseJetBrainsPartition(content);
-				if (Object.keys(jbResult.modelUsage).length > 0) {
-					fileModelUsage = jbResult.modelUsage;
-				} else if (jbResult.tokens > 0) {
-					const modelKey = jbResult.modelHint && jbResult.modelHint !== 'unknown' ? jbResult.modelHint : 'unknown';
-					fileModelUsage = { [modelKey]: { inputTokens: jbResult.tokens, outputTokens: 0, sessions: 0 } };
-				}
-			}
-
-			// Reconcile the per-model breakdown to the session total so Input+Output never
-			// exceeds Total in CLI reports. Event-based sessions (Copilot CLI without exact
-			// usage, JetBrains, …) derive actualTokens from real output while modelUsage
-			// derives input from accumulated message content; those heuristics can diverge.
-			fileModelUsage = reconcileModelUsageToActualTokens(fileModelUsage, actualTokens || tokens);
-
-			// Count interactions from JSONL
-			const lines = content.trim().split('\n');
-			for (const line of lines) {
-				try {
-					const event = JSON.parse(line);
-					if (event.type === 'user.message' || (event.kind === 2 && event.k?.[0] === 'requests')) {
-						interactions++;
-					}
-				} catch {
-					// skip
-				}
-			}
-		} else {
-			const result = parseSessionFileContent(
-				filePath,
-				content,
-				estimateTokens,
-				resolveModel
-			);
-			tokens = result.tokens;
-			thinkingTokens = result.thinkingTokens;
-			actualTokens = result.actualTokens;
-			interactions = result.interactions;
-			fileModelUsage = await getModelUsageFromSession(
-				{ warn, tokenEstimators, modelPricing, ecosystems: getEcosystems() },
-				filePath,
-				content
-			);
-		}
-
-		const dailyFractions = extractDailyFractions(content, isJsonl, stats.mtime);
-
-		// Supplement with debug log tokens when available.
-		// Agent-mode sessions make multiple LLM API calls per turn; only the last
-		// call's tokens are stored in the session file. Debug logs record every call,
-		// so they give the true session total — matching VS Code's behavior.
-		const debugLogTokens = await readDebugLogTokensForSession(filePath, verbose);
-		if (debugLogTokens && (debugLogTokens.inputTokens + debugLogTokens.outputTokens) > 0) {
-			tokens = debugLogTokens.inputTokens + debugLogTokens.outputTokens;
-			actualTokens = tokens;
-			if (Object.keys(debugLogTokens.modelBreakdown).length > 0) {
-				const replacement: ModelUsage = {};
-				for (const [model, bd] of Object.entries(debugLogTokens.modelBreakdown)) {
-					replacement[model] = { inputTokens: bd.inputTokens, outputTokens: bd.outputTokens, sessions: 0, ...(bd.cachedTokens > 0 ? { cachedReadTokens: bd.cachedTokens } : {}) };
-				}
-				preserveAutoRouting(fileModelUsage, replacement);
-				fileModelUsage = replacement;
-			}
-		}
-
-		const sessionData: SessionData = {
-			file: filePath,
-			tokens,
-			thinkingTokens,
-			actualTokens,
-			interactions,
-			modelUsage: fileModelUsage,
-			lastModified: stats.mtime,
-			editorSource: getEditorSourceFromPath(filePath),
-			dailyFractions,
-		};
-		setCached(filePath, stats.mtimeMs, stats.size, sessionData);
-		return sessionData;
-	} catch {
-		return null;
-	}
+	return processSessionFileWith(filePath, { verbose, cache: cliSessionCache });
 }
 
 /**
@@ -560,11 +427,20 @@ export async function calculateDetailedStats(
 	};
 }
 
+/** Options for calculateUsageAnalysisStats. */
+export interface UsageAnalysisOptions {
+	/**
+	 * Also cluster the analysed sessions' first prompts into a repeated-task
+	 * (Skill Suggestions) report. Off by default: the report carries prompt text.
+	 */
+	includeRepeatedTasks?: boolean;
+}
+
 /**
  * Calculate usage analysis stats for fluency scoring.
  * This is a simplified version that uses the shared usageAnalysis module.
  */
-export async function calculateUsageAnalysisStats(sessionFiles: string[]): Promise<UsageAnalysisStats> {
+export async function calculateUsageAnalysisStats(sessionFiles: string[], options: UsageAnalysisOptions = {}): Promise<UsageAnalysisStats> {
 	const deps = {
 		warn,
 		tokenEstimators,
@@ -587,17 +463,29 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[]): Promi
 	const lastMonthPeriod = createEmptyUsageAnalysisPeriod();
 	const todaySessions: TodaySessionSummary[] = [];
 	const recentSessionItems: RecentSessionBucketItem<TodaySessionSummary>[] = [];
+	const repeatedTaskSources: RepeatedTaskSessionSource[] = [];
 
 	for (const file of sessionFiles) {
 		try {
 			const stats = await statSessionFile(file);
 			const modified = stats.mtime;
 
-			if (modified < cutoffStart) {
-				continue;
+			const inPeriodWindow = modified >= cutoffStart;
+			// A DB-backed session's file mtime can lag its real activity (writes still in
+			// the SQLite WAL), so the repeated-task report asks the adapter before skipping.
+			// The lookup reads the adapter at most once per session and is reused below.
+			const activity = createSessionActivityLookup(file);
+			if (!inPeriodWindow) {
+				if (!options.includeRepeatedTasks) { continue; }
+				if (!isActiveSince(modified, await activity.lastActivity(), cutoffStart)) { continue; }
 			}
 
 			const analysis = await analyzeSessionUsage(deps, file);
+			if (options.includeRepeatedTasks) {
+				await addRepeatedTaskSource(repeatedTaskSources, activity, analysis.firstUserPrompt, stats.mtimeMs, cutoffStart);
+			}
+			// Period stats keep using the file mtime, as before.
+			if (!inPeriodWindow) { continue; }
 			let sessionSummary: TodaySessionSummary | undefined;
 			const data = modified >= last30DaysStart ? await processSessionFile(file) : undefined;
 			if (data && data.interactions > 0) {
@@ -661,7 +549,97 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[]): Promi
 		lastUpdated: now,
 		todaySessions: todaySessions.sort((a, b) => b.interactions - a.interactions),
 		recentSessions: buildRecentSessionBuckets(recentSessionItems, now),
+		...(options.includeRepeatedTasks ? { repeatedTasks: buildRepeatedTaskReport(repeatedTaskSources) } : {}),
 	};
+}
+
+/** Adapter lookups a SessionActivityLookup uses; injectable for tests. */
+export interface SessionActivitySources {
+	getLastActivity(file: string): Promise<Date | null>;
+	getMeta(file: string): Promise<SessionMeta | null>;
+	getBackingPath(file: string): string;
+}
+
+const defaultActivitySources: SessionActivitySources = {
+	getLastActivity: getSessionLastActivity,
+	getMeta: getSessionMeta,
+	getBackingPath: getSessionBackingPath,
+};
+
+/** Memoized per-session adapter reads: each underlying lookup runs at most once. */
+export interface SessionActivityLookup {
+	readonly file: string;
+	meta(): Promise<SessionMeta | null>;
+	/**
+	 * The session's own last activity, for DB-backed (virtual) sessions only: the
+	 * adapter's cheap `getLastActivity()`, else the metadata's `lastInteraction`.
+	 * Null for regular files and when unknown; the file mtime is then the signal.
+	 */
+	lastActivity(): Promise<Date | null>;
+}
+
+export function createSessionActivityLookup(file: string, sources: SessionActivitySources = defaultActivitySources): SessionActivityLookup {
+	let meta: Promise<SessionMeta | null> | undefined;
+	let lastActivity: Promise<Date | null> | undefined;
+	const lookup: SessionActivityLookup = {
+		file,
+		meta: () => (meta ??= sources.getMeta(file)),
+		lastActivity: () => (lastActivity ??= (async () => {
+			// Regular files: the file mtime is the session's own; no adapter lookup needed.
+			if (sources.getBackingPath(file) === file) { return null; }
+			const cheap = await sources.getLastActivity(file);
+			if (cheap) { return cheap; }
+			const fromMeta = (await lookup.meta())?.lastInteraction;
+			const parsed = fromMeta ? new Date(fromMeta) : null;
+			return parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
+		})()),
+	};
+	return lookup;
+}
+
+/**
+ * Session context for the repeated-task report, from the owning adapter when it has one.
+ * DB-backed sessions share their database's mtime, so the adapter's per-session
+ * last interaction (or last activity) is what places a session in the window.
+ */
+async function toRepeatedTaskSource(activity: SessionActivityLookup, firstUserPrompt: string, mtimeMs: number): Promise<RepeatedTaskSessionSource> {
+	const meta = await activity.meta();
+	const lastInteraction = meta?.lastInteraction ?? (await activity.lastActivity())?.toISOString() ?? null;
+	return {
+		file: activity.file,
+		firstUserPrompt,
+		title: meta?.title ?? null,
+		lastInteraction,
+		mtime: mtimeMs,
+		repository: meta?.repository ?? null,
+	};
+}
+
+/** Add a session with a first prompt to the repeated-task sources when its own activity is in the window. */
+async function addRepeatedTaskSource(
+	sources: RepeatedTaskSessionSource[], activity: SessionActivityLookup,
+	firstUserPrompt: string | undefined, mtimeMs: number, cutoff: Date,
+): Promise<void> {
+	if (!firstUserPrompt) { return; }
+	const source = await toRepeatedTaskSource(activity, firstUserPrompt, mtimeMs);
+	if (repeatedTaskActivityMs(source) >= cutoff.getTime()) { sources.push(source); }
+}
+
+/**
+ * Whether a session was active on or after `cutoff`: by its file mtime, or by the
+ * adapter's per-session last activity when the file mtime is stale.
+ */
+export function isActiveSince(fileMtime: Date, sessionLastActivity: Date | null, cutoff: Date): boolean {
+	return fileMtime >= cutoff || (sessionLastActivity !== null && sessionLastActivity >= cutoff);
+}
+
+/**
+ * A repeated-task source's own activity time in epoch ms: its last interaction
+ * when known and parseable, otherwise the file mtime.
+ */
+export function repeatedTaskActivityMs(source: Pick<RepeatedTaskSessionSource, 'lastInteraction' | 'mtime'>): number {
+	const parsed = source.lastInteraction ? Date.parse(source.lastInteraction) : NaN;
+	return Number.isNaN(parsed) ? source.mtime : parsed;
 }
 
 /**

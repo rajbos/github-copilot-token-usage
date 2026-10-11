@@ -30,10 +30,25 @@ Requires **Node.js 22.14 or later**.
 | `diagnostics` | Every location searched and what was found — start here if something is missing |
 | `curation` | MCP servers and skills you load but never use, with their prompt overhead |
 | `memory-files` | Copilot agent memory-file hygiene; `--server` for the repository's server-side memories |
+| `skill-suggestions` | Tasks you keep prompting for by hand — candidates for a reusable skill or prompt file |
 | `segment` | Cached one-line summary for shell prompts (oh-my-posh) |
 | `chart`, `usage-analysis`, `all` | JSON payloads for integrations |
 
 Most commands accept `--json`. The global `--no-cache` option ignores the parsed-session cache and re-parses every file (`segment` keeps its own output cache; use `segment --refresh` to bypass it). Run `ai-engineering-fluency <command> --help` for all options, or see the [command reference](https://github.com/rajbos/ai-engineering-fluency/blob/main/docs/cli/README.md#commands).
+
+## Programmatic use
+
+The package also works as a Node library (CommonJS and ESM, with types). Pass it one session file and get back its token usage and cost:
+
+```js
+const { analyzeSessionFile } = require('@rajbos/ai-engineering-fluency/session');
+
+const usage = await analyzeSessionFile('/home/me/.claude/projects/<project>/<session>.jsonl');
+// usage?.modelUsage, usage?.totalTokens, usage?.estimatedCostUsd.provider,
+// usage?.copilotCredits (exact Copilot billing, or null when not available)
+```
+
+It resolves to `null` for files it cannot parse, never writes to the console, and caches results in memory per file, so polling an unchanged file is cheap. Details: [Programmatic use](https://github.com/rajbos/ai-engineering-fluency/blob/main/docs/cli/README.md#programmatic-use).
 
 ## Configuration
 

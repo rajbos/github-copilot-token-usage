@@ -312,7 +312,12 @@ node .github/skills/copilot-log-analysis/get-session-files.js --verbose
 
 # JSON output for programmatic use
 node .github/skills/copilot-log-analysis/get-session-files.js --json
+
+# Print the home directory in full instead of as "~"
+node .github/skills/copilot-log-analysis/get-session-files.js --show-paths
 ```
+
+Paths are printed with the home directory replaced by `~`, so the output does not carry your OS user name. They still contain workspace hashes and session ids: review the output before pasting it into a public issue.
 
 **What it does:**
 - Scans all VS Code variants (Stable, Insiders, Cursor, VSCodium, etc.)
@@ -323,11 +328,11 @@ node .github/skills/copilot-log-analysis/get-session-files.js --json
 **Example output:**
 ```
 Platform: win32
-Home directory: C:\Users\YourName
+Home directory: ~
 
 VS Code installations found:
-  C:\Users\YourName\AppData\Roaming\Code\User
-  C:\Users\YourName\AppData\Roaming\Code - Insiders\User
+  ~\AppData\Roaming\Code\User
+  ~\AppData\Roaming\Code - Insiders\User
 
 Total session files found: 274
 
@@ -362,7 +367,12 @@ node .github/skills/copilot-log-analysis/diagnose-session-files.js
 
 # Verbose output with all file paths and details
 node .github/skills/copilot-log-analysis/diagnose-session-files.js --verbose
+
+# Print the home directory in full instead of as "~"
+node .github/skills/copilot-log-analysis/diagnose-session-files.js --show-paths
 ```
+
+As with Script 1, the home directory is shown as `~` by default; the remaining path segments (workspace hashes, session ids) are printed as-is, so review the output before sharing it publicly.
 
 **What it does:**
 - Discovers all session files across VS Code variants
@@ -390,8 +400,11 @@ node .github/skills/copilot-log-analysis/diagnose-session-files.js --verbose
 # Analyze session files and generate schema
 pwsh .github/skills/copilot-log-analysis/analyze-session-schema.ps1
 
-# Specify custom output directory
-pwsh .github/skills/copilot-log-analysis/analyze-session-schema.ps1 -OutputPath ./output
+# Specify a custom output file
+pwsh .github/skills/copilot-log-analysis/analyze-session-schema.ps1 -OutputFile ./output/schema-analysis.json
+
+# Include up to 3 example values per field (private: write outside the repository)
+pwsh .github/skills/copilot-log-analysis/analyze-session-schema.ps1 -IncludeExamples -OutputFile "$env:TEMP/schema-with-examples.json"
 ```
 
 **What it does:**
@@ -399,8 +412,10 @@ pwsh .github/skills/copilot-log-analysis/analyze-session-schema.ps1 -OutputPath 
 - Extracts and catalogs all field names and structures
 - Generates JSON schema documentation
 - Creates field analysis reports
-- Outputs to `docs/logFilesSchema/session-file-schema-analysis.json`
+- Outputs to `docs/logFilesSchema/session-file-schema-analysis.json` (a tracked file) unless `-OutputFile` is given
 - Documents field types, occurrences, and variations
+
+**Privacy:** by default the output holds field paths, types and counts only, plus JSONL event type names that look like identifiers. `-IncludeExamples` copies values verbatim from your session logs (prompts, titles, file paths, tool arguments) and prints a warning when it does. Never commit a file produced with `-IncludeExamples`, and never pass it with the default output path.
 
 **Note**: This script generates the `session-file-schema-analysis.json` file referenced in the Schema Documentation section below.
 ## Usage Examples

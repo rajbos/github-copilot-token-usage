@@ -5,11 +5,14 @@ import { escapeHtml, formatCost, formatNumber, formatCompact, setCompactNumbers 
 import { getModelDisplayName } from "../../../../src/webview/shared/modelUtils";
 import { wireExtensionPointButtons } from "../shared/extensionPoints";
 import themeStyles from "../shared/theme.css";
+import dataTableStyles from "../shared/dataTable.css";
 import styles from "./styles.css";
 import { getWindowData } from "../../../../src/webview/shared/dataLoader";
 import type { ModelUsage } from "../shared/types";
 import { registerMessageHandler } from "../shared/messageHandler";
 import { applyWebviewLocale } from "../shared/webviewLocale";
+import { installSurfaceNavigation } from "../shared/surfaceNavigation";
+import { renderDataTable, type DataTableColumn, type DataTableRowOptions } from "../shared/dataTable";
 
 interface UserSummary {
   userId: string;
@@ -80,6 +83,7 @@ declare global {
 }
 
 const vscode: VSCodeApi = acquireVsCodeApi();
+installSurfaceNavigation(vscode, 'dashboard');
 const initialData = getWindowData<DashboardStats & { localization?: Record<string, string> }>('__INITIAL_DASHBOARD__');
 console.log("[CopilotTokenTracker] dashboard webview loaded");
 
@@ -101,7 +105,7 @@ function showLoading(): void {
   root.replaceChildren();
 
   const themeStyle = document.createElement("style");
-  themeStyle.textContent = themeStyles;
+  themeStyle.textContent = `${themeStyles}\n${dataTableStyles}`;
 
   const style = document.createElement("style");
   style.textContent = styles;
@@ -136,7 +140,7 @@ function showError(message: string): void {
   root.replaceChildren();
 
   const themeStyle = document.createElement("style");
-  themeStyle.textContent = themeStyles;
+  themeStyle.textContent = `${themeStyles}\n${dataTableStyles}`;
 
   const style = document.createElement("style");
   style.textContent = styles;
@@ -190,7 +194,7 @@ function renderShell(root: HTMLElement, stats: DashboardStats): void {
   root.replaceChildren();
 
   const themeStyle = document.createElement("style");
-  themeStyle.textContent = themeStyles;
+  themeStyle.textContent = `${themeStyles}\n${dataTableStyles}`;
 
   const style = document.createElement("style");
   style.textContent = styles;
@@ -239,6 +243,7 @@ function renderShell(root: HTMLElement, stats: DashboardStats): void {
 
 function buildPersonalSection(personal: UserSummary, lookbackDays: number): HTMLElement {
   const section = el("div", "section");
+  section.id = "section-personal-summary";
   const sectionTitle = el(
     "h2",
     "",
@@ -286,6 +291,7 @@ function buildPersonalSection(personal: UserSummary, lookbackDays: number): HTML
 
 function buildTeamSection(stats: DashboardStats): HTMLElement {
   const section = el("div", "section");
+  section.id = "section-team-comparison";
   const sectionTitle = el("h2", "", "👥 Team Comparison");
 
   const teamGrid = el("div", "stats-grid");
@@ -364,143 +370,176 @@ function buildModelBreakdown(modelUsage: ModelUsage): HTMLElement {
   return container;
 }
 
-const LEADERBOARD_HEADERS = [
-	{ text: "#", class: "rank-header" }, { text: "User", class: "" }, { text: "Dataset", class: "" },
-	{ text: "Fluency", class: "" }, { text: "Tokens", class: "number-header" }, { text: "Days", class: "number-header" },
-	{ text: "Sessions", class: "number-header" }, { text: "Avg Turns", class: "number-header" },
-	{ text: "Models", class: "number-header" }, { text: "Projects", class: "number-header" },
-	{ text: "Tok/Turn", class: "number-header" }, { text: "Cost", class: "number-header" }, { text: "", class: "action-header" },
-];
+const LEADERBOARD_TABLE_ID = "dashboard-leaderboard";
 
-function buildLeaderboardFluencyCell(member: TeamMemberStats): HTMLElement {
-	const fluencyCell = el("td", "fluency-cell");
-	if (member.fluencyStage && member.fluencyLabel) {
-		const badge = el("span", `fluency-badge stage-${member.fluencyStage}`);
-		badge.textContent = `${getFluencyStageIcon(member.fluencyStage)} ${member.fluencyLabel}`;
-		fluencyCell.append(badge);
-	}
-	return fluencyCell;
+/** Members whose fluency detail row is open, keyed by `memberKey`; kept across sort/page re-renders. */
+const expandedLeaderboardMembers = new Set<string>();
+
+function memberKey(member: TeamMemberStats): string {
+	return JSON.stringify([member.userId, member.datasetId]);
 }
 
-function buildLeaderboardMemberRow(member: TeamMemberStats, stats: DashboardStats, colSpan: number): [HTMLElement, HTMLElement] {
-	const displayUserId = member.userId.replace(/^u:/, "");
-	const displayDatasetId = (member.datasetId || "").replace(/^ds:/, "");
-	const isCurrentUser = member.userId === stats.personal.userId;
-	const hasCategories = !!member.fluencyCategories?.length;
-	const row = el("tr", "leaderboard-row");
-	if (isCurrentUser) { row.classList.add("current-user"); }
-	if (hasCategories) {
-		row.classList.add("expandable");
-		row.setAttribute("aria-expanded", "false");
-		row.tabIndex = 0;
+function displayUserIdOf(member: TeamMemberStats): string {
+	return member.userId.replace(/^u:/, "");
+}
+
+function displayDatasetIdOf(member: TeamMemberStats): string {
+	return (member.datasetId || "").replace(/^ds:/, "");
+}
+
+function hasFluencyCategories(member: TeamMemberStats): boolean {
+	return !!member.fluencyCategories?.length;
+}
+
+function leaderboardFluencyCellHtml(member: TeamMemberStats): string {
+	if (!member.fluencyStage || !member.fluencyLabel) { return ""; }
+	return `<span class="fluency-badge stage-${escapeHtml(String(member.fluencyStage))}">${escapeHtml(`${getFluencyStageIcon(member.fluencyStage)} ${member.fluencyLabel}`)}</span>`;
+}
+
+function leaderboardRankCellHtml(member: TeamMemberStats): string {
+	const toggle = hasFluencyCategories(member)
+		? `<span class="expand-toggle">${expandedLeaderboardMembers.has(memberKey(member)) ? "▼" : "▶"}</span>`
+		: "";
+	return `${toggle}${escapeHtml(String(member.rank))}`;
+}
+
+function leaderboardDeleteButtonHtml(member: TeamMemberStats): string {
+	const title = `Delete data for ${displayUserIdOf(member)} in dataset ${displayDatasetIdOf(member)}`;
+	return `<button type="button" class="delete-row-btn" data-user-id="${escapeHtml(member.userId)}" data-dataset-id="${escapeHtml(member.datasetId ?? "")}" title="${escapeHtml(title)}">🗑️</button>`;
+}
+
+function leaderboardNumberColumn(id: string, label: string, value: (member: TeamMemberStats) => number, format: (value: number) => string = formatNumber): DataTableColumn<TeamMemberStats> {
+	return { id, label, align: "right", sortValue: value, render: (member) => format(value(member)) };
+}
+
+function leaderboardColumns(stats: DashboardStats): DataTableColumn<TeamMemberStats>[] {
+	return [
+		{ id: "rank", label: "#", align: "center", className: "rank-cell", sortValue: (member) => member.rank, render: (member) => ({ html: leaderboardRankCellHtml(member) }) },
+		{
+			id: "user", label: "User", sortValue: displayUserIdOf,
+			render: (member) => member.userId === stats.personal.userId ? `${displayUserIdOf(member)} 👈` : displayUserIdOf(member),
+		},
+		{ id: "dataset", label: "Dataset", className: "dataset-cell", sortValue: displayDatasetIdOf, render: displayDatasetIdOf },
+		{
+			id: "fluency", label: "Fluency", align: "center", firstSortDirection: "desc",
+			sortValue: (member) => (member.fluencyStage && member.fluencyLabel ? member.fluencyStage : null),
+			render: (member) => ({ html: leaderboardFluencyCellHtml(member) }),
+		},
+		leaderboardNumberColumn("tokens", "Tokens", (member) => member.totalTokens, formatCompact),
+		leaderboardNumberColumn("days", "Days", (member) => member.daysActive),
+		leaderboardNumberColumn("sessions", "Sessions", (member) => member.sessions),
+		leaderboardNumberColumn("avgTurns", "Avg Turns", (member) => member.avgTurnsPerSession),
+		leaderboardNumberColumn("models", "Models", (member) => member.uniqueModels),
+		leaderboardNumberColumn("projects", "Projects", (member) => member.uniqueWorkspaces),
+		leaderboardNumberColumn("tokPerTurn", "Tok/Turn", (member) => member.avgTokensPerTurn),
+		leaderboardNumberColumn("cost", "Cost", (member) => member.totalCost, formatCost),
+		{ id: "action", label: "", align: "center", width: "44px", render: (member) => ({ html: leaderboardDeleteButtonHtml(member) }) },
+	];
+}
+
+function leaderboardRowOptions(member: TeamMemberStats, stats: DashboardStats): DataTableRowOptions {
+	const classes = ["leaderboard-row"];
+	if (member.userId === stats.personal.userId) { classes.push("current-user"); }
+	const attributes: Record<string, string> = { "data-member-key": memberKey(member) };
+	if (hasFluencyCategories(member)) {
+		classes.push("expandable");
+		attributes["aria-expanded"] = String(expandedLeaderboardMembers.has(memberKey(member)));
+		attributes.tabindex = "0";
 	}
-	const rankCell = el("td", "rank-cell", `${member.rank}`);
-	if (hasCategories) { rankCell.prepend(el("span", "expand-toggle", "▶")); }
-	const deleteBtn = document.createElement("button");
-	deleteBtn.className = "delete-row-btn";
-	deleteBtn.title = `Delete data for ${displayUserId} in dataset ${displayDatasetId}`;
-	deleteBtn.textContent = "🗑️";
-	deleteBtn.addEventListener("click", (e) => {
-		e.stopPropagation();
-		vscode.postMessage({ command: "deleteUserDataset", userId: member.userId, datasetId: member.datasetId });
+	return { className: classes.join(" "), attributes };
+}
+
+function leaderboardDetailRowHtml(member: TeamMemberStats, colSpan: number): string {
+	if (!hasFluencyCategories(member)) { return ""; }
+	const hidden = expandedLeaderboardMembers.has(memberKey(member)) ? "" : " hidden";
+	return `<tr class="detail-row${hidden}"><td class="detail-cell" colspan="${colSpan}">${fluencyDetailPanelHtml(member)}</td></tr>`;
+}
+
+/** Opens or closes a member's fluency detail row in place and remembers the state for re-renders. */
+function toggleLeaderboardRow(row: HTMLElement): void {
+	const key = row.getAttribute("data-member-key");
+	if (!key) { return; }
+	const expanded = !expandedLeaderboardMembers.has(key);
+	if (expanded) { expandedLeaderboardMembers.add(key); } else { expandedLeaderboardMembers.delete(key); }
+	row.setAttribute("aria-expanded", String(expanded));
+	const toggle = row.querySelector(".expand-toggle");
+	if (toggle) { toggle.textContent = expanded ? "▼" : "▶"; }
+	const detailRow = row.nextElementSibling;
+	if (detailRow?.classList.contains("detail-row")) { detailRow.classList.toggle("hidden", !expanded); }
+}
+
+/** One delegated listener pair on the stable leaderboard container survives every table re-render. */
+function wireLeaderboardInteractions(container: HTMLElement): void {
+	container.addEventListener("click", (event) => {
+		const target = event.target instanceof Element ? event.target : null;
+		const deleteButton = target?.closest<HTMLElement>(".delete-row-btn");
+		if (deleteButton) {
+			vscode.postMessage({
+				command: "deleteUserDataset",
+				userId: deleteButton.getAttribute("data-user-id") ?? "",
+				datasetId: deleteButton.getAttribute("data-dataset-id") ?? "",
+			});
+			return;
+		}
+		const row = target?.closest<HTMLElement>("tr.leaderboard-row.expandable");
+		if (row) { toggleLeaderboardRow(row); }
 	});
-	const actionCell = el("td", "action-cell");
-	actionCell.append(deleteBtn);
-	row.append(rankCell, el("td", "", isCurrentUser ? `${displayUserId} 👈` : displayUserId), el("td", "dataset-cell", displayDatasetId),
-		buildLeaderboardFluencyCell(member), el("td", "number-cell", formatCompact(member.totalTokens)),
-		el("td", "number-cell", formatNumber(member.daysActive)), el("td", "number-cell", formatNumber(member.sessions)),
-		el("td", "number-cell", formatNumber(member.avgTurnsPerSession)), el("td", "number-cell", formatNumber(member.uniqueModels)),
-		el("td", "number-cell", formatNumber(member.uniqueWorkspaces)), el("td", "number-cell", formatNumber(member.avgTokensPerTurn)),
-		el("td", "number-cell", formatCost(member.totalCost)), actionCell);
-	const detailRow = el("tr", "detail-row hidden");
-	const detailCell = document.createElement("td");
-	detailCell.colSpan = colSpan; detailCell.className = "detail-cell";
-	if (hasCategories) {
-		detailCell.append(buildFluencyDetailPanel(member));
-		const toggleExpanded = (): void => {
-			const expanded = row.getAttribute("aria-expanded") === "true";
-			row.setAttribute("aria-expanded", expanded ? "false" : "true");
-			const toggle = row.querySelector(".expand-toggle");
-			if (toggle) { toggle.textContent = expanded ? "▶" : "▼"; }
-			detailRow.classList.toggle("hidden", expanded);
-		};
-		row.addEventListener("click", toggleExpanded);
-		row.addEventListener("keydown", (e) => {
-			if (e.target !== row) { return; }
-			if (e.key === "Enter" || e.key === " ") {
-				e.preventDefault();
-				toggleExpanded();
-			}
-		});
-	}
-	detailRow.append(detailCell);
-	return [row, detailRow];
+	container.addEventListener("keydown", (event) => {
+		const row = event.target instanceof HTMLElement ? event.target : null;
+		if (!row?.matches("tr.leaderboard-row.expandable")) { return; }
+		if (event.key === "Enter" || event.key === " ") {
+			event.preventDefault();
+			toggleLeaderboardRow(row);
+		}
+	});
 }
 
 function buildLeaderboard(stats: DashboardStats): HTMLElement {
-	const thead = el("thead", "");
-	const headerRow = el("tr", "");
-	LEADERBOARD_HEADERS.forEach((h) => headerRow.append(el("th", h.class, h.text)));
-	thead.append(headerRow);
-	const tbody = el("tbody", "");
-	for (const member of stats.team.members) {
-		const [row, detailRow] = buildLeaderboardMemberRow(member, stats, LEADERBOARD_HEADERS.length);
-		tbody.append(row, detailRow);
-	}
-	const table = el("table", "leaderboard-table");
-	table.append(thead, tbody);
+	const columns = leaderboardColumns(stats);
 	const container = el("div", "leaderboard");
-	container.append(el("h3", "", "Leaderboard"), table);
+	const tableContainer = el("div", "leaderboard-table-container");
+	setHtml(tableContainer, renderDataTable<TeamMemberStats>({
+		tableId: LEADERBOARD_TABLE_ID,
+		ariaLabel: "Leaderboard",
+		rows: stats.team.members,
+		columns,
+		initialSort: { columnId: "rank", direction: "asc" },
+		className: "leaderboard-table",
+		rowOptions: (member) => leaderboardRowOptions(member, stats),
+		afterRow: (member) => leaderboardDetailRowHtml(member, columns.length),
+	}));
+	wireLeaderboardInteractions(tableContainer);
+	container.append(el("h3", "", "Leaderboard"), tableContainer);
 	return container;
 }
 
-function buildFluencyDetailPanel(member: TeamMemberStats): HTMLElement {
-  const panel = el("div", "fluency-detail-panel");
+function fluencyCategoryCardHtml(cat: NonNullable<TeamMemberStats["fluencyCategories"]>[number]): string {
+	const pips = [1, 2, 3, 4]
+		.map((s) => `<div class="stage-pip${s <= cat.stage ? ` filled stage-pip-${escapeHtml(String(cat.stage))}` : ""}"></div>`)
+		.join("");
+	let footer = "";
+	if (cat.tips.length > 0) {
+		const tips = cat.tips.map((tip) => `<div class="fluency-tip">${renderTipHtml(tip)}</div>`).join("");
+		footer = `<div class="fluency-tips"><div class="fluency-tips-label">${escapeHtml("💡 Next steps to level up:")}</div>${tips}</div>`;
+	} else if (cat.stage === 4) {
+		footer = `<div class="fluency-achieved">${escapeHtml("✅ Stage 4 achieved!")}</div>`;
+	}
+	return `<div class="fluency-category-card">`
+		+ `<div class="fluency-category-header">`
+		+ `<span class="fluency-category-label">${escapeHtml(`${cat.icon} ${cat.category}`)}</span>`
+		+ `<span class="fluency-category-badge stage-${escapeHtml(String(cat.stage))}">${escapeHtml(`${getFluencyStageIcon(cat.stage)} Stage ${cat.stage}`)}</span>`
+		+ `</div>`
+		+ `<div class="fluency-stage-bar">${pips}</div>`
+		+ footer
+		+ `</div>`;
+}
 
-  const heading = el("div", "fluency-detail-heading", "📊 Fluency Score Breakdown");
-  panel.append(heading);
-
-  const grid = el("div", "fluency-categories-grid");
-
-  for (const cat of member.fluencyCategories ?? []) {
-    const card = el("div", "fluency-category-card");
-
-    const cardHeader = el("div", "fluency-category-header");
-    const catLabel = el("span", "fluency-category-label", `${cat.icon} ${cat.category}`);
-    const stageBadge = el("span", `fluency-category-badge stage-${cat.stage}`);
-    const stageIcon = getFluencyStageIcon(cat.stage);
-    stageBadge.textContent = `${stageIcon} Stage ${cat.stage}`;
-    cardHeader.append(catLabel, stageBadge);
-
-    const stageBar = el("div", "fluency-stage-bar");
-    for (let s = 1; s <= 4; s++) {
-      const pip = el("div", `stage-pip${s <= cat.stage ? " filled stage-pip-" + cat.stage : ""}`);
-      stageBar.append(pip);
-    }
-
-    card.append(cardHeader, stageBar);
-
-    if (cat.tips.length > 0) {
-      const tipsSection = el("div", "fluency-tips");
-      const tipsLabel = el("div", "fluency-tips-label", "💡 Next steps to level up:");
-      tipsSection.append(tipsLabel);
-      for (const tip of cat.tips) {
-        const tipEl = document.createElement("div");
-        tipEl.className = "fluency-tip";
-        setHtml(tipEl, renderTipHtml(tip));
-        tipsSection.append(tipEl);
-      }
-      card.append(tipsSection);
-    } else if (cat.stage === 4) {
-      const achieved = el("div", "fluency-achieved", "✅ Stage 4 achieved!");
-      card.append(achieved);
-    }
-
-    grid.append(card);
-  }
-
-  panel.append(grid);
-  return panel;
+function fluencyDetailPanelHtml(member: TeamMemberStats): string {
+	const cards = (member.fluencyCategories ?? []).map(fluencyCategoryCardHtml).join("");
+	return `<div class="fluency-detail-panel">`
+		+ `<div class="fluency-detail-heading">${escapeHtml("📊 Fluency Score Breakdown")}</div>`
+		+ `<div class="fluency-categories-grid">${cards}</div>`
+		+ `</div>`;
 }
 
 function getFluencyStageIcon(stage: number): string {
@@ -605,6 +644,7 @@ function buildTeamServerPanel(url: string): HTMLElement {
   const panel = el("div", "team-server-panel");
 
   const card = el("div", "team-server-card");
+  card.id = "section-team-server";
 
   const header = el("div", "config-card-header");
   const icon = el("span", "config-card-icon", "🖥️");
@@ -640,7 +680,7 @@ function showTeamServerView(url: string, failureMessage?: string): void {
   root.replaceChildren();
 
   const themeStyle = document.createElement("style");
-  themeStyle.textContent = themeStyles;
+  themeStyle.textContent = `${themeStyles}\n${dataTableStyles}`;
   const style = document.createElement("style");
   style.textContent = styles;
 

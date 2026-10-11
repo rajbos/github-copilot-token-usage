@@ -15,6 +15,7 @@ import { allCommand } from './commands/all';
 import { segmentCommand } from './commands/segment';
 import { curationCommand } from './commands/curation';
 import { memoryFilesCommand } from './commands/memory-files';
+import { skillSuggestionsCommand } from './commands/skill-suggestions';
 import { loadCache, saveCache, disableCache } from './helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -52,6 +53,7 @@ export function createProgram(): Command {
 	program.addCommand(segmentCommand);
 	program.addCommand(curationCommand);
 	program.addCommand(memoryFilesCommand);
+	program.addCommand(skillSuggestionsCommand);
 
 	return program;
 }

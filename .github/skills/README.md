@@ -132,8 +132,9 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 - Routinely health-checking external references as part of a maintenance pass
 
 **Contents:**
-- `check-urls.js` — Node.js script that scans every `*.ts` file under `src/`, extracts unique URLs, and sends HTTP HEAD requests (retrying with GET on 4xx) with a 10-second timeout
-- Summary output marking each URL as ✅ OK, ⚠️ REDIRECT, or ❌ BROKEN; exits with code `1` when any URL is broken
+- `check-urls.js` — Node.js script that scans every `*.ts` file under `src/`, extracts unique URLs, skips (and reports) URLs whose host is localhost or a loopback/link-local/private address (also after DNS resolution), and sends HTTP HEAD requests (retrying with GET only on 403, 405 or 501) with a 10-second timeout
+- `check-urls.test.js` — unit tests (no network): `node --test .github/skills/check-urls/check-urls.test.js`
+- Summary output marking each URL as ✅ OK, ⚠️ REDIRECT, ⚠️ INSECURE (plain `http:`), ⏭️ SKIPPED (internal host), or ❌ BROKEN; exits with code `1` when any URL is broken
 - Guidance for fixing broken tech.hub.ms and code.visualstudio.com links
 
 ### scan-hardcoded-strings

@@ -96,14 +96,6 @@ body {
 	margin-top: 4px;
 }
 
-.no-data-row td {
-	text-align: center;
-	color: var(--text-secondary);
-	font-size: 12px;
-	padding: 14px;
-	font-style: italic;
-}
-
 .sections {
 	display: flex;
 	flex-direction: column;
@@ -148,62 +140,6 @@ body {
 	display: none !important;
 }
 
-.stats-table {
-	width: 100%;
-	border-collapse: collapse;
-	table-layout: fixed;
-	background: var(--bg-tertiary);
-	border: 1px solid var(--border-subtle);
-	border-radius: 8px;
-	overflow: hidden;
-}
-
-.stats-table thead {
-	background: var(--list-hover-bg);
-}
-
-.stats-table th,
-.stats-table td {
-	padding: 10px 12px;
-	border-bottom: 1px solid var(--border-subtle);
-	vertical-align: middle;
-}
-
-.stats-table th {
-	text-align: left;
-	color: var(--text-secondary);
-	font-weight: 700;
-	font-size: 12px;
-	letter-spacing: 0.1px;
-}
-
-.stats-table td {
-	color: var(--text-primary);
-	font-size: 12px;
-}
-
-.stats-table th.align-right,
-.stats-table td.align-right {
-	text-align: right;
-}
-
-.stats-table tr.group-row td {
-	background: var(--list-hover-bg);
-	color: var(--text-secondary);
-	font-size: 12px;
-	font-weight: 700;
-	text-transform: uppercase;
-	letter-spacing: 1px;
-	padding: 8px 12px;
-	border-top: 1px solid var(--border-color);
-	border-bottom: 1px solid var(--border-color);
-}
-
-/* First group sits right under the table header, no extra top rule needed */
-.stats-table tbody tr.group-row:first-child td {
-	border-top: none;
-}
-
 .metric-label {
 	display: inline-flex;
 	align-items: center;
@@ -211,19 +147,47 @@ body {
 	font-weight: 600;
 }
 
-.period-header {
-	display: flex;
-	align-items: center;
-	gap: 4px;
+.metric-label-help {
+	cursor: help;
+}
+
+.metric-hint {
+	font-size: 0.75em;
+	opacity: 0.6;
+}
+
+/* Top-N usage tables: the clickable "Other" summary row and the rows it expands to. */
+.data-table tbody tr.other-group-row {
+	cursor: pointer;
+}
+
+.data-table tbody tr.other-group-row > td {
+	background: var(--list-hover-bg);
+}
+
+.other-group-name {
 	color: var(--text-secondary);
+	font-weight: 600;
 }
 
-.align-right .period-header {
-	justify-content: flex-end;
+.other-group-toggle {
+	font-size: 10px;
+	color: var(--text-muted);
 }
 
-.value-right {
-	text-align: right;
+.data-table tbody tr.other-child-row {
+	opacity: 0.85;
+}
+
+.other-child-indent {
+	display: inline-block;
+	width: 12px;
+}
+
+.model-chars-per-token {
+	color: #9aa0a6;
+	font-size: 11px;
+	font-weight: 500;
 }
 
 .muted {
