@@ -28,7 +28,13 @@ function parseArgs(argv) {
  */
 function readConfig(skillDir, configPath) {
 	const config = JSON.parse(fs.readFileSync(configPath || path.join(skillDir, 'views.config.json'), 'utf8'));
-	return validateRegistry({ defaults: config.defaults, views: config.views });
+	// `fixtureDir` is where a view's fixture is read from. Only the registry
+	// `baselineRegistry` generates may set it; a committed views.config.json
+	// that names one could point the harness at any directory on disk.
+	const views = configPath || !Array.isArray(config.views)
+		? config.views
+		: config.views.map(({ fixtureDir, ...view }) => view);
+	return validateRegistry({ defaults: config.defaults, views });
 }
 
 /**
@@ -148,4 +154,32 @@ function selectViews(config, filter) {
 	return config.views.filter((v) => v.enabled !== false);
 }
 
-module.exports = { parseArgs, readConfig, selectViews, validateRegistry, baselineRegistry, ID_PATTERN };
+/**
+ * The themes the harness can render. A theme becomes part of a CSS path and of
+ * every screenshot file name, so only these exact values are accepted.
+ */
+const THEMES = ['dark', 'light'];
+
+/** `--theme dark|light|both` (default dark) → the themes to render. */
+function parseThemes(value) {
+	if (value === undefined) { return ['dark']; }
+	if (value === 'both') { return [...THEMES]; }
+	if (THEMES.includes(value)) { return [value]; }
+	throw new Error(`--theme must be dark, light or both, got ${JSON.stringify(value)}.`);
+}
+
+/**
+ * A numeric option, checked rather than passed through `Number()`: a typo
+ * there yields NaN, and every comparison against NaN is false — which in a
+ * diff tolerance means "nothing changed".
+ */
+function parseNumberOption(value, name, { fallback, min, max }) {
+	if (value === undefined) { return fallback; }
+	const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN;
+	if (!Number.isFinite(n) || n < min || n > max) {
+		throw new Error(`--${name} must be a number from ${min} to ${max}, got ${JSON.stringify(value)}.`);
+	}
+	return n;
+}
+
+module.exports = { parseArgs, parseNumberOption, parseThemes, readConfig, selectViews, validateRegistry, baselineRegistry, ID_PATTERN, THEMES };

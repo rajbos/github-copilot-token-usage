@@ -13,6 +13,7 @@ All notable changes to the CLI (@rajbos/ai-engineering-fluency) will be document
 ### Bug Fixes
 - The exact Copilot billed amount for a Copilot CLI session is the latest `session.usage_checkpoint` or `session.shutdown` value. `totalNanoAiu` is a running total for the whole session, so the previous sum over shutdowns counted resumed sessions more than once. Sessions that are still running now get the amount from their latest checkpoint.
 - Resumed Copilot CLI sessions are no longer counted two or three times: `session.shutdown` model metrics are running totals for the whole session, so the latest shutdown now replaces earlier ones instead of being summed, and daily totals get each shutdown's increase. Older per-run logs still add up. Cache version bumped so existing entries are re-parsed
+- The Customization category of `fluency` (and of `all --json`) now counts worktrees, scratch clones and case/WSL spellings of one repository as one workspace, with the same shared rules as the VS Code extension, instead of counting every folder separately, so its workspace counts match the extension's. The matrix behind it now carries the grouped workspace rows (display name, session count, merged `memberPaths`) instead of an empty list (#2290)
 
 ## [0.6.2] - 2026-10-02
 

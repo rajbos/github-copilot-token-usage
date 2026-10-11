@@ -233,3 +233,32 @@ describe('sanitizeCustomizationMatrix', () => {
 		assert.deepEqual(result, canonical);
 	});
 });
+
+describe('sanitizeCustomizationMatrix: workspace grouping fields', () => {
+	test('keeps string memberPaths and ungroupedWorkspaceNames, drops non-strings', () => {
+		const result = sanitizeCustomizationMatrix({
+			customizationTypes: [],
+			workspaces: [{
+				workspacePath: '/code/repo', workspaceName: 'repo', sessionCount: 2, interactionCount: 3, typeStatuses: {},
+				memberPaths: ['/code/repo', 42, '/wt/repo-wt'],
+			}],
+			totalWorkspaces: 1,
+			workspacesWithIssues: 0,
+			ungroupedWorkspaceNames: ['repo-85ed99', { bad: true }],
+		});
+		assert.deepEqual(result?.workspaces[0].memberPaths, ['/code/repo', '/wt/repo-wt']);
+		assert.deepEqual(result?.ungroupedWorkspaceNames, ['repo-85ed99']);
+	});
+
+	test('omits the fields when absent, empty or not arrays', () => {
+		const result = sanitizeCustomizationMatrix({
+			customizationTypes: [],
+			workspaces: [{ workspacePath: '/a', workspaceName: 'a', sessionCount: 1, interactionCount: 1, typeStatuses: {}, memberPaths: 'nope' }],
+			totalWorkspaces: 1,
+			workspacesWithIssues: 0,
+			ungroupedWorkspaceNames: [],
+		});
+		assert.equal('memberPaths' in result!.workspaces[0], false);
+		assert.equal('ungroupedWorkspaceNames' in result!, false);
+	});
+});

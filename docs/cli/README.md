@@ -169,6 +169,8 @@ Figures are estimates: tokens are weighted by type (output fully, fresh input an
 
 Your AI Engineering Fluency stage (1–4) overall and across six categories — Prompt Engineering, Context Engineering, Agentic, Tool Usage, Customization and Workflow Integration — based on the last 30 days, with the evidence behind each score. Scoring rules: [FLUENCY-LEVELS.md](../FLUENCY-LEVELS.md).
 
+The Customization category counts the workspaces you worked in that have an instructions file. Worktrees, scratch clones and case or WSL spellings of one repository are counted as one workspace, using the same grouping rules as the VS Code extension ([workspace grouping](../features/WORKSPACE-GROUPING.md)), so the workspace counts in the evidence match the extension's.
+
 ```bash
 ai-engineering-fluency fluency
 ai-engineering-fluency fluency --tips  # Show how to reach the next stage in each category

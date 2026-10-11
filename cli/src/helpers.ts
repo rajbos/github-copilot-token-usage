@@ -7,17 +7,20 @@ import * as path from 'path';
 import * as os from 'os';
 import chalk from 'chalk';
 import { SessionDiscovery } from '../../src/sessionDiscovery';
-import type { IEcosystemAdapter } from '../../src/ecosystemAdapter';
-import { resolveExactWorkspacePath } from '../../src/workspaceHelpers';
+import { findWorkspacePathForDiscoveredPath, type IEcosystemAdapter } from '../../src/ecosystemAdapter';
+import { findRepositoryRemoteForFolder, resolveExactWorkspacePath } from '../../src/workspaceHelpers';
 import { resolveFileUri } from '../../src/workspacePathResolver';
 import { calculateEstimatedCost } from '../../src/tokenEstimation';
 import { toLocalDayKey } from '../../src/utils/dayKeys';
-import type { DetailedStats, UsageAnalysisStats, WorkspaceCustomizationMatrix, TodaySessionSummary } from '../../src/types';
+import type { DetailedStats, UsageAnalysisStats, WorkspaceCustomizationMatrix, WorkspaceCustomizationRow, TodaySessionSummary } from '../../src/types';
 import { analyzeSessionUsage, mergeUsageAnalysis } from '../../src/usageAnalysis';
 import { addModelUsage, scaleModelUsage } from '../../src/statsHelpers';
 import { calculateEnvironmentalImpact } from '../../src/environmentalImpact';
-import { withErrorRecovery } from '../../src/utils/errors';
+import { withErrorRecovery, withErrorRecoverySync } from '../../src/utils/errors';
 import { buildRecentSessionBuckets, type RecentSessionBucketItem } from '../../src/recentSessions';
+import { groupWorkspaces, groupFolders, detectArtefactWorkspaceNames, type WorkspaceGroupingProbes, type WorkspaceUsageEntry } from '../../src/workspaceGrouping';
+import { prefetchWorkspaceGroupingProbes } from '../../src/workspaceGroupingProbes';
+import { getTimeWindowStartDate } from '../../src/timeWindows';
 import { buildRepeatedTaskReport, type RepeatedTaskSessionSource } from '../../src/repeatedTasks';
 import { loadCache, saveCache, disableCache, getCached, setCached, getCacheStats } from './cliCache';
 import {
@@ -89,84 +92,185 @@ export async function discoverSessionFiles(): Promise<string[]> {
 	return discovery.getCopilotSessionFiles();
 }
 
+/** Instruction files that satisfy the CLI's "has customization" check (case-insensitive). */
+/** The customization type the CLI's instructions-file check reports (same id as the extension's). */
+const CLI_INSTRUCTIONS_TYPE = { id: 'instructions', icon: '📋', label: 'Instructions' };
+
+const INSTRUCTION_PATHS = ['.github/copilot-instructions.md', 'AGENTS.md', 'CLAUDE.md', '.claude/CLAUDE.md'];
+
+/** Workspace folder a session belongs to, or undefined when it cannot be resolved. */
+/**
+ * Interactions of a session that counts towards workspace usage, or 0 when it does not: the
+ * extension only counts sessions with at least one interaction in its last-30-days window, so
+ * old or empty sessions must not add CLI workspaces, remotes or session counts either.
+ */
+async function recentSessionInteractions(activity: SessionActivityLookup, cutoff: Date): Promise<number> {
+	try {
+		const own = await activity.lastActivity();
+		const isVirtual = getSessionBackingPath(activity.file) !== activity.file;
+		const stats = await statSessionFile(activity.file);
+		if (!sessionActiveSince(stats.mtime, own, cutoff, isVirtual)) { return 0; }
+		const data = await processSessionFile(activity.file);
+		if (!data) { return 0; }
+		if (isVirtual) { return sessionActiveSince(data.lastModified, own, cutoff, true) ? data.interactions : 0; }
+		// A regular file is placed by its last day of real activity, like the extension: the owning
+		// adapter's recorded last interaction (e.g. Pi, whose daily split is otherwise synthesised
+		// from the mtime), else its daily activity. A recently copied or touched old log does not count.
+		const adapterLastInteraction = (await activity.meta())?.lastInteraction;
+		return sessionLastActivityDay(data.dailyFractions, data.lastModified, adapterLastInteraction) >= toLocalDayKey(cutoff) ? data.interactions : 0;
+	} catch {
+		return 0;
+	}
+}
+
+/**
+ * The latest day a session had activity on: the adapter's recorded last interaction when it is a
+ * valid timestamp, else its last daily-fraction day, else its file mtime's day.
+ */
+export function sessionLastActivityDay(dailyFractions: Record<string, number> | undefined, fallback: Date, adapterLastInteraction?: string | null): string {
+	const recorded = adapterLastInteraction ? new Date(adapterLastInteraction) : undefined;
+	if (recorded && !Number.isNaN(recorded.getTime())) { return toLocalDayKey(recorded); }
+	const days = Object.keys(dailyFractions ?? {}).sort();
+	return days.length > 0 ? days[days.length - 1] : toLocalDayKey(fallback);
+}
+
+/**
+ * Whether a session's own activity is on or after `cutoff`. A DB-backed (virtual) session
+ * shares its database's mtime, which moves whenever any session in it changes, so only its own
+ * last activity from the adapter counts — and a virtual session whose activity is unknown does
+ * not qualify, rather than borrowing the database mtime (Cursor, for one, may report none).
+ * Regular files use their own mtime. Unlike `isActiveSince()`, a recent database mtime alone
+ * never admits a session, or every historical session in an active database would count.
+ */
+export function sessionActiveSince(fileMtime: Date, ownLastActivity: Date | null, cutoff: Date, isVirtual = false): boolean {
+	if (ownLastActivity) { return ownLastActivity >= cutoff; }
+	return !isVirtual && fileMtime >= cutoff;
+}
+
+/**
+ * A session's workspace folder and git remote. The owning adapter's metadata comes first
+ * (Copilot CLI, OpenCode, Crush and the other adapter-backed editors record both); the
+ * format-specific fallbacks below cover Claude Code JSONL and VS Code chatSessions files.
+ */
+export async function resolveSessionWorkspace(activity: SessionActivityLookup, claudeBasePath: string): Promise<{ path: string; repository?: string } | undefined> {
+	const meta = await activity.meta();
+	// The adapter's own workspace first; then Copilot CLI events.jsonl, discovered by its adapter
+	// but not handled by it (so getMeta() knows nothing), whose adjacent workspace.yaml the adapter
+	// still reads through this hook; then the Claude Code JSONL / VS Code chatSessions fallbacks.
+	const workspacePath = meta?.workspacePath
+		?? await findWorkspacePathForDiscoveredPath(getEcosystems(), activity.file)
+		?? await resolveSessionWorkspacePath(activity.file, claudeBasePath);
+	if (!workspacePath) { return undefined; }
+	// The adapter's recorded remote, else the workspace folder's own repository (walking up for a
+	// sub-folder workspace) — the same shared rule as the extension's analysis, for adapter-backed
+	// and VS Code sessions alike; never a referenced file, which can live in another repository.
+	const repository = meta?.repository ?? await withErrorRecovery(
+		() => findRepositoryRemoteForFolder(workspacePath),
+		undefined,
+		`buildCustomizationMatrix repository(${workspacePath})`
+	);
+	return { path: workspacePath, ...(repository ? { repository } : {}) };
+}
+
+/** The `cwd` recorded in the first lines of a Claude Code session JSONL. */
+async function readClaudeSessionCwd(sessionFile: string): Promise<string | undefined> {
+	const content = await withErrorRecovery(
+		() => fs.promises.readFile(sessionFile, 'utf-8'),
+		null,
+		`buildCustomizationMatrix readFile(${sessionFile})`
+	);
+	for (const line of (content ?? '').split('\n').slice(0, 30)) {
+		if (!line.trim()) { continue; }
+		try {
+			const event = JSON.parse(line);
+			if (event.cwd && typeof event.cwd === 'string') { return event.cwd; }
+		} catch { /* skip malformed lines */ }
+	}
+	return undefined;
+}
+
+async function resolveSessionWorkspacePath(sessionFile: string, claudeBasePath: string): Promise<string | undefined> {
+	// Claude Code session: ~/.claude/projects/<hash>/<uuid>.jsonl
+	if (sessionFile.startsWith(claudeBasePath + path.sep) || sessionFile.startsWith(claudeBasePath + '/')) {
+		return readClaudeSessionCwd(sessionFile);
+	}
+
+	// VS Code session: .../workspaceStorage/<hash>/chatSessions/<file>
+	const chatSessionsDir = path.dirname(sessionFile);
+	if (path.basename(chatSessionsDir) !== 'chatSessions') { return undefined; }
+	const workspaceJson = await readJsonFile<{ folder?: string }>(path.join(path.dirname(chatSessionsDir), 'workspace.json'));
+	const folderUri = workspaceJson?.folder;
+	if (!folderUri || !folderUri.startsWith('file://')) { return undefined; }
+	return resolveFileUri(folderUri) || undefined;
+}
+
 /**
  * Builds a WorkspaceCustomizationMatrix from session file paths.
  *
- * - For VS Code sessions: derives workspace folder from workspaceStorage/<hash>/workspace.json,
- *   then checks for AGENTS.md, CLAUDE.md, or .github/copilot-instructions.md.
+ * - For VS Code sessions: derives workspace folder from workspaceStorage/<hash>/workspace.json.
  * - For Claude Code sessions (~/.claude/projects/<hash>/): reads the JSONL to extract the
- *   `cwd` workspace path, then checks for CLAUDE.md there.
+ *   `cwd` workspace path.
+ *
+ * Folders are then grouped with the shared `groupWorkspaces()` (src/workspaceGrouping.ts) — the
+ * same rules the VS Code extension uses — so worktrees and clones of one repository count once.
+ * A group has an issue when none of its folders has AGENTS.md, CLAUDE.md, or
+ * .github/copilot-instructions.md.
  */
-export async function buildCustomizationMatrix(sessionFiles: string[]): Promise<WorkspaceCustomizationMatrix | undefined> {
-	const workspacePaths = new Set<string>();
+export async function buildCustomizationMatrix(
+	sessionFiles: string[],
+	probes?: WorkspaceGroupingProbes,
+	now: Date = new Date(),
+): Promise<WorkspaceCustomizationMatrix | undefined> {
 	const claudeBasePath = path.join(os.homedir(), '.claude', 'projects');
-
+	// The extension's last-30-days window (30 calendar dates including today), from the shared helper.
+	const cutoff = getTimeWindowStartDate('last30', now)!;
+	// One entry per session; the grouping sums sessions of the same folder.
+	const entries: WorkspaceUsageEntry[] = [];
 	for (const sessionFile of sessionFiles) {
-		// Claude Code session: ~/.claude/projects/<hash>/<uuid>.jsonl
-		if (sessionFile.startsWith(claudeBasePath + path.sep) || sessionFile.startsWith(claudeBasePath + '/')) {
-			const content = await withErrorRecovery(
-				() => fs.promises.readFile(sessionFile, 'utf-8'),
-				null,
-				`buildCustomizationMatrix readFile(${sessionFile})`
-			);
-			if (content !== null) {
-				const lines = content.split('\n').slice(0, 30);
-				for (const line of lines) {
-					if (!line.trim()) { continue; }
-					try {
-						const event = JSON.parse(line);
-						if (event.cwd && typeof event.cwd === 'string') {
-							workspacePaths.add(event.cwd);
-							break;
-						}
-					} catch { /* skip malformed lines */ }
-				}
-			}
-			continue;
-		}
-
-		// VS Code session: .../workspaceStorage/<hash>/chatSessions/<file>
-		const chatSessionsDir = path.dirname(sessionFile);
-		if (path.basename(chatSessionsDir) !== 'chatSessions') { continue; }
-		const hashDir = path.dirname(chatSessionsDir);
-		const workspaceJsonPath = path.join(hashDir, 'workspace.json');
-
-		const workspaceJson = await readJsonFile<{ folder?: string }>(workspaceJsonPath);
-		if (!workspaceJson) { continue; }
-		const folderUri: string | undefined = workspaceJson.folder;
-		if (!folderUri || !folderUri.startsWith('file://')) { continue; }
-
-		const folderPath = resolveFileUri(folderUri);
-		if (folderPath) { workspacePaths.add(folderPath); }
+		// One memoized adapter lookup per session, shared by the activity check and the metadata read.
+		const activity = createSessionActivityLookup(sessionFile);
+		const interactions = await recentSessionInteractions(activity, cutoff);
+		if (interactions === 0) { continue; }
+		const workspace = await resolveSessionWorkspace(activity, claudeBasePath);
+		if (!workspace) { continue; }
+		// Normalised like the extension's trackWorkspaceForSession(), so both feed the grouping the same keys.
+		entries.push({ path: path.normalize(workspace.path), sessionCount: 1, interactionCount: interactions, repository: workspace.repository });
 	}
+	if (entries.length === 0) { return undefined; }
 
-	if (workspacePaths.size === 0) { return undefined; }
+	const groups = groupWorkspaces(entries, probes ?? await prefetchWorkspaceGroupingProbes(entries));
+	const hasInstructions = (wsPath: string): boolean => withErrorRecoverySync(
+		// Same case-insensitive resolution as the shared customization scanner, so the CLI
+		// accepts every spelling the extension does (including on case-sensitive filesystems).
+		() => INSTRUCTION_PATHS.some(p => resolveExactWorkspacePath(wsPath, p, true) !== undefined),
+		false,
+		`buildCustomizationMatrix workspace check(${wsPath})`
+	);
 
 	let workspacesWithIssues = 0;
-	for (const wsPath of workspacePaths) {
-		const hasIssues = await withErrorRecovery(
-			async () => {
-				// Same case-insensitive resolution as the shared customization scanner, so the CLI
-				// accepts every spelling the extension does (including on case-sensitive filesystems).
-				const instructionPaths = [
-					'.github/copilot-instructions.md',
-					'AGENTS.md',
-					'CLAUDE.md',
-					'.claude/CLAUDE.md',
-				];
-				return !instructionPaths.some(p => resolveExactWorkspacePath(wsPath, p, true) !== undefined);
-			},
-			true,
-			`buildCustomizationMatrix workspace check(${wsPath})`
-		);
-		if (hasIssues) { workspacesWithIssues++; }
-	}
+	const workspaces: WorkspaceCustomizationRow[] = groups.map(group => {
+		const folders = groupFolders(group);
+		const customized = folders.some(hasInstructions);
+		if (!customized) { workspacesWithIssues++; }
+		return {
+			workspacePath: group.canonicalPath,
+			workspaceName: group.displayName,
+			sessionCount: group.sessionCount,
+			interactionCount: group.interactionCount,
+			// The one type the CLI checks, from the same group-wide test as workspacesWithIssues, so
+			// the shared scorer never mistakes a customized repository for a missing one.
+			typeStatuses: { [CLI_INSTRUCTIONS_TYPE.id]: customized ? '✅' : '❌' },
+			...(folders.length > 1 ? { memberPaths: folders } : {}),
+		};
+	});
+	const ungrouped = detectArtefactWorkspaceNames(groups).map(a => a.displayName);
 
 	return {
-		customizationTypes: [],
-		workspaces: [],
-		totalWorkspaces: workspacePaths.size,
+		customizationTypes: [CLI_INSTRUCTIONS_TYPE],
+		workspaces,
+		totalWorkspaces: workspaces.length,
 		workspacesWithIssues,
+		...(ungrouped.length > 0 ? { ungroupedWorkspaceNames: ungrouped } : {}),
 	};
 }
 

@@ -61,8 +61,8 @@ const SKILL_DIR = path.join(__dirname, '..', '.github', 'skills', 'visual-view-d
 const REPO_ROOT = path.resolve(__dirname, '..');
 const DIST_DIR = path.join(REPO_ROOT, 'vscode-extension', 'dist', 'webview');
 
-const { buildPageHtml, loadFixture } = require(path.join(SKILL_DIR, 'lib', 'harness.js'));
-const { loadChromium } = require(path.join(SKILL_DIR, 'lib', 'browser.js'));
+const { buildPageHtml, loadFixture, resolveInside } = require(path.join(SKILL_DIR, 'lib', 'harness.js'));
+const { blockNetwork, loadChromium } = require(path.join(SKILL_DIR, 'lib', 'browser.js'));
 const { parseArgs, readConfig, selectViews } = require(path.join(SKILL_DIR, 'lib', 'config.js'));
 // The step vocabulary (`click`, `select`, `post`) is shared with the visual
 // diff's `states`, so a scenario and a screenshot state read alike. The
@@ -266,6 +266,7 @@ async function openPage(browser, pageFile, view, defaults) {
   // A control that opens a real URL or a dialog must not hang or navigate the
   // harness away from the page under test.
   page.on('dialog', (dialog) => void dialog.dismiss().catch(() => {}));
+  await blockNetwork(page);
   await page.addInitScript(INSTALL_VISIBILITY_HELPER);
   await page.goto(require('url').pathToFileURL(pageFile).href, { waitUntil: 'load' });
   await page.waitForTimeout(view.settleMs || defaults.settleMs || 1200);
@@ -336,6 +337,21 @@ async function clickControl(page, control) {
     return { status: 'dom-only', posted, domChanged: true, quiet };
   }
   return { status: 'dead', posted, domChanged: false, quiet };
+}
+
+/** Checks a step's optional `expect` (showing) and `expectHidden` (not showing); returns a reason or null. */
+async function checkStepVisibility(page, step) {
+  const isShowing = (selector) => page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    return Boolean(el && window.__SMOKE_IS_VISIBLE__(el));
+  }, selector);
+  if (step.expect && !(await isShowing(step.expect))) {
+    return `'${step.expect}' is not showing after this step`;
+  }
+  if (step.expectHidden && (await isShowing(step.expectHidden))) {
+    return `'${step.expectHidden}' is still showing after this step`;
+  }
+  return null;
 }
 
 /** Replays one declared scenario on a fresh page and reports what each step did. */
@@ -413,6 +429,13 @@ async function runScenario(page, view, scenario) {
         break;
       }
     }
+    // A step's own `expect` / `expectHidden` assert what that step switched to,
+    // for toggles whose result does not hold after every other step.
+    const stepFinding = await checkStepVisibility(page, step);
+    if (stepFinding) {
+      findings.push({ view: view.id, kind: 'scenario-expectation-failed', control: label, detail: stepFinding });
+      break;
+    }
     steps.push({ step: label, status: noop ? 'noop-single-option' : before === after ? 'no-dom-change' : 'ok' });
   }
 
@@ -420,7 +443,17 @@ async function runScenario(page, view, scenario) {
 }
 
 async function smokeView({ browser, view, defaults, handledCommands, isolate }) {
-  const bundlePath = path.join(DIST_DIR, `${view.bundle}.js`);
+  // Registry paths are contained the same way render-views.js contains them:
+  // no absolute paths, `../` or symlinks out of the dist or fixtures directory,
+  // and no link between the repo root and either of those directories.
+  let bundlePath;
+  let fixturePath;
+  try {
+    bundlePath = resolveInside(DIST_DIR, `${view.bundle}.js`, 'bundle', REPO_ROOT);
+    fixturePath = resolveInside(path.join(SKILL_DIR, 'fixtures'), view.fixture, 'fixture', REPO_ROOT);
+  } catch (error) {
+    return { view: view.id, status: 'error', error: String(error && error.message || error), controls: [], findings: [] };
+  }
   if (!fs.existsSync(bundlePath)) {
     return {
       view: view.id,
@@ -430,7 +463,6 @@ async function smokeView({ browser, view, defaults, handledCommands, isolate }) 
       findings: [],
     };
   }
-  const fixturePath = path.join(SKILL_DIR, 'fixtures', view.fixture);
   if (!fs.existsSync(fixturePath)) {
     return { view: view.id, status: 'error', error: `Missing fixture ${view.fixture}`, controls: [], findings: [] };
   }
