@@ -170,31 +170,37 @@ test('isSessionActiveSince asks the adapter when a DB-backed session\'s file mti
 	});
 	assert.equal(await isSessionActiveSince(createSessionActivityLookup('store.db#1', sources(new Date(2026, 4, 5))), oldMtime, cutoff), true);
 	assert.equal(await isSessionActiveSince(createSessionActivityLookup('store.db#2', sources(new Date(2026, 3, 5))), oldMtime, cutoff), false);
+	// A recent database mtime does not decide on its own: an idle session in an active database
+	// is judged by its own (old) activity. With no adapter answer the mtime stands in.
+	assert.equal(await isSessionActiveSince(createSessionActivityLookup('store.db#3', sources(new Date(2026, 2, 5))), new Date(2026, 4, 2), cutoff), false);
+	assert.equal(await isSessionActiveSince(createSessionActivityLookup('store.db#4', sources(null)), new Date(2026, 4, 2), cutoff), true);
 	const before = adapterCalls;
-	assert.equal(await isSessionActiveSince(createSessionActivityLookup('store.db#3', sources(null)), new Date(2026, 4, 2), cutoff), true);
-	assert.equal(adapterCalls, before, 'a recent file mtime decides without an adapter lookup');
 	// A regular file: its own mtime is the answer; the adapter is never asked.
 	const regular = { getBackingPath: (f: string) => f, getLastActivity: async () => { adapterCalls++; return new Date(); }, getMeta: async () => null };
 	assert.equal(await isSessionActiveSince(createSessionActivityLookup('session.json', regular), oldMtime, cutoff), false);
 	assert.equal(adapterCalls, before);
 });
 
-test('sessionActivityTime: a DB-backed session with a lagging database mtime is dated by the adapter', async () => {
+test('sessionActivityTime: a DB-backed session is dated by its own adapter activity, never by the shared database mtime', async () => {
 	// Usage Analysis buckets periods by this time and the view walk filters by it, so both count
 	// the same sessions (the Efficiency view combines them).
-	const oldMtime = new Date(2026, 3, 1);
-	const recent = new Date(2026, 4, 9);
-	const lookup = (lastActivity: Date | null) => ({ lastActivity: async () => lastActivity });
-	assert.deepEqual(await sessionActivityTime(lookup(recent), oldMtime), recent);
-	assert.deepEqual(await sessionActivityTime(lookup(null), oldMtime), oldMtime, 'no adapter answer (or a regular file) keeps the mtime');
-	assert.deepEqual(await sessionActivityTime(lookup(new Date(2026, 2, 1)), oldMtime), oldMtime, 'an older adapter time never wins');
-	// The exact day decides the period bucket, so the adapter is asked even when the mtime is
-	// already recent: a database written yesterday by a session active today counts as today.
-	const yesterday = new Date(2026, 4, 8);
-	assert.deepEqual(await sessionActivityTime(lookup(recent), yesterday), recent);
-	// Membership alone needs no exact time: a recent mtime decides without an adapter lookup.
 	const cutoff = new Date(2026, 4, 1);
-	assert.equal(await isSessionActiveSince({ lastActivity: async () => { throw new Error('must not be asked'); } }, yesterday, cutoff), true);
+	const oldMtime = new Date(2026, 3, 1);
+	const recentMtime = new Date(2026, 4, 9);
+	const virtual = (lastActivity: Date | null) => ({ isVirtual: true, lastActivity: async () => lastActivity });
+	// WAL lag: the database looks old, the session was active recently.
+	assert.deepEqual(await sessionActivityTime(virtual(new Date(2026, 4, 8)), oldMtime), new Date(2026, 4, 8));
+	// Another session wrote to the database recently; this one has been idle for weeks. It must
+	// not borrow the database mtime, or one write would admit every historical session.
+	assert.deepEqual(await sessionActivityTime(virtual(new Date(2026, 2, 1)), recentMtime), new Date(2026, 2, 1));
+	assert.equal(await isSessionActiveSince(virtual(new Date(2026, 2, 1)), recentMtime, cutoff), false);
+	// No adapter answer: the database mtime stands in, as before.
+	assert.deepEqual(await sessionActivityTime(virtual(null), oldMtime), oldMtime);
+	// A regular file is its own mtime, with no adapter lookup.
+	const regular = { isVirtual: false, lastActivity: async () => { throw new Error('must not be asked'); } };
+	assert.deepEqual(await sessionActivityTime(regular, recentMtime), recentMtime);
+	assert.equal(await isSessionActiveSince(regular, recentMtime, cutoff), true);
+	assert.equal(await isSessionActiveSince(regular, oldMtime, cutoff), false);
 });
 
 test('calculateViewStats stops and throws instead of returning a partial walk when cancelled', async t => {

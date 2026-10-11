@@ -1852,3 +1852,19 @@ test('addLanguageUsage skips an own __proto__ extension key', () => {
 	assert.deepEqual(Object.keys(target), ['py']);
 	assert.equal((Object.prototype as Record<string, unknown>).linesAdded, undefined);
 });
+
+test('addSessionToDailyStats gives an inherited-name repository or language its own entry', () => {
+	// Repository and language names come from session data; "toString" must not resolve to the
+	// shared built-in (which would skip the initializer and write onto Object.prototype.toString).
+	const map = new Map<string, DailyTokenStats>();
+	addSessionToDailyStats(map, {
+		editorType: 'VS Code', repository: 'toString', tokens: 40, interactions: 1, modelUsage: {},
+		dailyFractions: { '2026-05-01': 1 }, linesAdded: 2, linesRemoved: 0,
+		languageUsage: JSON.parse('{"toString": {"linesAdded": 2, "linesRemoved": 0}}'),
+	});
+	const day = map.get('2026-05-01')!;
+	assert.equal(Object.hasOwn(day.repositoryUsage, 'toString'), true);
+	assert.equal(day.repositoryUsage['toString' as string].tokens, 40);
+	assert.equal(day.languageUsage?.['toString' as string].linesAdded, 2);
+	assert.equal((Object.prototype.toString as unknown as Record<string, unknown>).tokens, undefined);
+});
