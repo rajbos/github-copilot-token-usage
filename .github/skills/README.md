@@ -99,7 +99,8 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 **Use this skill when:**
 - The CI step summary's "Code Duplication Analysis" report grows
 - A PR review notes duplicated / copy-pasted code
-- You want to DRY up the codebase (vscode-extension/src, shared src/, cli/src)
+- You want to DRY up the codebase (vscode-extension/src, shared src/, cli/src, sharing-server/src, desktop/src, release-video/src)
+- The CI `duplication-check` ratchet (`scripts/code-duplication-baseline.json`) can be lowered after a cleanup
 
 **Contents:**
 - Step-by-step workflow: list groups → pick one → baseline tests → extract helper → lint → re-run detector → build → commit → PR

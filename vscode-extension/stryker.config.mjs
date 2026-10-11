@@ -66,7 +66,10 @@ export default {
   thresholds: {
     high: 80,
     low: 60,
-    break: 0, // Informational — does not fail the build during initial rollout.
+    // Ratchet: ~3.5 points under the score measured 2026-10-08..10-10 (70.7-70.9 on
+    // the `mutate` list below). Raise it as the score improves; never lower it to
+    // admit a regression.
+    break: 67,
   },
 
   reporters: ['html', 'json', 'clear-text', 'progress'],
