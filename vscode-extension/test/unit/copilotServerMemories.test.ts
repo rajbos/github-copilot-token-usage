@@ -24,6 +24,7 @@ import {
 	promotionGroupFingerprint,
 	isOpenableCitedDocument,
 	sameRepoSlug,
+	isRelativeInsideRoot,
 	normalizeRepoSlug,
 	analyzeServerMemoriesForCheckout,
 	analyzeServerMemoriesForCheckoutAsync,
@@ -2024,4 +2025,42 @@ test("with non-overlapping categories, the zero-candidate total equals the sum o
 	assert.equal(documented + analysis.unverifiableCount + analysis.fullyStaleCount, analysis.totalMemories);
 	assert.equal(describeNoPromotionCandidates(analysis),
 		"No promotion candidates: none of the 4 stored memories is both undocumented and backed by a file that still exists in this checkout (1 already cites an instruction file, 1 has no verifiable file citation, 2 cite only files that no longer exist).");
+});
+
+test('isRelativeInsideRoot only treats a whole .. segment as escaping', () => {
+	const posixAbs = (p: string) => p.startsWith('/');
+	assert.equal(isRelativeInsideRoot('', posixAbs), true);
+	assert.equal(isRelativeInsideRoot('docs/a.md', posixAbs), true);
+	assert.equal(isRelativeInsideRoot('..cache/file.md', posixAbs), true, 'a name that starts with two dots is inside');
+	assert.equal(isRelativeInsideRoot('...weird', posixAbs), true);
+	assert.equal(isRelativeInsideRoot('..', posixAbs), false);
+	assert.equal(isRelativeInsideRoot('../outside.md', posixAbs), false);
+	assert.equal(isRelativeInsideRoot('..\\outside.md', posixAbs), false);
+	assert.equal(isRelativeInsideRoot('/etc/passwd', posixAbs), false);
+});
+
+test('a cited file under a directory whose name starts with two dots is found, sync and async', async () => {
+	const fsMod = require('fs') as typeof import('fs');
+	const os = require('os') as typeof import('os');
+	const pathMod = require('path') as typeof import('path');
+	const root = fsMod.mkdtempSync(pathMod.join(os.tmpdir(), 'srvmem-dots-'));
+	try {
+		fsMod.mkdirSync(pathMod.join(root, '..cache'));
+		fsMod.writeFileSync(pathMod.join(root, '..cache', 'file.md'), 'x');
+		assert.equal(createRepoFileExists(root)('..cache/file.md'), true);
+		assert.equal(createRepoRegularFileCheck(root)('..cache/file.md'), true);
+		const statuses = await probeCheckoutPathsAsync(root, ['..cache/file.md']);
+		assert.deepEqual(statuses.get('..cache/file.md'), { exists: true, regularFile: true });
+	} finally {
+		fsMod.rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('unverifiable status is tracked per record, so a repeated id with one user-input record is counted', () => {
+	const analysis = analyzeServerMemories({
+		repo: 'o/n',
+		enabled: true,
+		memories: [memory({ id: 'dup', citations: ['src/a.ts:1'] }), memory({ id: 'dup', citations: ['User input: tabs'] })],
+	}, alwaysExists);
+	assert.equal(analysis.unverifiableCount, 1);
 });

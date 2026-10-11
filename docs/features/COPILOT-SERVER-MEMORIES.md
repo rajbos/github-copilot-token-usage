@@ -148,9 +148,10 @@ rendered from (subject, fact, citations — `promotionGroupFingerprint()`) as
 `draftServerMemoryPromotion`; never prompt text. Renders do no filesystem checks:
 they show the cached analysis, which a throttled background re-check refreshes at
 most once a minute (see below). The click handler is therefore the authorization
-step: it rebuilds the prompt from the cached analysis and synchronously re-checks
-the target file and the group's live sources at that moment
-(`buildPromotionPromptForSubject()`). It drafts nothing, and says why, when there
+step: it re-checks the group's live sources at that moment with asynchronous,
+yielding probes (they can aggregate many records), re-validates the workspace and
+analysis after that await, then rebuilds the prompt from the current analysis with
+the two-path target probed synchronously (`buildPromotionPromptForSubject()`). It drafts nothing, and says why, when there
 is no safe target any more, the group's last source is gone, or the current
 group's fingerprint no longer matches the clicked row (it then re-renders), so a
 background refresh cannot swap what gets drafted. It likewise refuses when the workspace now resolves to a

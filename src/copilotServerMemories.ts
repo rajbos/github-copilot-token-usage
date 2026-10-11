@@ -540,6 +540,17 @@ export function createRepoRegularFileCheck(repoRoot: string, deps?: RepoFileExis
 	};
 }
 
+/**
+ * Whether a `path.relative(root, target)` result stays inside `root`. Only a whole `..` segment
+ * escapes — exactly `..`, or `..` followed by a separator — so a real name that merely starts
+ * with two dots (`..cache/file.md`) is inside. An absolute result (another drive) is outside.
+ */
+export function isRelativeInsideRoot(rel: string, isAbsolute: (target: string) => boolean): boolean {
+	if (rel === '') { return true; }
+	if (isAbsolute(rel)) { return false; }
+	return !(rel === '..' || rel.startsWith('../') || rel.startsWith('..\\'));
+}
+
 function resolveRealRoot(io: RepoFileExistsDeps, repoRoot: string): string {
 	try {
 		return io.realpathSync(io.resolve(repoRoot));
@@ -556,7 +567,7 @@ function resolveInsideCheckout(io: RepoFileExistsDeps, realRoot: string, relativ
 	try {
 		const real = io.realpathSync(io.resolve(realRoot, relativePath));
 		const rel = io.relative(realRoot, real);
-		return rel === '' || (!rel.startsWith('..') && !io.isAbsolute(rel)) ? real : undefined;
+		return isRelativeInsideRoot(rel, io.isAbsolute) ? real : undefined;
 	} catch {
 		return undefined;
 	}
@@ -645,11 +656,12 @@ interface MemoryScan {
 	/** The memories behind {@link documentedIds}, with the instruction files each one cites. */
 	documented: ServerMemoryDocumentedEntry[];
 	/**
-	 * Ids of memories with at least one citation naming a verifiable file in this repository.
+	 * Memory *records* (not ids — the store can repeat an id) with at least one citation naming a
+	 * verifiable file in this repository.
 	 * The promotion pitch is "the agent keeps re-deriving this from code, so write it down",
 	 * which is only true of a fact that came from code and can be checked against it.
 	 */
-	codeDerivedIds: Set<string>;
+	codeDerivedRecords: Set<ServerMemory>;
 	/**
 	 * Memory *records* with at least one citation that is an existing regular file inside the
 	 * checkout — the evidence a promotion needs. Keyed by record, not id: the store can repeat an
@@ -740,7 +752,7 @@ function scanMemories(memories: ServerMemory[], deps: ServerMemoryAnalysisDeps):
 		bySubject: new Map<string, ServerMemory[]>(),
 		documentedIds: new Set<string>(),
 		documented: [],
-		codeDerivedIds: new Set<string>(),
+		codeDerivedRecords: new Set<ServerMemory>(),
 		liveRecords: new Set<ServerMemory>(),
 		liveCitations: new Map<ServerMemory, string[]>(),
 		staleCitations: [],
@@ -756,7 +768,7 @@ function scanMemories(memories: ServerMemory[], deps: ServerMemoryAnalysisDeps):
 		// `checkable` holds only citations that name a safe repo-relative path. A memory with
 		// none — one citing `User input: ...`, or nothing but an absolute/traversing path — has
 		// no code evidence behind it at all.
-		if (checkable.length > 0) { scan.codeDerivedIds.add(memory.id); }
+		if (checkable.length > 0) { scan.codeDerivedRecords.add(memory); }
 		if (instructionFiles.size > 0) { recordDocumented(scan, memory, instructionFiles, deps); }
 
 		const { missing, livePaths } = probeCitations(checkable, deps);
@@ -844,7 +856,7 @@ export function analyzeServerMemories(
 		promotionGroups,
 		// Memories with no verifiable file citation — user-stated preferences and the like.
 		// Never promoted; surfaced so the report does not appear to have simply lost them.
-		unverifiableCount: memories.filter(memory => !scan.codeDerivedIds.has(memory.id)).length,
+		unverifiableCount: memories.filter(memory => !scan.codeDerivedRecords.has(memory)).length,
 		staleCitations: scan.staleCitations,
 		fullyStaleCount: scan.staleCitations.filter(c => c.fullyStale).length,
 		byAgent: countBy(memories, m => m.source?.agent),
@@ -928,7 +940,7 @@ export async function probeCheckoutPathsAsync(
 			try {
 				const real = await io.realpath(io.resolve(realRoot, relativePath));
 				const rel = io.relative(realRoot, real);
-				if (!(rel === '' || (!rel.startsWith('..') && !io.isAbsolute(rel)))) { statuses.set(relativePath, missing); return; }
+				if (!isRelativeInsideRoot(rel, io.isAbsolute)) { statuses.set(relativePath, missing); return; }
 				statuses.set(relativePath, { exists: true, regularFile: await io.isFile(real).catch(() => false) });
 			} catch {
 				statuses.set(relativePath, missing);
@@ -1177,7 +1189,8 @@ export function createPromotionTargetProbe(repoRoot: string, deps?: PromotionTar
 		}
 		try {
 			const rel = io.relative(realRoot, io.realpathSync(target));
-			const inside = rel !== '' && !rel.startsWith('..') && !io.isAbsolute(rel);
+			// The root itself is not a file target, hence the extra `rel !== ''`.
+			const inside = rel !== '' && isRelativeInsideRoot(rel, io.isAbsolute);
 			return inside && io.isFile(target) ? 'exists' : 'unsafe';
 		} catch {
 			// Present but unresolvable — a dangling symlink, or a permission error.

@@ -7503,8 +7503,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// No filesystem checks on this path. The analysis shown is the cached one: eligibility, live
 		// evidence, missing docs and the target are refreshed only by the throttled background
 		// re-check (async, yielding, at most once per SERVER_MEMORIES_RECHECK_MS), so a render
-		// within that window can show a stale state. The click handlers are what re-check the
-		// exact paths they act on, synchronously, before acting.
+		// within that window can show a stale state. The click handlers re-check the exact paths
+		// they act on before acting: the group's sources asynchronously (they can be many), the
+		// two-path target and the single file being opened synchronously (bounded).
 		const analysis = this.currentServerMemoriesAnalysis();
 		return _toServerMemoriesAnalysisView(analysis, {
 			// The store is per GitHub repository, not per workspace, so the section names the
@@ -7608,8 +7609,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	/**
 	 * Draft (never submit) the promotion prompt for one server-memory group. The webview sends the
-	 * subject key and the row's fingerprint; the prompt is rebuilt here from the cached analysis,
-	 * with the target file and the group's live sources re-checked synchronously right now. Renders
+	 * subject key and the row's fingerprint; the prompt is rebuilt here from the current analysis,
+	 * with the group's live sources re-checked asynchronously (they can be many) and the two-path
+	 * target synchronously, then the context re-validated after that await. Renders
 	 * do no such check — the cached analysis is only refreshed by the throttled background re-check
 	 * — so this click-time check is the authorization: with no safe target or no surviving source,
 	 * or a row that changed under the user, nothing is drafted.
@@ -7625,7 +7627,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// two paths and is probed synchronously inside the builder.
 		const group = analysis.promotionGroups.find(candidate => candidate.subject === subject);
 		const statuses = await _probeCheckoutPathsAsync(repoRoot, group ? _collectCitedRepoPaths([group]) : []);
-		const result = _buildPromotionPromptForSubject(analysis, subject, fingerprint, _createPromotionTargetProbe(repoRoot),
+		// The probe awaited I/O: workspace folders, trust, a refetch or the background re-check may
+		// have changed things meanwhile. Re-read the current analysis and root and check the
+		// context again, then build from *that* analysis, so the fingerprint still compares the
+		// clicked row against what the host holds now.
+		const currentAnalysis = this.currentServerMemoriesAnalysis();
+		const currentRoot = this._serverMemoriesRepoRoot;
+		if (!currentAnalysis || currentRoot !== repoRoot || !this.ensureServerMemoriesContextCurrent(currentRoot)) { return; }
+		const result = _buildPromotionPromptForSubject(currentAnalysis, subject, fingerprint, _createPromotionTargetProbe(currentRoot),
 			(filePath) => statuses.get(filePath)?.regularFile ?? false);
 		if ('prompt' in result) {
 			await vscode.commands.executeCommand('workbench.action.chat.open', { query: result.prompt, isNewChat: true, isPartialQuery: true, mode: 'agent' });
