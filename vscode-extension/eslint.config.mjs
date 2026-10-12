@@ -23,7 +23,8 @@ const toPattern = (repoRel) => repoRel.startsWith("vscode-extension/")
 const legacyAnyFiles = Object.keys(baselineRules["@typescript-eslint/no-explicit-any"] ?? {}).map(toPattern);
 
 // Files currently over the max-lines ceiling, pinned at their present size so no second
-// file can cross 6000. Shrink these numbers as the files are decomposed; never raise them.
+// file can cross 6000. The numbers are exactly what `max-lines` reports (it skips blank lines
+// and comments, so they are lower than `wc -l`); there is deliberately no slack. Shrink these numbers as the files are decomposed; never raise them.
 const MAX_LINES = 6000;
 const oversizedFiles = { "vscode-extension/src/extension.ts": 11279 };
 

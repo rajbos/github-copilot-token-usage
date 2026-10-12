@@ -248,6 +248,10 @@ jobs:
       working-directory: vscode-extension
       run: pnpm run lint:hardcoded-colors
 
+    - name: Test lint-baseline ratchet
+      working-directory: vscode-extension
+      run: pnpm run test:lint-baseline
+
     - name: Run linting
       working-directory: vscode-extension
       run: pnpm run lint
