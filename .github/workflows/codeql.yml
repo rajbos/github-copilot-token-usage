@@ -297,7 +297,7 @@ jobs:
         with:
           category: "/language:${{matrix.language}}"
 
-  # Stable required-check anchor - see the same pattern in build.yml.
+  # Stable required-check anchor - see the same pattern in ci.yml.
   #
   # analyze's matrix is built by check-changes, so the per-language check runs
   # ("Analyze (csharp, ...)", "Analyze (java-kotlin, ...)") are ABSENT, not

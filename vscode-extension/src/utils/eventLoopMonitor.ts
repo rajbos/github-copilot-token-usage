@@ -28,6 +28,17 @@ export interface EventLoopMonitorOptions {
 	stallThresholdMs?: number;
 	/** Called once per stalled window. */
 	onStall: (report: EventLoopLagReport) => void;
+	/** Test seam: supplies the delay histogram so tests can drive readings instead of blocking the real loop. */
+	createHistogram?: (resolutionMs: number) => EventLoopDelayHistogram;
+}
+
+/** The subset of Node's `IntervalHistogram` the monitor reads (values in nanoseconds). */
+export interface EventLoopDelayHistogram {
+	readonly max: number;
+	percentile(percentile: number): number;
+	enable(): boolean | void;
+	disable(): boolean | void;
+	reset(): void;
 }
 
 const DEFAULT_RESOLUTION_MS = 20;
@@ -53,7 +64,9 @@ export function startEventLoopMonitor(options: EventLoopMonitorOptions): EventLo
 	const reportIntervalMs = options.reportIntervalMs ?? DEFAULT_REPORT_INTERVAL_MS;
 	const stallThresholdMs = options.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS;
 
-	const histogram: ReturnType<typeof monitorEventLoopDelay> = monitorEventLoopDelay({ resolution: resolutionMs });
+	const histogram: EventLoopDelayHistogram = options.createHistogram
+		? options.createHistogram(resolutionMs)
+		: monitorEventLoopDelay({ resolution: resolutionMs });
 	histogram.enable();
 
 	let lastStall: (EventLoopLagReport & { at: number }) | undefined;
