@@ -2040,7 +2040,7 @@ function _handleWorktreeRowLinkClick(event: MouseEvent, target: HTMLElement): bo
 			const original = copyPromptBtn.textContent;
 			copyPromptBtn.textContent = localize("usage.worktreeCleanup.copied");
 			setTimeout(() => { copyPromptBtn.textContent = original; }, 2000);
-		});
+		}).catch(() => { /* clipboard unavailable: leave the button as is */ });
 		return true;
 	}
 	const revealLink = target.closest(".worktree-reveal-link, .worktree-reveal-btn") as HTMLElement | null;
@@ -4184,7 +4184,8 @@ function renderWorktreeCleanupStatus(): string {
 		const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
 		return `<div class="info-box" style="margin-top: 12px;">
       <div class="info-box-title">🧹 Cleaning up pushed worktrees…</div>
-      <div>${processed} / ${total} processed · ${escapeHtml(localizeFormat("usage.worktreeCleanup.recovered", formatFileSize(getCleanupRecoveredBytes())))}</div>
+      <div>${processed} / ${total} processed</div>
+      <div>${escapeHtml(localizeFormat("usage.worktreeCleanup.recovered", formatFileSize(getCleanupRecoveredBytes())))}</div>
       <div class="worktree-progress-bar"><div class="worktree-progress-fill" style="width: ${pct}%;"></div></div>
     </div>${renderWorktreeCleanupLog()}`;
 	}
@@ -4196,7 +4197,8 @@ function renderWorktreeCleanupStatus(): string {
 	const errors = worktreeCleanupLog.filter((e) => e.status === "error" && !retried(e)).length;
 	return `<div class="info-box" style="margin-top: 12px;">
     <div class="info-box-title">🧹 Cleanup finished</div>
-    <div>✅ ${deleted} deleted · ⏭️ ${skipped} skipped (uncommitted/unpushed) · ${errors > 0 ? `❌ ${errors} error${errors === 1 ? "" : "s"}` : "0 errors"} · 💾 ${escapeHtml(localizeFormat("usage.worktreeCleanup.recovered", formatFileSize(getCleanupRecoveredBytes())))}</div>
+    <div>✅ ${deleted} deleted · ⏭️ ${skipped} skipped (uncommitted/unpushed) · ${errors > 0 ? `❌ ${errors} error${errors === 1 ? "" : "s"}` : "0 errors"}</div>
+    <div>💾 ${escapeHtml(localizeFormat("usage.worktreeCleanup.recovered", formatFileSize(getCleanupRecoveredBytes())))}</div>
   </div>${renderWorktreeCleanupLog()}`;
 }
 
