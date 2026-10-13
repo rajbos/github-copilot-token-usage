@@ -16,13 +16,16 @@ function functionBody(name: string): string {
 
 test('memory sections render in the Workspace Health panel', () => {
 	const health = functionBody('buildHealthTabPanelHtml');
-	assert.ok(health.includes('buildMemoryFilesSectionHtml('));
-	assert.ok(health.includes('buildServerMemoriesSectionHtml('));
-	assert.ok(health.indexOf('buildMemoryFilesSectionHtml(') < health.indexOf('section-repo-hygiene'));
+	assert.ok(health.includes('buildMemorySectionsHtml('));
+	assert.ok(health.indexOf('buildMemorySectionsHtml(') < health.indexOf('section-repo-hygiene'));
+	const memory = functionBody('buildMemorySectionsHtml');
+	assert.ok(memory.includes('buildMemoryFilesSectionHtml('));
+	assert.ok(memory.includes('buildServerMemoriesSectionHtml('));
 });
 
 test('memory sections no longer render in the Tools panel', () => {
 	const tools = functionBody('buildToolsTabPanelHtml');
+	assert.ok(!tools.includes('buildMemorySectionsHtml('));
 	assert.ok(!tools.includes('buildMemoryFilesSectionHtml('));
 	assert.ok(!tools.includes('buildServerMemoriesSectionHtml('));
 });

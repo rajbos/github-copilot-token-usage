@@ -202,8 +202,8 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 						children: [
 							{ id: 'usage.health.customization', title: 'Copilot Customization Files', description: 'Which workspaces have instructions, prompts, agents and skills set up for Copilot.', keywords: ['instructions', 'agents.md', 'copilot-instructions'], nav: { anchor: 'section-customization-files' } },
 							{ id: 'usage.health.missed-potential', title: 'Missed Potential', description: 'Workspaces with instruction files for other AI tools but no Copilot equivalent.', keywords: ['claude.md', 'cursor rules'], nav: { anchor: 'section-missed-potential' } },
-							{ id: 'usage.health.memory-files', title: 'Copilot Memory Files', description: 'Memory files per workspace with size, stale entries and last update.', keywords: ['memories', 'hygiene'], nav: { anchor: 'section-memory-files' }, condition: 'When memory files exist' },
-							{ id: 'usage.health.server-memories', title: 'Copilot Repository Memories', description: 'Server-side agent memories for this repository and candidates to promote into instructions.', nav: { anchor: 'section-server-memories' }, condition: 'When the workspace is a GitHub repository' },
+							{ id: 'usage.tools.memory-files', title: 'Copilot Memory Files', description: 'Memory files per workspace with size, stale entries and last update.', keywords: ['memories', 'hygiene'], nav: { anchor: 'section-memory-files' }, condition: 'When memory files exist' },
+							{ id: 'usage.tools.server-memories', title: 'Copilot Repository Memories', description: 'Server-side agent memories for this repository and candidates to promote into instructions.', nav: { anchor: 'section-server-memories' }, condition: 'When the workspace is a GitHub repository' },
 							{ id: 'usage.health.repo-hygiene', title: 'Repository Hygiene Analysis', description: 'Per-repository checks for the setup that helps agents do good work.', nav: { anchor: 'section-repo-hygiene' } },
 						],
 					},

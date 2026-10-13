@@ -61,7 +61,7 @@ test('a section is addressed by its tab as well as its view', () => {
 		}),
 		{ index: 0 },
 	);
-	assert.match(text, /on the Tools and Integrations tab/);
+	assert.match(text, /on the Workspace Health tab/);
 	assert.match(text, /a new section called Copilot Memory Files/);
 });
 
