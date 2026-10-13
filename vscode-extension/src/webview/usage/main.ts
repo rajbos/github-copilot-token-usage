@@ -484,7 +484,7 @@ type WorktreeScanStatus = {
 };
 
 // Worktree discovery tab state
-let worktreeRoots: string[] = initialData?.worktreeScanRoots ? [...initialData.worktreeScanRoots] : [];
+const worktreeRoots: string[] = initialData?.worktreeScanRoots ? [...initialData.worktreeScanRoots] : [];
 let worktreeResults: WorktreeResult[] = initialData?.worktreeBackgroundScan
 	? initialData.worktreeBackgroundScan.worktrees.map(sanitizeWorktreeResult)
 	: [];
@@ -1231,11 +1231,11 @@ const presetForcedColumns = new Set<SessionColumnId>();
 
 // --- Recent Sessions pill filters (Editor / Model / Model vendor / HydraFusion) ---
 /** Active editor pill filters. Empty set means "no filter" (show all editors). */
-let sessionFilterEditors: Set<string> = new Set();
+const sessionFilterEditors: Set<string> = new Set();
 /** Active model-vendor pill filters (e.g. "Anthropic", "OpenAI"). Empty set means "no filter". */
-let sessionFilterVendors: Set<string> = new Set();
+const sessionFilterVendors: Set<string> = new Set();
 /** Active model pill filters. Empty set means "no filter". */
-let sessionFilterModels: Set<string> = new Set();
+const sessionFilterModels: Set<string> = new Set();
 /** Quick toggle: when true, only show sessions that used a HydraFusion model. */
 let sessionFilterHydraFusionOnly = false;
 /** Quick toggle: when true, only show sessions that nearly filled their context window. */

@@ -41,41 +41,16 @@ updates:
       # These should be handled manually to avoid breaking changes
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
-      # @types/vscode is handled by its own entry below (longer cooldown)
+      # @types/vscode bumps the minimum VS Code version enterprise users need
+      # (engines.vscode must be >= @types/vscode or vsce refuses to package -
+      # see the incident that broke the nightly pre-release for over a week).
+      # Dependabot allows one update entry per ecosystem + directory and cannot
+      # set cooldown days per dependency, so it cannot get its own longer
+      # cooldown. Ignore it entirely; .github/workflows/bump-vscode-types.yml
+      # proposes the bump (with engines.vscode) once a release is 42 days old.
       - dependency-name: "@types/vscode"
       - dependency-name: "vscode"
         update-types: ["version-update:semver-major"]
-
-  # @types/vscode bumps the minimum VS Code version enterprise users need
-  # (engines.vscode must be >= @types/vscode or vsce refuses to package -
-  # see the incident that broke the nightly pre-release for over a week).
-  # Give each release 6 weeks before Dependabot even proposes it, so users
-  # on an older VS Code build keep working; engines.vscode is bumped by hand
-  # only when the code actually needs a newer API.
-  - package-ecosystem: "npm"
-    directory: "/vscode-extension"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "04:00"
-      timezone: "UTC"
-    cooldown:
-      default-days: 42
-    allow:
-      - dependency-name: "@types/vscode"
-    ignore:
-      - dependency-name: "@types/vscode"
-        update-types: ["version-update:semver-major"]
-    commit-message:
-      prefix: "npm"
-      include: "scope"
-    reviewers:
-      - "rajbos"
-    assignees:
-      - "rajbos"
-    labels:
-      - "dependencies"
-      - "npm"
 
   # Enable version updates for GitHub Actions
   - package-ecosystem: "github-actions"

@@ -60,7 +60,7 @@ this is meant to prevent.
 | Check | Command | Catches |
 |---|---|---|
 | `types` | `npm run check-types` | type errors |
-| `lint` | `npm run lint` | lint errors |
+| `lint` | `pnpm run lint` | lint errors, and ESLint warnings growing past `lint-baseline.json` |
 | `json` | `npm run lint:json` | malformed data files |
 | `l10n` | `npm run lint:l10n` | localization keys out of sync |
 | `compile` | `npm run compile` | build failures |
@@ -382,3 +382,12 @@ private/no-store caching, and the contract's UTC-window, activity, ties, quartil
 and no-peer edge cases. New exports and downstream route overrides need the same
 checks. A chart screenshot or a helper-only unit test cannot establish separation.
 All automated verification is non-interactive; never launch a GUI editor/IDE.
+
+## ESLint ratchet
+
+`pnpm run lint` (in `vscode-extension/`) runs `scripts/check-lint-baseline.mjs`, which runs ESLint over `src` and `../src`:
+
+- `@typescript-eslint` recommended (non type-aware) is enabled. Rules with legacy violations (`no-unused-vars`, `no-require-imports`, ...) stay `warn`; the rest are `error`.
+- `no-explicit-any` is `error` everywhere except files listed in `lint-baseline.json` (legacy, `warn`), `cli/` and tests (off). New files cannot introduce `any`.
+- `max-lines` (6000) is `error`; `extension.ts` is pinned at its current size in `eslint.config.mjs` (`oversizedFiles`). Lower that number as it shrinks; never raise it.
+- Warnings are counted per rule and per file against `lint-baseline.json`. A count may shrink, never grow, and a new rule/file pair fails. After paying warnings down run `pnpm run lint:baseline:update` and commit the baseline so the ratchet tightens.

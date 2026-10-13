@@ -15882,6 +15882,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AiFlue
   setCopilotCliOtelSnapshotPath(path.join(context.globalStorageUri.fsPath, 'copilot-cli-otel-index.json'));
   // The index starts before the tracker (and its output channel) exists, so early messages wait for it.
   const earlyOtelMessages: string[] = [];
+  // eslint-disable-next-line prefer-const -- assigned after the logger closure that reads it is registered
   let otelLogTarget: CopilotTokenTracker | undefined;
   setCopilotCliOtelLogger((message) => { if (otelLogTarget) { otelLogTarget.log(message); } else { earlyOtelMessages.push(message); } });
   void loadCopilotCliOtelIndex().catch(() => { /* off-by-default export; degrades to no data */ });
