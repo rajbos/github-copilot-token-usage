@@ -913,6 +913,11 @@
   "usage.worktreeCleanup.deleting": "⏳ 正在删除工作树{0}…",
   "usage.worktreeCleanup.deleted": "✅ 已删除",
   "usage.worktreeCleanup.deleteFailed": "❌ 删除失败：{0}",
+  "usage.worktreeCleanup.recovered": "已回收 {0}",
+  "usage.worktreeCleanup.copyPrompt": "📋 复制提示词",
+  "usage.worktreeCleanup.copyPromptTitle": "复制起始提示词：在 VS Code 中打开此工作树，开始聊天会话并粘贴，以了解其中的差异",
+  "usage.worktreeCleanup.copied": "✅ 已复制！",
+  "usage.worktreeCleanup.starterPrompt": "此 git 工作树（分支“{0}”）无法自动删除。请检查其当前状态：运行 git status，并对比其上游或基础分支运行 git diff，总结改动内容及原因，并告诉我这些工作是否已合并或已推送到别处，以便我判断是否可以安全删除此工作树。",
   "usage.worktreeCleanup.unknownError": "未知错误",
   "usage.worktreeCleanup.revealMissing": "“{0}”在磁盘上已不存在。"
 }
