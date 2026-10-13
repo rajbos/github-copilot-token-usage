@@ -21,8 +21,9 @@ import customizationPatternsData from '../../src/customizationPatterns.json';
 import copilotPlansData from './copilotPlans.json';
 import * as packageJson from '../package.json';
 import { getToolFamilies, DEFAULT_TOOL_FAMILIES } from './toolFamilies';
-import { getEditorIconByName } from './editorIcons';
-import * as loadingHtml from './loadingHtml';
+import { getEditorIconByName } from '../../src/editorIcons';
+import { createWindsurfHost, createSessionDiscoveryHost } from './srcHostAdapters';
+import * as loadingHtml from '../../src/loadingHtml';
 
 // --- Core types ---
 import type {
@@ -345,6 +346,7 @@ import {
   calculateFluencyScoreForTeamMember as _calculateFluencyScoreForTeamMember,
   calculateMaturityScores as _calculateMaturityScores,
   STAGE_THRESHOLDS,
+  STATS_REFRESH_INTERVAL_MS,
 } from '../../src/maturityScoring';
 
 // --- Workspace helpers ---
@@ -2654,7 +2656,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.scheduleInitialUpdate();
 		this.updateInterval = setInterval(() => {
 			this.updateTokenStats(true, true);
-		}, 5 * 60 * 1000);
+		}, STATS_REFRESH_INTERVAL_MS);
 		// A webview click can only be delivered between event-loop ticks, so a long synchronous
 		// stretch on this thread is what the user feels as "navigation is blocked". Surface it.
 		this._eventLoopMonitor = startEventLoopMonitor({
@@ -2711,7 +2713,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.claudeDesktop = dataAccess.claudeDesktop;
 		this.mistralVibe = dataAccess.mistralVibe;
 		this.geminiCli = dataAccess.geminiCli;
-		this.windsurf = new WindsurfDataAccess(extensionUri, (m) => this.log(m));
+		this.windsurf = new WindsurfDataAccess(extensionUri, (m) => this.log(m), createWindsurfHost());
 		this.hermes = dataAccess.hermes;
 		this.ecosystems = buildAdapterRegistry({
 			...dataAccess,
@@ -2782,6 +2784,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			ecosystems: this.ecosystems,
 			windsurf: this.windsurf,
 			sampleDataDirectoryOverride: () => this.localRegressionSampleDataDir,
+			...createSessionDiscoveryHost(),
 		});
 	}
 
