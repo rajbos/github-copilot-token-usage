@@ -352,6 +352,7 @@ import {
   normalizePathForDedup as _normalizePathForDedup,
   dedupeByNormalizedKeyKeepGreatest as _dedupeByNormalizedKeyKeepGreatest,
   normalizeToRepoRoot as _normalizeToRepoRoot,
+  getRepoNameFromWorkspacePath as _getRepoNameFromWorkspacePath,
   resolveDebugLogCandidatePaths as _resolveDebugLogCandidatePaths,
 } from '../../src/workspaceHelpers';
 import { getRepositoryUrl as _getRepositoryUrl } from './repositoryUrl';
@@ -6897,7 +6898,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (nonCopilotFiles.length > 0 && !hasCopilotFiles) {
 				missedPotential.push({
 					workspacePath,
-					workspaceName: path.basename(workspacePath),
+					workspaceName: _getRepoNameFromWorkspacePath(workspacePath),
 					sessionCount,
 					interactionCount: workspaceInteractionCounts.get(workspacePath) || 0,
 					nonCopilotFiles
@@ -8365,7 +8366,23 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.deduplicateWorkspacesByCase(sessionCounts, interactionCounts);
 		this.deduplicateRemoteWorkspacePaths(sessionCounts, interactionCounts);
 		this.deduplicateCopilotWorktrees(sessionCounts, interactionCounts);
+		this.deduplicateAgentWorktreeFolders(sessionCounts, interactionCounts);
 		this.deduplicateByBasename(sessionCounts, interactionCounts);
+	}
+
+	/**
+	 * Fold agent worktree folders ("~/.claude/worktrees/<repo>/<name>", "~/.copilot/worktrees/<repo>/<name>")
+	 * onto their repo so the matrix lists repos, not generated worktree names. A real clone with the same
+	 * folder name wins in {@link deduplicateByBasename}; otherwise the "<repo>" level stays as the entry.
+	 */
+	private deduplicateAgentWorktreeFolders(sessionCounts: Map<string, number>, interactionCounts: Map<string, number>): void {
+		for (const key of Array.from(sessionCounts.keys())) {
+			const canonical = path.normalize(_normalizeToRepoRoot(key));
+			if (canonical === key || key.startsWith('<unresolved:')) { continue; }
+			if (!sessionCounts.has(canonical)) { sessionCounts.set(canonical, 0); interactionCounts.set(canonical, 0); }
+			this.mergeWorkspaceInto(canonical, key, sessionCounts, interactionCounts);
+			this.ensureWorkspaceCustomizationCached(canonical);
+		}
 	}
 
 	/**
@@ -8389,11 +8406,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 		for (const [, group] of basenameToKeys) {
 			if (group.length < 2) { continue; }
 			// Pick winner: most interactions; on tie, most sessions; on tie, first entry
-			const winner = group.reduce((best, key) => {
-				const bestScore = (interactionCounts.get(best) || 0) * 10000 + (sessionCounts.get(best) || 0);
-				const keyScore = (interactionCounts.get(key) || 0) * 10000 + (sessionCounts.get(key) || 0);
-				return keyScore > bestScore ? key : best;
-			});
+			// A real clone beats an agent-store placeholder ("~/.claude/worktrees/<repo>") so the
+			// customization scan keeps the folder that actually holds the repo's files.
+			const isStorePlaceholder = (key: string) => /[\\/]\.(?:claude|copilot)[\\/](?:copilot-)?worktrees[\\/][^\\/]+$/i.test(key);
+			const score = (key: string) => (isStorePlaceholder(key) ? 0 : 1e12) + (interactionCounts.get(key) || 0) * 10000 + (sessionCounts.get(key) || 0);
+			const winner = group.reduce((best, key) => score(key) > score(best) ? key : best);
 			for (const key of group) {
 				if (key !== winner && sessionCounts.has(key)) {
 					this.mergeWorkspaceInto(winner, key, sessionCounts, interactionCounts);
@@ -8418,7 +8435,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				else { typeStatuses[type.id] = '✅'; }
 			}
 			if (customizationTypes.every(t => typeStatuses[t.id] === '❌')) { issues++; }
-			rows.push({ workspacePath: folderPath, workspaceName: path.basename(folderPath), sessionCount, interactionCount: interactionCounts.get(folderPath) || 0, typeStatuses });
+			rows.push({ workspacePath: folderPath, workspaceName: _getRepoNameFromWorkspacePath(folderPath), sessionCount, interactionCount: interactionCounts.get(folderPath) || 0, typeStatuses });
 		}
 		return { rows, issues };
 	}
