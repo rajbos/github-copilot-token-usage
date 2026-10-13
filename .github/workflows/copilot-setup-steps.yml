@@ -75,6 +75,22 @@ jobs:
             echo "version=24" >> "$GITHUB_OUTPUT"
           fi
 
+      # Same stale-branch problem for the lockfiles: code review reads this file
+      # from the default branch but checks out the PR head, and a branch cut
+      # before the npm -> pnpm migration (#1216) only has package-lock.json.
+      # setup-node fails hard ("Some specified paths were not resolved") when
+      # cache-dependency-path matches nothing, so only enable the pnpm cache
+      # when the lockfiles it hashes are actually in this checkout.
+      - name: Detect pnpm lockfiles
+        id: lockfiles
+        run: |
+          if [ -f vscode-extension/pnpm-lock.yaml ] && [ -f cli/pnpm-lock.yaml ]; then
+            echo "pnpm=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::pnpm lockfiles not found in this checkout (branch predates the pnpm migration?) - skipping the pnpm dependency cache"
+            echo "pnpm=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
@@ -83,13 +99,32 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ steps.node-version.outputs.version }}
-          cache: "pnpm"
-          cache-dependency-path: "**/pnpm-lock.yaml"
+          cache: ${{ steps.lockfiles.outputs.pnpm == 'true' && 'pnpm' || '' }}
+          # The lockfiles of the packages this job installs, not a `**` glob.
+          # setup-node only fails when none of them resolve; the detect step
+          # above checked the first two exist, so the hash is never empty.
+          cache-dependency-path: |
+            vscode-extension/pnpm-lock.yaml
+            cli/pnpm-lock.yaml
+            .github/skills/azure-storage-loader/pnpm-lock.yaml
 
+      # Install with whichever lockfile the checkout has, so a pre-pnpm branch
+      # under code review still gets its dependencies (via `npm ci`) instead of
+      # failing `pnpm install --frozen-lockfile` on a missing pnpm-lock.yaml.
       - name: Install JavaScript dependencies
         run: |
-          cd vscode-extension && pnpm install --frozen-lockfile --ignore-scripts
-          cd ../cli && pnpm install --frozen-lockfile --ignore-scripts
+          install_deps() {
+            if [ -f "$1/pnpm-lock.yaml" ]; then
+              (cd "$1" && pnpm install --frozen-lockfile --ignore-scripts)
+            elif [ -f "$1/package-lock.json" ]; then
+              echo "::warning::$1 has no pnpm-lock.yaml - installing from package-lock.json with npm ci"
+              (cd "$1" && npm ci --ignore-scripts --no-audit --no-fund)
+            else
+              echo "::warning::$1 has no lockfile - skipping its dependency install"
+            fi
+          }
+          install_deps vscode-extension
+          install_deps cli
 
       # The webview harnesses (`npm run check:interaction`, `npm run visual:diff`,
       # the visual-view-diff skill) render the real webview bundles in headless
@@ -433,7 +468,13 @@ jobs:
         if: ${{ vars.COPILOT_STORAGE_ACCOUNT != '' }}
         run: |
           cd .github/skills/azure-storage-loader
-          pnpm install --frozen-lockfile --ignore-scripts --production
+          # A pre-pnpm branch under code review only has package-lock.json here.
+          if [ -f pnpm-lock.yaml ]; then
+            pnpm install --frozen-lockfile --ignore-scripts --production
+          else
+            echo "::warning::azure-storage-loader has no pnpm-lock.yaml - installing from package-lock.json with npm ci"
+            npm ci --ignore-scripts --no-audit --no-fund --omit=dev
+          fi
 
       - name: Download aggregated usage data from Azure Table Storage
         if: ${{ vars.COPILOT_STORAGE_ACCOUNT != '' }}
