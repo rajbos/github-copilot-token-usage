@@ -234,7 +234,27 @@ test('normalizeEntity sanitizes free-text fields and type-checks numbers', () =>
 	assert.equal(entity.outputTokens, 5);
 });
 
-test('normalizeEntity keeps schemaVersion only when it is a finite integer', () => {
+test('sumCounts totals exactly even when the sum exceeds Number.MAX_SAFE_INTEGER', () => {
+	const max = Number.MAX_SAFE_INTEGER;
+	const rows = [
+		{ inputTokens: max, outputTokens: max, interactions: max },
+		{ inputTokens: max, outputTokens: 1, interactions: max },
+		{ inputTokens: 1, outputTokens: 0, interactions: 1 }
+	];
+	const totals = loader.sumCounts(rows);
+	// Plain Number addition gives 18014398509481984 here; the exact sum is ...983
+	assert.equal(rows.reduce((acc, r) => acc + r.inputTokens, 0), 18014398509481984);
+	assert.equal(totals.inputTokens, 18014398509481983n);
+	assert.equal(totals.outputTokens, BigInt(max) + 1n);
+	assert.equal(totals.totalTokens, 18014398509481983n + BigInt(max) + 1n);
+	assert.equal(totals.interactions, 18014398509481983n);
+	// Invalid counts contribute nothing, and an empty set totals zero
+	assert.deepEqual(loader.sumCounts([{ inputTokens: 'x', outputTokens: NaN, interactions: 2 ** 53 }]),
+		{ inputTokens: 0n, outputTokens: 0n, interactions: 0n, totalTokens: 0n });
+	assert.equal(loader.sumCounts([]).totalTokens, 0n);
+});
+
+test('normalizeEntity keeps schemaVersion only when it is a safe integer', () => {
 	const norm = (schemaVersion) => loader.normalizeEntity({ schemaVersion }, 'pk', 'default', '2026-01-01').schemaVersion;
 	assert.equal(norm(3), 3);
 	assert.equal(norm(0), 0);
