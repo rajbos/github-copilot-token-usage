@@ -115,9 +115,9 @@ async function loadChartModule(): Promise<void> {
 type TabId = 'trends' | 'skills' | 'deltas' | 'attribution' | 'cache' | 'models' | 'value' | 'combined';
 let activeTab: TabId = 'trends';
 
-const TABS: { id: TabId; label: string }[] = [
+const TABS: { id: TabId; label: string; labelKey?: string }[] = [
 	{ id: 'trends', label: '📈 Trends' },
-	{ id: 'skills', label: '🛠️ Skills' },
+	{ id: 'skills', label: '🛠️ Skills', labelKey: 'efficiency.tab.skills' },
 	{ id: 'deltas', label: '🗓️ Month vs Month' },
 	{ id: 'attribution', label: '💸 Cost Attribution' },
 	{ id: 'cache', label: '⚡ Prompt Cache' },
@@ -130,7 +130,7 @@ const TABS: { id: TabId; label: string }[] = [
  * Tabs to show for this dataset. The Prompt Cache tab only exists when there is
  * cache-breakage data to put in it (Claude Code / Claude Desktop sessions).
  */
-function visibleTabs(d: EfficiencyViewData): { id: TabId; label: string }[] {
+function visibleTabs(d: EfficiencyViewData): { id: TabId; label: string; labelKey?: string }[] {
 	return TABS.filter(t => t.id !== 'cache' || d.cacheBreakage);
 }
 
@@ -1603,7 +1603,7 @@ function render(): void {
 			<p class="eff-subtitle">Are you working more efficiently with AI over time — and is it coming from using AI differently, cheaper models, or leaner sessions? Last updated ${escapeHtml(new Date(data.lastUpdated).toLocaleString())}.</p>
 			<div class="eff-verdict ${verdict.cls}"><span class="verdict-icon">${verdict.icon}</span><span class="verdict-text">${verdict.text}</span></div>
 			<div class="eff-tabs">
-				${visibleTabs(data).map(t => `<button class="eff-tab ${t.id === activeTab ? 'active' : ''}" data-tab="${t.id}">${t.label}</button>`).join('')}
+				${visibleTabs(data).map(t => `<button class="eff-tab ${t.id === activeTab ? 'active' : ''}" data-tab="${t.id}">${t.labelKey ? escapeHtml(localize(t.labelKey)) : t.label}</button>`).join('')}
 			</div>
 			<div id="eff-tab-content">${renderActiveTab(data, scoped)}</div>
 			<p class="caveat">⚠️ Honest caveats: costs are estimates from token counts and public rates; lines of code is a weak value proxy (refactors and generated boilerplate distort it); shorter sessions only count as efficiency when output (lines, applied blocks, PRs) holds or rises. Every trend here should be read alongside its value counterpart.</p>

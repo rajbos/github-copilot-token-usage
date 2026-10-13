@@ -2040,3 +2040,13 @@ test('l10n: workspace grouping strings in the Customization Files matrix resolve
 		mock.setLanguage('en');
 	}
 });
+
+test('l10n: efficiency Skills tab label resolves in English and zh-cn', () => {
+	assert.equal(t('efficiency.tab.skills'), '🛠️ Skills');
+	mock.setLanguage('zh-cn');
+	try {
+		assert.equal(t('efficiency.tab.skills'), '🛠️ 技能');
+	} finally {
+		mock.setLanguage('en');
+	}
+});
