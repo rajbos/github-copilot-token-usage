@@ -14,7 +14,7 @@
  * Scope:
  *   - vscode-extension/src/webview/**\/*.ts (all webview UI code)
  *   - vscode-extension/src/backend/configPanel.ts, src/backend/teamServerConfigPanel.ts, and
- *     src/loadingHtml.ts — whole files dedicated to building webview HTML outside src/webview/
+ *     src/loadingHtml.ts (repo root) — whole files dedicated to building webview HTML outside src/webview/
  *   - vscode-extension/src/extension.ts, but only inside the `getXxxHtml`-style
  *     methods that build webview HTML (`^get[A-Za-z0-9_]*Html$`) — the rest of
  *     that 13k-line file is extension-host code with its own l10n conventions
@@ -141,7 +141,7 @@ const extensionTsPath = path.join(extRoot, 'src', 'extension.ts');
 const EXTRA_FULL_SCAN_FILES = [
 	path.join(extRoot, 'src', 'backend', 'configPanel.ts'),
 	path.join(extRoot, 'src', 'backend', 'teamServerConfigPanel.ts'),
-	path.join(extRoot, 'src', 'loadingHtml.ts'),
+	path.join(repoRoot, 'src', 'loadingHtml.ts'),
 ];
 // The personalized-insights catalog (issue #2081). Unlike every other scanned
 // file this one renders no HTML at all — its user-facing strings are plain
