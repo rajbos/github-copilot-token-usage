@@ -31,13 +31,22 @@ export { createEmptyChartPayload } from '../analysis';
  * hand-written subset.
  */
 export function createEmptyUsageAnalysisPayload(now = new Date()) {
-	return createUsageAnalysisPayload({
+	return createUsageAnalysisPayload(createEmptyUsageAnalysisStats(now), now);
+}
+
+/**
+ * Usage-analysis stats for "no session files". Commands that run in a workspace still pass
+ * these through `withUsageAnalysisViewStats()`, so configured MCP servers and skills reach the
+ * curation analysis even without session data (as the standalone `curation` command does).
+ */
+export function createEmptyUsageAnalysisStats(now = new Date()): UsageAnalysisStats {
+	return {
 		today: createEmptyUsageAnalysisPeriod(),
 		last30Days: createEmptyUsageAnalysisPeriod(),
 		month: createEmptyUsageAnalysisPeriod(),
 		lastMonth: createEmptyUsageAnalysisPeriod(),
 		lastUpdated: now,
-	}, now);
+	};
 }
 
 /** Empty fluency/maturity payload (no session files found). */

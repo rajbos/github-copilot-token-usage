@@ -1,6 +1,9 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
-import { createEmptyUsageAnalysisPayload, createUsageAnalysisPayload } from '../commands/payloads';
+import { createEmptyUsageAnalysisPayload, createEmptyUsageAnalysisStats, createUsageAnalysisPayload } from '../commands/payloads';
+import { withUsageAnalysisViewStats } from '../usageAnalysisView';
+import * as fs from 'fs';
+import * as path from 'path';
 import { createEmptyUsageAnalysisPeriod } from '../analysis';
 import { USAGE_ANALYSIS_VIEW_KEYS } from '../../../src/usageAnalysisViewBuilder';
 import type { UsageAnalysisStats } from '../../../src/types';
@@ -63,4 +66,20 @@ test('the empty (no sessions) usage-analysis payload comes from the same shared 
 	}
 	assert.equal(payload.lastUpdated, '2026-10-07T00:00:00.000Z');
 	assert.deepEqual(Object.keys(payload).sort(), Object.keys(createUsageAnalysisPayload(stats(), new Date('2026-10-07T00:00:00Z'))).sort());
+});
+
+test('no session files: the workspace\'s MCP servers still reach the usage-analysis curation analysis', async t => {
+	// usage-analysis --json and all --json used to return before the shared view enrichment when
+	// no session files existed, so curationAnalysis was null even with an mcp.json in the workspace.
+	const workspace = fs.mkdtempSync(path.join(__dirname, 'curation-ws-'));
+	t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+	fs.mkdirSync(path.join(workspace, '.vscode'), { recursive: true });
+	fs.writeFileSync(path.join(workspace, '.vscode', 'mcp.json'), JSON.stringify({ servers: { 'fixture-server-2371': { command: 'node' } } }));
+	const now = new Date('2026-10-07T00:00:00Z');
+	const viewStats = await withUsageAnalysisViewStats([], createEmptyUsageAnalysisStats(now), { workspaceFolderPaths: [workspace] });
+	assert.ok(viewStats.curationAnalysis, 'curation analysis is computed without session data');
+	assert.ok(JSON.stringify(viewStats.curationAnalysis).includes('fixture-server-2371'), 'the workspace MCP server is listed');
+	const payload = createUsageAnalysisPayload(viewStats, now) as Record<string, unknown>;
+	for (const key of USAGE_ANALYSIS_VIEW_KEYS) { assert.ok(key in payload, `missing ${key}`); }
+	assert.ok(payload.curationAnalysis);
 });

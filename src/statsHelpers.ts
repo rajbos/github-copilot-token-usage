@@ -771,8 +771,10 @@ export function addTaskCategoryToDailyEntry(entry: DailyTokenStats, tokens: numb
 		const share = Number(shareRaw) || 0;
 		if (share <= 0) { continue; }
 		const cat = category as TaskCategory;
-		entry.taskCategoryTokens[cat] = (entry.taskCategoryTokens[cat] || 0) + (tokens * share);
-		entry.taskCategorySessions[cat] = (entry.taskCategorySessions[cat] || 0) + share;
+		// Own-property reads: a parsed or cached category such as "toString" must not resolve to an
+		// inherited member (adding a number to a function would store a string).
+		entry.taskCategoryTokens[cat] = ((Object.hasOwn(entry.taskCategoryTokens, cat) && entry.taskCategoryTokens[cat]) || 0) + (tokens * share);
+		entry.taskCategorySessions[cat] = ((Object.hasOwn(entry.taskCategorySessions, cat) && entry.taskCategorySessions[cat]) || 0) + share;
 		if (!Object.hasOwn(entry.taskCategoryModelUsage, cat) || !entry.taskCategoryModelUsage[cat]) { entry.taskCategoryModelUsage[cat] = {}; }
 		addModelUsage(entry.taskCategoryModelUsage[cat]!, scaleModelUsage(modelUsage, share));
 	}

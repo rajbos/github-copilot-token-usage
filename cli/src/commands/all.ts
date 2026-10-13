@@ -19,7 +19,7 @@ import { shouldOutputJson } from '../commandUtils';
 import {
 	createEmptyDetailsPayload,
 	createEmptyChartPayload,
-	createEmptyUsageAnalysisPayload,
+	createEmptyUsageAnalysisStats,
 	createEmptyFluencyPayload,
 	createDetailsPayload,
 	createUsageAnalysisPayload,
@@ -43,12 +43,15 @@ export const allCommand = new Command('all')
 		const files = await discoverSessionFiles();
 
 		if (files.length === 0) {
+			// Still enriched with the workspace's MCP servers and skills: they belong in the
+			// usage-analysis and curation payloads without any session data, as in `curation`.
+			const emptyViewStats = await withUsageAnalysisViewStats([], createEmptyUsageAnalysisStats(now), { workspaceFolderPaths: [process.cwd()] });
 			const empty = {
-			details: createEmptyDetailsPayload(now),
+				details: createEmptyDetailsPayload(now),
 				chart:   createEmptyChartPayload(now),
-				usage:   createEmptyUsageAnalysisPayload(now),
+				usage:   createUsageAnalysisPayload(emptyViewStats, now),
 				fluency: createEmptyFluencyPayload(),
-				curation: createEmptyCurationPayload(),
+				curation: emptyViewStats.curationAnalysis ? createCurationPayload(emptyViewStats.curationAnalysis) : createEmptyCurationPayload(),
 			};
 			process.stdout.write(JSON.stringify(empty));
 			return;

@@ -1873,3 +1873,19 @@ test('addSessionToDailyStats gives an inherited-name repository or language its 
 	assert.equal(day.languageUsage?.['toString' as string].linesAdded, 2);
 	assert.equal((Object.prototype.toString as unknown as Record<string, unknown>).tokens, undefined);
 });
+
+test('addSessionToDailyStats: an inherited-name task category does not turn task totals into strings', () => {
+	// (map[cat] || 0) used to read Object.prototype.toString for a "toString" share key, and
+	// adding a number to it stored a string.
+	const map = new Map<string, DailyTokenStats>();
+	addSessionToDailyStats(map, {
+		editorType: 'VS Code', tokens: 100, interactions: 1, modelUsage: {},
+		dailyFractions: { '2026-05-01': 1 },
+		taskCategoryShares: JSON.parse('{"toString": 1}'),
+	});
+	const day = map.get('2026-05-01')!;
+	const tokens = (day.taskCategoryTokens as Record<string, unknown>)['toString'];
+	assert.equal(typeof tokens, 'number');
+	assert.equal(tokens, 100);
+	assert.equal((day.taskCategorySessions as Record<string, unknown>)['toString'], 1);
+});
