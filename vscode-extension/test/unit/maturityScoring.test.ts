@@ -1,11 +1,16 @@
 ﻿import test from 'node:test';
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {
     calculateFluencyScoreForTeamMember,
     calculateMaturityScores,
     getFluencyLevelData,
     topReposMissingCustomization,
+    STATS_REFRESH_INTERVAL_MS,
 } from '../../../src/maturityScoring';
+import { computeUtcDateRanges } from '../../../src/statsHelpers';
+import { getTimeWindowStartDayKey } from '../../../src/timeWindows';
 import type { UsageAnalysisStats, UsageAnalysisPeriod, WorkspaceCustomizationMatrix } from '../../../src/types';
 
 // ---------------------------------------------------------------------------
@@ -1336,4 +1341,428 @@ test('topReposMissingCustomization: only rows whose known statuses are all missi
     assert.deepEqual(topReposMissingCustomization(matrix).map(r => r.workspaceName), ['missing-busy', 'missing-quiet']);
     assert.deepEqual(topReposMissingCustomization(matrix, 1).map(r => r.workspaceName), ['missing-busy']);
     assert.deepEqual(topReposMissingCustomization(undefined), []);
+});
+
+// ===========================================================================
+// Boundary tests — spec is docs/FLUENCY-LEVELS.md. Each table asserts the exact
+// stage on both sides of a threshold, through both scoring paths:
+//   team     = calculateFluencyScoreForTeamMember (aggregated Azure rows)
+//   personal = calculateMaturityScores (UsageAnalysisPeriod)
+// ===========================================================================
+
+type CategoryName = 'Prompt Engineering' | 'Context Engineering' | 'Agentic' | 'Tool Usage' | 'Customization' | 'Workflow Integration';
+const CATEGORY_ORDER: CategoryName[] = ['Prompt Engineering', 'Context Engineering', 'Agentic', 'Tool Usage', 'Customization', 'Workflow Integration'];
+
+function teamStage(fd: ReturnType<typeof emptyFd>, category: CategoryName, dashboardSessions = 0): number {
+    return calculateFluencyScoreForTeamMember(fd, dashboardSessions).categories.find(c => c.category === category)!.stage;
+}
+
+async function personalCategory(p: UsageAnalysisPeriod, category: CategoryName, matrix?: WorkspaceCustomizationMatrix) {
+    const stats = emptyStats();
+    stats.last30Days = p;
+    const result = await calculateMaturityScores(matrix, async () => stats);
+    return result.categories.find(c => c.category === category)!;
+}
+
+function matrixOf(totalWorkspaces: number, customized: number): WorkspaceCustomizationMatrix {
+    return {
+        customizationTypes: [{ id: 'instructions', icon: '📝', label: 'Instructions' }],
+        workspaces: [],
+        totalWorkspaces,
+        workspacesWithIssues: totalWorkspaces - customized,
+    };
+}
+
+// --- Item 1: overall stage = median of six, mean of the middle two, Math.round ----------------
+
+type StageVector = Record<CategoryName, 1 | 2 | 3 | 4>;
+
+/** Shapes the team-path input so each category lands on exactly the requested stage. */
+function teamFdForStages(v: StageVector): ReturnType<typeof emptyFd> {
+    const fd = emptyFd();
+    if (v['Prompt Engineering'] === 2) { fd.askModeCount = 5; }
+    if (v['Prompt Engineering'] === 3) { fd.turnsPerSessionSum = 5; fd.turnsPerSessionCount = 1; }
+    if (v['Context Engineering'] === 2) { fd.ctxFile = 1; }
+    if (v['Context Engineering'] === 3) { fd.ctxByKind = { promptFile: 1 }; }
+    if (v.Agentic === 2) { fd.editsAgentCount = 1; }
+    if (v.Agentic === 3) { fd.filesPerEditSum = 3; fd.filesPerEditCount = 1; }
+    if (v.Agentic === 4) { fd.multiFileEdits = 20; fd.filesPerEditSum = 3; fd.filesPerEditCount = 1; }
+    if (v['Tool Usage'] === 2) { fd.toolCallsByTool = { fetch_webpage: 1 }; }
+    if (v['Tool Usage'] === 3) { fd.workspaceAgentCount = 1; }
+    if (v['Tool Usage'] === 4) { fd.mcpTotal = 2; fd.mcpByServer = { a: 1, b: 1 }; }
+    if (v.Customization === 2) { fd.repositories = new Set(['a']); fd.repositoriesWithCustomization = new Set(['a']); }
+    if (v.Customization === 3) { fd.standardModels = new Set(['m1', 'm2', 'm3']); }
+    if (v.Customization === 4) { fd.repositories = new Set(['a', 'b', 'c']); fd.repositoriesWithCustomization = new Set(['a', 'b', 'c']); }
+    if (v['Workflow Integration'] === 2) { fd.sessionCount = 3; }
+    return fd;
+}
+
+/** Same, for the personal path. */
+function personalForStages(v: StageVector): { p: UsageAnalysisPeriod; matrix?: WorkspaceCustomizationMatrix } {
+    const p = emptyPeriod();
+    let matrix: WorkspaceCustomizationMatrix | undefined;
+    if (v['Prompt Engineering'] === 2) { p.modeUsage.ask = 5; }
+    if (v['Prompt Engineering'] === 3) { p.conversationPatterns!.avgTurnsPerSession = 5; }
+    if (v['Context Engineering'] === 2) { p.contextReferences.file = 1; }
+    if (v['Context Engineering'] === 3) { p.contextReferences.byKind = { promptFile: 1 }; }
+    if (v.Agentic === 2) { p.editScope = { singleFileEdits: 0, multiFileEdits: 1, totalEditedFiles: 2, avgFilesPerSession: 2 }; } // not agent mode: ask + agent would also lift Workflow Integration
+    if (v.Agentic === 3) { p.editScope!.avgFilesPerSession = 3; }
+    if (v.Agentic === 4) { p.editScope = { singleFileEdits: 0, multiFileEdits: 20, totalEditedFiles: 60, avgFilesPerSession: 3 }; }
+    if (v['Tool Usage'] === 2) { p.toolCalls = { total: 1, byTool: { fetch_webpage: 1 } }; }
+    if (v['Tool Usage'] === 3) { p.agentTypes!.workspaceAgent = 1; }
+    if (v['Tool Usage'] === 4) { p.mcpTools = { total: 2, byServer: { a: 1, b: 1 }, byTool: {} }; }
+    if (v.Customization === 2) { matrix = matrixOf(1, 1); }
+    if (v.Customization === 3) { p.modelSwitching.standardModels = ['m1', 'm2', 'm3']; }
+    if (v.Customization === 4) { matrix = matrixOf(3, 3); }
+    if (v['Workflow Integration'] === 2) { p.sessions = 3; }
+    return { p, matrix };
+}
+
+const MEDIAN_CASES: Array<{ name: string; stages: StageVector; expectedOverall: number }> = [
+    // Even count → mean of the two middle values; an exact .5 rounds UP (Math.round).
+    { name: '[1,1,1,2,2,2] → mid 1,2 → 1.5 → 2', expectedOverall: 2,
+      stages: { 'Prompt Engineering': 1, 'Context Engineering': 1, Agentic: 1, 'Tool Usage': 2, Customization: 2, 'Workflow Integration': 2 } },
+    { name: '[1,2,2,3,3,3] → mid 2,3 → 2.5 → 3', expectedOverall: 3,
+      stages: { 'Prompt Engineering': 2, 'Context Engineering': 3, Agentic: 2, 'Tool Usage': 3, Customization: 3, 'Workflow Integration': 1 } },
+    { name: '[1,2,3,4,4,4] → mid 3,4 → 3.5 → 4', expectedOverall: 4,
+      stages: { 'Prompt Engineering': 2, 'Context Engineering': 3, Agentic: 4, 'Tool Usage': 4, Customization: 4, 'Workflow Integration': 1 } },
+    { name: '[1,1,1,4,4,4] → mid 1,4 → 2.5 → 3', expectedOverall: 3,
+      stages: { 'Prompt Engineering': 1, 'Context Engineering': 1, Agentic: 4, 'Tool Usage': 4, Customization: 4, 'Workflow Integration': 1 } },
+    // Non-.5 and equal-middle cases: no rounding involved.
+    { name: '[1,1,2,2,3,3] → mid 2,2 → 2', expectedOverall: 2,
+      stages: { 'Prompt Engineering': 1, 'Context Engineering': 2, Agentic: 2, 'Tool Usage': 3, Customization: 3, 'Workflow Integration': 1 } },
+    { name: '[1,2,3,3,4,4] (doc example) → mid 3,3 → 3', expectedOverall: 3,
+      stages: { 'Prompt Engineering': 3, 'Context Engineering': 2, Agentic: 4, 'Tool Usage': 3, Customization: 4, 'Workflow Integration': 1 } },
+    // Outliers on one side must not drag the median.
+    { name: '[1,1,1,1,1,4] → mid 1,1 → 1', expectedOverall: 1,
+      stages: { 'Prompt Engineering': 1, 'Context Engineering': 1, Agentic: 4, 'Tool Usage': 1, Customization: 1, 'Workflow Integration': 1 } },
+    { name: '[1,1,1,1,2,2] → mid 1,1 → 1', expectedOverall: 1,
+      stages: { 'Prompt Engineering': 1, 'Context Engineering': 1, Agentic: 1, 'Tool Usage': 1, Customization: 2, 'Workflow Integration': 2 } },
+];
+
+for (const c of MEDIAN_CASES) {
+    const expectedStages = CATEGORY_ORDER.map(n => c.stages[n]);
+
+    test(`overall median (team): ${c.name}`, () => {
+        const result = calculateFluencyScoreForTeamMember(teamFdForStages(c.stages), 0);
+        assert.deepEqual(result.categories.map(x => x.stage), expectedStages, 'fixture must produce the intended category stages');
+        assert.equal(result.stage, c.expectedOverall);
+    });
+
+    test(`overall median (personal): ${c.name}`, async () => {
+        const { p, matrix } = personalForStages(c.stages);
+        const stats = emptyStats();
+        stats.last30Days = p;
+        const result = await calculateMaturityScores(matrix, async () => stats);
+        assert.deepEqual(result.categories.map(x => x.stage), expectedStages, 'fixture must produce the intended category stages');
+        assert.equal(result.overallStage, c.expectedOverall);
+    });
+}
+
+// --- Item 2: Agentic Stage 3 = 10+ agent interactions AND 3+ intentional tools -----------------
+
+const AG_CASES: Array<{ name: string; agent: number; tools: Record<string, number>; expected: number }> = [
+    { name: '10 agent + 3 intentional tools → 3', agent: 10, tools: { fetch_webpage: 1, run_build: 1, create_file: 1 }, expected: 3 },
+    { name: '9 agent + 3 intentional tools → 2 (one below interaction bar)', agent: 9, tools: { fetch_webpage: 1, run_build: 1, create_file: 1 }, expected: 2 },
+    { name: '10 agent + 2 intentional tools → 2 (one below tool bar)', agent: 10, tools: { fetch_webpage: 1, run_build: 1 }, expected: 2 },
+    { name: 'automatic tools do not count toward the 3', agent: 10, tools: { fetch_webpage: 1, run_build: 1, read_file: 5, grep: 5 }, expected: 2 },
+    { name: '49 agent + 5 tools → 3 (one below Stage 4 interaction bar)', agent: 49, tools: { t1: 1, t2: 1, t3: 1, t4: 1, t5: 1 }, expected: 3 },
+    { name: '50 agent + 4 tools → 3 (one below Stage 4 tool bar)', agent: 50, tools: { t1: 1, t2: 1, t3: 1, t4: 1 }, expected: 3 },
+    { name: '50 agent + 5 tools → 4', agent: 50, tools: { t1: 1, t2: 1, t3: 1, t4: 1, t5: 1 }, expected: 4 },
+];
+
+for (const c of AG_CASES) {
+    test(`AG stage 3/4 boundary (team): ${c.name}`, () => {
+        const fd = emptyFd();
+        fd.agentModeCount = c.agent;
+        fd.toolCallsByTool = { ...c.tools };
+        assert.equal(teamStage(fd, 'Agentic'), c.expected);
+    });
+
+    test(`AG stage 3/4 boundary (personal): ${c.name}`, async () => {
+        const p = emptyPeriod();
+        p.modeUsage.agent = c.agent;
+        p.toolCalls = { total: Object.values(c.tools).reduce((a, b) => a + b, 0), byTool: { ...c.tools } };
+        assert.equal((await personalCategory(p, 'Agentic')).stage, c.expected);
+    });
+}
+
+// --- Item 3: PE Auto-model booster — 0 / >0 / 50% / 80% (+ 5 sessions) -----------------------
+
+const AUTO_CASES: Array<{ sessions: number; auto: number; expected: number; note: string }> = [
+    { sessions: 20, auto: 0, expected: 1, note: 'no Auto usage' },
+    { sessions: 20, auto: 1, expected: 2, note: 'any Auto usage → Stage 2' },
+    { sessions: 100, auto: 49, expected: 2, note: '49% is just below the 50% bar' },
+    { sessions: 100, auto: 50, expected: 3, note: '50% is exactly on the bar' },
+    { sessions: 100, auto: 79, expected: 3, note: '79% is just below the 80% bar' },
+    { sessions: 100, auto: 80, expected: 4, note: '80% is exactly on the bar' },
+    { sessions: 5, auto: 4, expected: 4, note: '80% with exactly 5 sessions' },
+    { sessions: 5, auto: 3, expected: 3, note: '60% with 5 sessions' },
+    { sessions: 4, auto: 4, expected: 3, note: '100% but only 4 sessions → capped at Stage 3' },
+    { sessions: 4, auto: 3, expected: 3, note: '75% with 4 sessions' },
+];
+
+for (const c of AUTO_CASES) {
+    test(`PE Auto booster (team): ${c.auto}/${c.sessions} sessions → ${c.expected} (${c.note})`, () => {
+        const fd = emptyFd();
+        fd.sessionCount = c.sessions;
+        fd.autoSessions = c.auto;
+        assert.equal(teamStage(fd, 'Prompt Engineering'), c.expected);
+    });
+
+    test(`PE Auto booster (personal): ${c.auto}/${c.sessions} sessions → ${c.expected} (${c.note})`, async () => {
+        const p = emptyPeriod();
+        p.sessions = c.sessions;
+        p.modelSwitching.totalSessions = c.sessions;
+        p.modelSwitching.autoSessions = c.auto;
+        assert.equal((await personalCategory(p, 'Prompt Engineering')).stage, c.expected);
+    });
+}
+
+// --- Item 4a: recognised slash commands (docs: 11) ---------------------------------------------
+
+const DOC_SLASH_COMMANDS = ['explain', 'fix', 'tests', 'doc', 'generate', 'optimize', 'new', 'newNotebook', 'search', 'fixTestFailure', 'setupTests'];
+
+for (const cmd of DOC_SLASH_COMMANDS) {
+    const partner = cmd === 'explain' ? 'fix' : 'explain';
+    test(`PE slash command /${cmd} counts toward the 2-command Stage 3 bar (team)`, () => {
+        const withTwo = emptyFd();
+        withTwo.askModeCount = 30;
+        withTwo.toolCallsByTool = { [cmd]: 1, [partner]: 1 };
+        assert.equal(teamStage(withTwo, 'Prompt Engineering'), 3);
+
+        const withOne = emptyFd();
+        withOne.askModeCount = 30;
+        withOne.toolCallsByTool = { [cmd]: 1 };
+        assert.equal(teamStage(withOne, 'Prompt Engineering'), 2, 'one command alone is not enough');
+    });
+}
+
+test('PE slash commands: unrecognised names do not count; 29 interactions is below the Stage 3 bar (team)', () => {
+    const unknown = emptyFd();
+    unknown.askModeCount = 30;
+    unknown.toolCallsByTool = { notACommand: 1, alsoNot: 1 };
+    assert.equal(teamStage(unknown, 'Prompt Engineering'), 2);
+
+    const justShort = emptyFd();
+    justShort.askModeCount = 29;
+    justShort.toolCallsByTool = { explain: 1, fix: 1 };
+    assert.equal(teamStage(justShort, 'Prompt Engineering'), 2);
+});
+
+test('PE slash commands: personal evidence lists exactly the 11 documented commands, in documented order', async () => {
+    const p = emptyPeriod();
+    p.modeUsage.ask = 30;
+    p.toolCalls = { total: 11, byTool: Object.fromEntries(DOC_SLASH_COMMANDS.map(c => [c, 1])) };
+    p.toolCalls.byTool.notACommand = 1;
+    const pe = await personalCategory(p, 'Prompt Engineering');
+    assert.ok(
+        pe.evidence.includes(`Used slash commands: /${DOC_SLASH_COMMANDS.join(', /')}`),
+        `evidence was: ${JSON.stringify(pe.evidence)}`,
+    );
+    assert.equal(pe.stage, 3);
+});
+
+// --- Item 4b: advanced tools (docs: 5; 2+ → Tool Usage Stage 3) --------------------------------
+
+const ADVANCED_TOOLS = ['github_pull_request', 'github_repo', 'run_in_terminal', 'editFiles', 'listFiles'];
+
+for (const tool of ADVANCED_TOOLS) {
+    test(`TU advanced tool ${tool} alone stays Stage 2 (team)`, () => {
+        const fd = emptyFd();
+        fd.toolCallsByTool = { [tool]: 1 };
+        assert.equal(teamStage(fd, 'Tool Usage'), 2);
+    });
+}
+
+for (let i = 0; i < ADVANCED_TOOLS.length; i++) {
+    for (let j = i + 1; j < ADVANCED_TOOLS.length; j++) {
+        const pair = [ADVANCED_TOOLS[i], ADVANCED_TOOLS[j]];
+        test(`TU advanced pair ${pair.join(' + ')} → Stage 3 (team)`, () => {
+            const fd = emptyFd();
+            fd.toolCallsByTool = { [pair[0]]: 1, [pair[1]]: 1 };
+            assert.equal(teamStage(fd, 'Tool Usage'), 3);
+        });
+    }
+}
+
+test('TU two non-advanced intentional tools stay Stage 2 (team + personal)', async () => {
+    const fd = emptyFd();
+    fd.toolCallsByTool = { fetch_webpage: 1, run_build: 1 };
+    assert.equal(teamStage(fd, 'Tool Usage'), 2);
+
+    const p = emptyPeriod();
+    p.toolCalls = { total: 2, byTool: { fetch_webpage: 1, run_build: 1 } };
+    assert.equal((await personalCategory(p, 'Tool Usage')).stage, 2);
+});
+
+test('TU personal: advanced tools evidence lists exactly the 5 documented tools with friendly names', async () => {
+    const p = emptyPeriod();
+    p.toolCalls = { total: 5, byTool: Object.fromEntries(ADVANCED_TOOLS.map(t => [t, 1])) };
+    const tu = await personalCategory(p, 'Tool Usage');
+    assert.equal(tu.stage, 3);
+    assert.ok(
+        tu.evidence.includes('Advanced tools: GitHub Pull Request, GitHub Repository, Run In Terminal, Edit Files, List Files'),
+        `evidence was: ${JSON.stringify(tu.evidence)}`,
+    );
+});
+
+test('TU personal: one advanced tool → Stage 2, two → Stage 3', async () => {
+    const one = emptyPeriod();
+    one.toolCalls = { total: 1, byTool: { run_in_terminal: 1 } };
+    assert.equal((await personalCategory(one, 'Tool Usage')).stage, 2);
+
+    const two = emptyPeriod();
+    two.toolCalls = { total: 2, byTool: { run_in_terminal: 1, editFiles: 1 } };
+    assert.equal((await personalCategory(two, 'Tool Usage')).stage, 3);
+});
+
+// --- Item 5: Workflow Integration Stage 3 via "20+ context references" -------------------------
+// The 20 are file + selection + symbol + codebase + workspace (the 5 "explicit" types).
+
+const WI_REF_CASES: Array<{ refs: number; sessions: number; expected: number; note: string }> = [
+    { refs: 19, sessions: 0, expected: 1, note: '19 refs, no sessions' },
+    { refs: 20, sessions: 0, expected: 3, note: '20 refs alone → Stage 3' },
+    { refs: 19, sessions: 3, expected: 2, note: '19 refs + 3 sessions → Stage 2' },
+    { refs: 20, sessions: 3, expected: 3, note: '20 refs + 3 sessions → Stage 3' },
+    { refs: 20, sessions: 14, expected: 3, note: '20 refs + 14 sessions, one mode → no Stage 4' },
+];
+
+for (const c of WI_REF_CASES) {
+    test(`WI refs boundary (team): ${c.note}`, () => {
+        const fd = emptyFd();
+        fd.ctxFile = c.refs;
+        fd.sessionCount = c.sessions;
+        assert.equal(teamStage(fd, 'Workflow Integration', c.sessions), c.expected);
+    });
+
+    test(`WI refs boundary (personal): ${c.note}`, async () => {
+        const p = emptyPeriod();
+        p.contextReferences.file = c.refs;
+        p.sessions = c.sessions;
+        assert.equal((await personalCategory(p, 'Workflow Integration')).stage, c.expected);
+    });
+}
+
+test('WI refs: 20 spread across the 5 explicit types reaches Stage 3 (personal + team)', async () => {
+    const fd = emptyFd();
+    fd.ctxFile = 4; fd.ctxSelection = 4; fd.ctxSymbol = 4; fd.ctxCodebase = 4; fd.ctxWorkspace = 4;
+    assert.equal(teamStage(fd, 'Workflow Integration'), 3);
+
+    const p = emptyPeriod();
+    p.contextReferences.file = 4; p.contextReferences.selection = 4; p.contextReferences.symbol = 4;
+    p.contextReferences.codebase = 4; p.contextReferences.workspace = 4;
+    assert.equal((await personalCategory(p, 'Workflow Integration')).stage, 3);
+});
+
+test('WI refs: "explicit context" evidence appears at 10 refs but not 9 (personal)', async () => {
+    const nine = emptyPeriod();
+    nine.contextReferences.file = 9;
+    assert.ok(!(await personalCategory(nine, 'Workflow Integration')).evidence.some(e => e.includes('explicit context references')));
+    const ten = emptyPeriod();
+    ten.contextReferences.file = 10;
+    assert.ok((await personalCategory(ten, 'Workflow Integration')).evidence.some(e => e.includes('10 explicit context references')));
+});
+
+test('WI Stage 4 needs 15 sessions: 14 → Stage 3, 15 → Stage 4 (ask + agent + 20 refs)', () => {
+    const base = () => {
+        const fd = emptyFd();
+        fd.askModeCount = 1; fd.agentModeCount = 1; fd.ctxFile = 20;
+        return fd;
+    };
+    const fourteen = base(); fourteen.sessionCount = 14;
+    const fifteen = base(); fifteen.sessionCount = 15;
+    assert.equal(teamStage(fourteen, 'Workflow Integration', 14), 3);
+    assert.equal(teamStage(fifteen, 'Workflow Integration', 15), 4);
+});
+
+test('WI Stage 4 needs 15 sessions (personal): 14 → Stage 3, 15 → Stage 4 (ask + agent + 20 refs)', async () => {
+    const base = (sessions: number) => {
+        const p = emptyPeriod();
+        p.sessions = sessions;
+        p.modeUsage.ask = 1;
+        p.modeUsage.agent = 1;
+        p.contextReferences.file = 20;
+        return p;
+    };
+    assert.equal((await personalCategory(base(14), 'Workflow Integration')).stage, 3);
+    assert.equal((await personalCategory(base(15), 'Workflow Integration')).stage, 4);
+    // Stage 4 also needs 2+ modes and 20+ refs: dropping either at 15 sessions falls back to Stage 3.
+    const oneMode = base(15); oneMode.modeUsage.agent = 0;
+    assert.equal((await personalCategory(oneMode, 'Workflow Integration')).stage, 3); // 20 refs alone
+    const fewRefs = base(15); fewRefs.contextReferences.file = 19;
+    assert.equal((await personalCategory(fewRefs, 'Workflow Integration')).stage, 3); // 2 modes alone
+});
+
+test('PE slash commands (personal): 2 recognised commands + 30 interactions → Stage 3; 1 command or 29 interactions → Stage 2', async () => {
+    const mk = (ask: number, byTool: Record<string, number>) => {
+        const p = emptyPeriod();
+        p.modeUsage.ask = ask;
+        p.toolCalls = { total: Object.keys(byTool).length, byTool };
+        return p;
+    };
+    assert.equal((await personalCategory(mk(30, { explain: 1, fix: 1 }), 'Prompt Engineering')).stage, 3);
+    assert.equal((await personalCategory(mk(30, { explain: 1 }), 'Prompt Engineering')).stage, 2);
+    assert.equal((await personalCategory(mk(29, { explain: 1, fix: 1 }), 'Prompt Engineering')).stage, 2);
+});
+
+// --- Item 6: Context Engineering "specialized variables" hint (doc corrected to match code) ----
+
+test('CE hint: <2 specialized types used → "Try …specialized context variables" tip, not the Stage 4 gap tip (personal)', async () => {
+    const p = emptyPeriod();
+    p.contextReferences.file = 3;
+    p.contextReferences.changes = 1; // only 1 specialized type
+    const ce = await personalCategory(p, 'Context Engineering');
+    assert.ok(ce.tips.some(t => t.startsWith('Try ') && t.includes('specialized context variables')), JSON.stringify(ce.tips));
+    assert.ok(!ce.tips.some(t => t.startsWith('Stage 4 needs')), 'gap tip must not appear below 2 specialized types');
+});
+
+test('CE hint (team): 1 specialized type → "Try …specialized context variables" tip, not the Stage 4 gap tip', () => {
+    const fd = emptyFd();
+    fd.ctxFile = 3; fd.ctxChanges = 1; // only 1 specialized type
+    const tips = calculateFluencyScoreForTeamMember(fd, 0).categories.find(c => c.category === 'Context Engineering')!.tips;
+    assert.ok(tips.some(t => t.startsWith('Try ') && t.includes('specialized context variables')), JSON.stringify(tips));
+    assert.ok(!tips.some(t => t.startsWith('Stage 4 needs')), 'gap tip must not appear below 2 specialized types');
+
+    // And with 2 types the specialized-variables tip is replaced, not shown alongside.
+    fd.ctxClipboard = 1;
+    const tips2 = calculateFluencyScoreForTeamMember(fd, 0).categories.find(c => c.category === 'Context Engineering')!.tips;
+    assert.ok(tips2.some(t => t.startsWith('Stage 4 needs')), JSON.stringify(tips2));
+    assert.ok(!tips2.some(t => t.includes('specialized context variables')), JSON.stringify(tips2));
+});
+
+test('CE hint: ≥2 specialized types used → tip switches to the Stage 4 gap tip (not suppressed) (personal + team)', async () => {
+    const p = emptyPeriod();
+    p.contextReferences.file = 3;
+    p.contextReferences.changes = 1;
+    p.contextReferences.clipboard = 1;
+    const ce = await personalCategory(p, 'Context Engineering');
+    assert.ok(ce.tips.some(t => t.startsWith('Stage 4 needs')), JSON.stringify(ce.tips));
+    assert.ok(!ce.tips.some(t => t.includes('specialized context variables')), 'specialized-variables tip is replaced, not shown alongside');
+
+    const fd = emptyFd();
+    fd.ctxFile = 3; fd.ctxChanges = 1; fd.ctxClipboard = 1;
+    const tips = calculateFluencyScoreForTeamMember(fd, 0).categories.find(c => c.category === 'Context Engineering')!.tips;
+    assert.ok(tips.some(t => t.startsWith('Stage 4 needs')), JSON.stringify(tips));
+});
+
+// --- Item 7: documented "last 30 days" window and 5-minute refresh -----------------------------
+
+test('fluency window: "last 30 days" is 30 local calendar dates including today', () => {
+    const now = new Date(2024, 4, 15, 14, 30, 0); // local 2024-05-15
+    assert.equal(getTimeWindowStartDayKey('last30', now), '2024-04-16'); // 16 Apr … 15 May = 30 dates
+    assert.equal(computeUtcDateRanges(now).last30DaysUtcStartKey, '2024-04-16');
+});
+
+test('fluency refresh: STATS_REFRESH_INTERVAL_MS is 5 minutes and drives the silent background refresh timer', () => {
+    assert.equal(STATS_REFRESH_INTERVAL_MS, 5 * 60 * 1000);
+    // Compiled tests live under out/vscode-extension/test/unit; walk back to the package root.
+    const src = fs.readFileSync(path.join(__dirname, '../../../../src/extension.ts'), 'utf8');
+    assert.match(src, /setInterval\(\(\) => \{\s*this\.updateTokenStats\(true, true\);\s*\}, STATS_REFRESH_INTERVAL_MS\)/);
+    // The timer is silent (updateTokenStats(silent=true)), and the panel is only re-rendered when !silent,
+    // so the open Fluency panel is NOT refreshed by it. Pin that, plus the doc saying so.
+    assert.match(src, /if \(this\.maturityPanel && !silent && freshMaturityData\) \{\s*this\.maturityPanel\.webview\.html =/);
+    const doc = fs.readFileSync(path.join(__dirname, '../../../../../docs/FLUENCY-LEVELS.md'), 'utf8');
+    assert.ok(doc.includes('every 5 minutes') && doc.includes('does **not** re-render an already-open Fluency Score panel'));
+    assert.ok(doc.includes('last 30 days'), 'doc still states the 30-day window');
 });

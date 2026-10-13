@@ -52,6 +52,7 @@ export {
 	encodeSession,
 	decodeSession,
 	makeClaims,
+	assertSessionSecretConfigured,
 	type SessionClaims,
 } from './session.js';
 

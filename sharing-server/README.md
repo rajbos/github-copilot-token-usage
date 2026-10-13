@@ -51,7 +51,7 @@ services:
     environment:
       - GITHUB_CLIENT_ID=your_client_id
       - GITHUB_CLIENT_SECRET=your_client_secret
-      - SESSION_SECRET=a_long_random_string_min_32_chars
+      - SESSION_SECRET=${SESSION_SECRET:?Missing SESSION_SECRET}
       - BASE_URL=https://your-server.example.com
       # Optional: restrict uploads to members of a specific GitHub org
       # - ALLOWED_GITHUB_ORG=your-org-name
@@ -63,7 +63,7 @@ volumes:
   sharing_data:
 ```
 
-> **Tip**: Generate `SESSION_SECRET` with `openssl rand -hex 32` in bash, or in PowerShell:
+> **Tip**: Generate `SESSION_SECRET` with `openssl rand -base64 48` in bash, or in PowerShell:
 ``` powershell
 $bytes = New-Object byte[] 32
 [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
@@ -135,7 +135,8 @@ Minimum required in `.env`:
 ```env
 GITHUB_CLIENT_ID=your_github_oauth_app_client_id
 GITHUB_CLIENT_SECRET=your_github_oauth_app_client_secret
-SESSION_SECRET=any_long_random_string_at_least_32_chars
+# Generate with: openssl rand -base64 48
+SESSION_SECRET=
 BASE_URL=http://localhost:3000
 PORT=3000
 DB_PATH=./data/sharing.db
@@ -177,7 +178,7 @@ stubbed GitHub access, never production data or live GitHub; see the
 |---|---|---|
 | `GITHUB_CLIENT_ID` | ✅ | GitHub OAuth App client ID (for dashboard login) |
 | `GITHUB_CLIENT_SECRET` | ✅ | GitHub OAuth App client secret (for dashboard login) |
-| `SESSION_SECRET` | ✅ | Random secret for signing session cookies (≥32 chars) |
+| `SESSION_SECRET` | ✅ | Random secret for signing session cookies (≥ 32 chars, no leading/trailing whitespace, not a documented example value). **Required unless `NODE_ENV` is explicitly `development` or `test`**: with an unset or any other `NODE_ENV` (including `production`), startup and `createApp()` fail without a strong secret. Generate one with `openssl rand -base64 48`. Only `development`/`test` may use an insecure dev fallback, with a warning |
 | `BASE_URL` | ✅ | Public base URL of the server (no trailing slash) |
 | `PORT` | ❌ | HTTP port (default: `3000`) |
 | `DB_PATH` | ❌ | SQLite database path (default: `/data/sharing.db`) |

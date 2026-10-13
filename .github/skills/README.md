@@ -99,7 +99,8 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 **Use this skill when:**
 - The CI step summary's "Code Duplication Analysis" report grows
 - A PR review notes duplicated / copy-pasted code
-- You want to DRY up the codebase (vscode-extension/src, shared src/, cli/src)
+- You want to DRY up the codebase (vscode-extension/src, shared src/, cli/src, sharing-server/src, desktop/src, release-video/src)
+- The CI `duplication-check` ratchet (`scripts/code-duplication-baseline.json`) can be lowered after a cleanup
 
 **Contents:**
 - Step-by-step workflow: list groups → pick one → baseline tests → extract helper → lint → re-run detector → build → commit → PR
@@ -149,7 +150,7 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 **Contents:**
 - `scan-hardcoded-strings.js` — dependency-free Node script that flags string/template literals in UI-rendering positions (`.textContent`/`.innerText`/`.innerHTML`/`.title`/`.placeholder` assignments, `aria-label`/`title`/`placeholder` HTML attributes, and text inside `<div>`/`<button>`/`<label>`/`<h1>`–`<h6>`/`<p>`/`<span>`/`<td>`/`<th>`/`<option>`/`<summary>`/`<caption>` tags)
 - `scan-hardcoded-strings.test.js` — unit tests for the detection helpers
-- Console and Markdown report output (`hardcoded-strings-report.md` at the repo root); always exits `0` — informational, not a CI gate
+- Console and Markdown report output (git-ignored `hardcoded-strings-report.md` at the repo root); always exits `0` — informational, not a CI gate
 
 ### validate-app-db-schema
 
@@ -262,7 +263,7 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 - `diff-screenshots.js` — per-pixel comparison producing diff images plus `report.md` / `report.json`
 - `lib/harness.js` — rebuilds each panel's HTML shell (`#root`, `window.__INITIAL_*__`, JSON config globals, the real bundle) around a committed fixture, with the `--vscode-*` theme tokens VS Code would normally inject
 - `fixtures/` — one JSON payload per view, using fixed timestamps so unchanged code renders byte-identical screenshots
-- Deliberately does **not** launch VS Code or the Extension Development Host, per "Never Launch a Real Editor/IDE Instance" in `.github/copilot-instructions.md` — it renders the real webview bundles instead
+- Deliberately does **not** launch VS Code or the Extension Development Host, per "Never Launch a Real Editor/IDE Instance" in `AGENTS.md` — it renders the real webview bundles instead
 - Requires Playwright + Chromium, found locally or globally rather than added as an extension dependency
 
 ### pr-risk-review

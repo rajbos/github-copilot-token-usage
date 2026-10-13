@@ -53,7 +53,7 @@ Measures how you provide context to Copilot using explicit references.
 
 **Boosters:** Using image references (`copilot.image`) → at least Stage 3; using prompt files (`promptFile`) → at least Stage 3
 
-**Stage 3 hint behaviour:** The "try specialized context variables" tip is dynamic — it only lists the specific variables the user hasn't tried yet. If the user has already used 2 or more of the specialized set (`image attachments`, `prompt files`, `custom prompt commands`, `#changes`, `#problemsPanel`, `#outputPanel`, `#terminalLastCommand`, `#terminalSelection`, `#clipboard`, `@vscode`), the hint is suppressed entirely.
+**Stage 3 hint behaviour:** The "try specialized context variables" tip is dynamic — it only lists the specific variables the user hasn't tried yet (up to 3, plus "and N more"). If the user has already used 2 or more of the specialized set (`image attachments`, `prompt files`, `custom prompt commands`, `#changes`, `#problemsPanel`, `#outputPanel`, `#terminalLastCommand`, `#terminalSelection`, `#clipboard`, `@vscode`), that tip is replaced by a Stage 4 gap tip ("Stage 4 needs N of 5 different reference types used and M of 30 total references — try …") listing what is still missing. The gap tip is omitted only once both Stage 4 thresholds are met.
 
 ---
 
@@ -166,4 +166,4 @@ For example, if your category scores are `[1, 2, 3, 3, 4, 4]`, the two middle va
 
 Scores are calculated from Copilot Chat session log files stored locally on your machine. Some Copilot features (e.g., inline suggestion acceptance rates) are not captured in these logs and therefore not reflected in the score.
 
-The dashboard updates every 5 minutes automatically. You can also refresh manually from the Fluency Score panel.
+The extension refreshes its usage stats in the background every 5 minutes. That silent background refresh does **not** re-render an already-open Fluency Score panel: the panel shows the score as of when it was opened or last refreshed. Use the refresh button in the panel (or reopen it) to see current numbers. (The panel footer's "Updates every 5 minutes" text is therefore slightly misleading; see the PR that introduced this note.)

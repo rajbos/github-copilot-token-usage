@@ -6,7 +6,7 @@ applyTo: "vscode-extension/**"
 
 ## Architecture Overview
 
-The entire extension's logic is contained within the `CopilotTokenTracker` class in `vscode-extension/src/extension.ts`. Its primary function is to track GitHub Copilot token usage by reading and parsing session log files.
+The extension's entry point and orchestration live in the `CopilotTokenTracker` class in `vscode-extension/src/extension.ts`, which is still very large (see the decomposition status in the repo-root `AGENTS.md`); supporting logic lives in sibling modules under `vscode-extension/src/` and in the shared repo-root `src/`. Put new logic in a module and call it from there rather than adding it to `extension.ts`. Its primary function is to track GitHub Copilot token usage by reading and parsing session log files.
 
 - **Activation**: The extension activates on VS Code startup via the `onStartupFinished` event in `vscode-extension/package.json`. The `activate` function in `vscode-extension/src/extension.ts` instantiates `CopilotTokenTracker`.
 
@@ -53,7 +53,7 @@ The entire extension's logic is contained within the `CopilotTokenTracker` class
 - **Build**: Run `pnpm run compile` from `vscode-extension/` to build the extension using `esbuild`. The output is a single file: `vscode-extension/dist/extension.js`.
 - **Validation**: Run `pnpm run validate` to type-check, lint, and build the extension.
 - **Watch Mode**: For active development, use `pnpm run watch` from `vscode-extension/`. This will automatically recompile the extension on file changes.
-- **Testing/Debugging (human developers only)**: Press `F5` in VS Code to open the Extension Development Host. This will launch a new VS Code window with the extension running. `console.log` statements from `vscode-extension/src/extension.ts` will appear in the Developer Tools console of this new window (Help > Toggle Developer Tools). **AI agents must never do this** — see "Never launch a real editor/IDE instance" in the root `.github/copilot-instructions.md`. Use `pnpm run validate` and `pnpm run test:node` / `pnpm run test:coverage` to validate changes instead.
+- **Testing/Debugging (human developers only)**: Press `F5` in VS Code to open the Extension Development Host. This will launch a new VS Code window with the extension running. `console.log` statements from `vscode-extension/src/extension.ts` will appear in the Developer Tools console of this new window (Help > Toggle Developer Tools). **AI agents must never do this** — see "Never launch a real editor/IDE instance" in the root `AGENTS.md`. Use `pnpm run validate` and `pnpm run test:node` / `pnpm run test:coverage` to validate changes instead.
 
 **Important build guidance:** After making changes to source code or related files (TypeScript, JavaScript, JSON, or other code files used by the extension), always run both `pnpm install --frozen-lockfile` and then `pnpm run validate` from `vscode-extension/` to validate that the project still builds and lints cleanly before opening a pull request or releasing. Also run the unit tests with `pnpm run test:node` to catch any regressions. You do not need to run the full validation step for documentation-only changes (Markdown files), but you should run it after any edits that touch source, configuration, or JSON data files.
 
@@ -281,7 +281,7 @@ If you find any match outside of `addModelUsage` itself, convert it to use the h
 
 ## Key Files & Conventions
 
-- **`vscode-extension/src/extension.ts`**: The single source file containing all logic.
+- **`vscode-extension/src/extension.ts`**: The entry point and the large `CopilotTokenTracker` class. It still holds much of the logic, but new logic should go in separate modules (see the repo-root `AGENTS.md` and `docs/adr/EXTENSION-TS-DECOMPOSITION.md`).
   - `CopilotTokenTracker`: The main class.
   - `calculateDetailedStats()`: The primary data aggregation method.
   - `getDetailsHtml()`: The method responsible for rendering the webview's HTML content. All styling is inlined within this method's template string.

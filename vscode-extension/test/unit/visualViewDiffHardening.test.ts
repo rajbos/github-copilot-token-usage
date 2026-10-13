@@ -320,21 +320,24 @@ test('renderView refuses a fixture outside its fixture directory before opening 
 	}
 });
 
-test('--theme accepts exactly dark, light or both', () => {
+test('--theme accepts exactly dark, light, hc, hc-light, both or all', () => {
 	assert.deepEqual(configLib.parseThemes(undefined), ['dark']);
 	assert.deepEqual(configLib.parseThemes('dark'), ['dark']);
 	assert.deepEqual(configLib.parseThemes('light'), ['light']);
+	assert.deepEqual(configLib.parseThemes('hc'), ['hc']);
+	assert.deepEqual(configLib.parseThemes('hc-light'), ['hc-light']);
 	assert.deepEqual(configLib.parseThemes('both'), ['dark', 'light']);
-	for (const bad of ['../../x', 'dark/../light', 'Dark', '', true, 'dark,light']) {
-		assert.throws(() => configLib.parseThemes(bad), /--theme must be dark, light or both/, String(bad));
+	assert.deepEqual(configLib.parseThemes('all'), ['dark', 'light', 'hc', 'hc-light']);
+	for (const bad of ['../../x', 'dark/../light', 'Dark', '', true, 'dark,light', 'HC', 'hc_light', 'ALL']) {
+		assert.throws(() => configLib.parseThemes(bad), /--theme must be one of dark, light, hc, hc-light, both or all/, String(bad));
 	}
 });
 
-test('the page builder refuses a theme that is not dark or light', () => {
-	for (const theme of ['../../../package', 'both', '']) {
+test('the page builder refuses a theme that is not one of the known ids', () => {
+	for (const theme of ['../../../package', 'both', 'all', '', '__proto__', 'constructor']) {
 		assert.throws(() => harness.buildPageHtml({
 			globalName: '__G__', fixture: {}, theme, bundlePath: path.join(SKILL_DIR, 'dist', 'x.js'), repoRoot: findRepoRoot(),
-		}), /theme must be 'dark' or 'light'/, theme);
+		}), /theme must be one of dark, light, hc, hc-light/, theme);
 	}
 });
 

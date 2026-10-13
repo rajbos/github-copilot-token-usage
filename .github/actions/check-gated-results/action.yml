@@ -1,7 +1,7 @@
 name: "Check gated job results"
 description: >-
   Validate the results of jobs downstream of a paths-filter gate job, for use
-  by a workflow's "stable required-check anchor" job (see ci.yml, build.yml,
+  by a workflow's "stable required-check anchor" job (see ci.yml,
   codeql.yml). A job downstream of a FAILED `needs` reports as "skipped", not
   "failure", and branch protection counts a skipped required check as
   passing — so accepting "skipped" without first proving the gate itself

@@ -101,7 +101,14 @@ function Build-Cli {
         switch ($Target) {
             'build'   { Ensure-PnpmDeps .; pnpm run build }
             'package' { Ensure-PnpmDeps .; pnpm run build:production; & pwsh -NoProfile -File bundle-exe.ps1 -SkipBuild }
-            'test'    { Write-Host "    (no CLI tests yet)" }
+            'test'    {
+                # test:unit imports the built library from dist/lib, so build first (same order as CI).
+                Ensure-PnpmDeps .
+                pnpm run build
+                if ($LASTEXITCODE -ne 0) { throw "CLI build failed" }
+                pnpm run test:unit
+                if ($LASTEXITCODE -ne 0) { throw "CLI tests failed" }
+            }
             'clean'   { Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue }
         }
         Write-Ok "cli done."

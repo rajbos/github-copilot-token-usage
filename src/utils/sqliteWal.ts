@@ -53,17 +53,17 @@ export const MAX_WAL_MERGE_DB_SIZE_BYTES = 256 * 1024 * 1024; // 256 MB
 const loggedOversizedPaths = new Set<string>();
 
 /** Minimum time between WAL-merge attempts for the same db path. */
-const WAL_MERGE_MIN_INTERVAL_MS = 60_000;
+export const WAL_MERGE_MIN_INTERVAL_MS = 60_000;
 
 /**
  * Minimum time between merge attempts while a writer looks live (see `isWalWriterActive`).
  * A running Cursor/Copilot CLI touches its WAL constantly, so without this a merge would be
  * re-attempted at the plain throttle rate forever; back off harder instead.
  */
-const WAL_MERGE_WRITER_ACTIVE_INTERVAL_MS = 5 * 60_000;
+export const WAL_MERGE_WRITER_ACTIVE_INTERVAL_MS = 5 * 60_000;
 
 /** A writer is considered "recently active" if its WAL was touched within this window. */
-const WRITER_ACTIVE_WAL_RECENCY_MS = 30_000;
+export const WRITER_ACTIVE_WAL_RECENCY_MS = 30_000;
 
 /**
  * The full identity of the bytes a merge (or a plain direct read) actually reflects: the main
@@ -119,6 +119,16 @@ const walMergeCache = new Map<string, WalMergeCacheEntry>();
  * stale) direct read on the next call, which is what an uncached path does anyway.
  */
 const WAL_MERGE_CACHE_RETENTION_MS = WAL_MERGE_WRITER_ACTIVE_INTERVAL_MS;
+
+type NodeSqliteModule = typeof import('node:sqlite');
+
+/** Loads `node:sqlite`; replaceable by tests to simulate a runtime without it. */
+let loadNodeSqlite: () => NodeSqliteModule = () => require('node:sqlite') as NodeSqliteModule;
+
+/** Overrides how `node:sqlite` is loaded (pass `undefined` to restore) — for tests only. */
+export function setNodeSqliteLoaderForTests(loader: (() => NodeSqliteModule) | undefined): void {
+	loadNodeSqlite = loader ?? (() => require('node:sqlite') as NodeSqliteModule);
+}
 
 /** Number of merged buffers currently retained — for tests only. */
 export function walMergeCacheSizeForTests(): number {
@@ -214,7 +224,7 @@ function performWalMerge(dbPath: string, walPath: string): Buffer {
 	let tmpShm: string | undefined;
 	let nativeDb: import('node:sqlite').DatabaseSync | undefined;
 	try {
-		const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite');
+		const { DatabaseSync } = loadNodeSqlite();
 		const tmpDir = path.join(os.homedir(), '.copilot', 'tmp');
 		fs.mkdirSync(tmpDir, { recursive: true, mode: 0o700 });
 		tmpDb = path.join(tmpDir, `sqlite-wal-${path.basename(dbPath)}-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.db`);

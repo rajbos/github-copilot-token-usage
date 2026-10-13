@@ -52,9 +52,12 @@ caller's environment; the bundles they load run in Chromium, which has no access
 - `--base`, `--out`, `--view`, `--config` and the other CLI arguments. `--base` values
   that are empty or start with `-` are refused, and `--base`, `--out`, `--theme` or
   `--view` given without a value is an error rather than a silent default. `--theme`
-  must be exactly `dark`, `light` or `both` (`parseThemes` in `lib/config.js`, in both
-  `visual-diff.js` and `render-views.js`), and `buildPageHtml` refuses any theme other
-  than `dark` or `light`, since it names a CSS file and every screenshot file name.
+  must be exactly `dark`, `light`, `hc`, `hc-light`, `both` or `all` (`parseThemes` in
+  `lib/config.js`, in both `visual-diff.js` and `render-views.js`), and `buildPageHtml`
+  refuses any theme that is not an own key of `THEMES` in `lib/harness.js`, since it
+  names the CSS files read from `lib/` and every screenshot file name. The `hc` and
+  `hc-light` ids map to the committed `theme-hc*.css` overlays; no new input, path or
+  network surface.
   `--concurrency` must be a positive integer, and `diff-screenshots.js` requires
   `--threshold` in 0–1 and `--noise-floor` ≥ 0 (`parseNumberOption`), because `NaN`
   would make every comparison report "unchanged". `--out`, `--dist`, `--repo-root`,
