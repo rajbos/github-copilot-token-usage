@@ -1,14 +1,13 @@
-// @ts-nocheck // Chart.js ESM bundle is loaded dynamically; skip CJS resolution noise
 import { el, createButton, iconHeading } from '../shared/domUtils';
 import { getNavButtons } from '../shared/buttonConfig';
 import { formatCompact, setCompactNumbers } from '../shared/formatUtils';
 import { buildEditorLogo, syncLogoTheme } from '../shared/editorLogos';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
-import { createPeriodSelector, PERIOD_LABELS } from '../shared/periodSelector';
+import { createPeriodSelector, PERIOD_LABELS as TIME_WINDOW_LABELS } from '../shared/periodSelector';
 import { getCurrentPeriodFraction, computeProjectionExtra } from './projectionUtils';
 import { createViewStateManager } from '../shared/viewState';
 import { applyWebviewLocale } from '../shared/webviewLocale';
-import type { ChartTimeWindow } from '../../../../src/types';
+import type { ChartDataPayload, ChartDataset, ChartPeriodData, ChartTimeWindow } from '../../../../src/types';
 import { filterPeriodByTimeWindow } from './timeWindowFilter';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
@@ -18,73 +17,25 @@ import { getWindowData } from '../../../../src/webview/shared/dataLoader';
 import { registerMessageHandler } from '../shared/messageHandler';
 import { installSurfaceNavigation } from '../shared/surfaceNavigation';
 
-type ChartModule = typeof import('chart.js/auto');
+type ChartModule = typeof import('chart.js/auto', { with: { 'resolution-mode': 'import' } });
 type ChartConstructor = ChartModule['default'];
 type ChartInstance = InstanceType<ChartConstructor>;
-type ChartConfig = import('chart.js').ChartConfiguration<'bar' | 'line', number[], string>;
+type ChartConfig = import('chart.js', { with: { 'resolution-mode': 'import' } }).ChartConfiguration<'bar' | 'line', number[], string>;
 
-type ModelDataset = { label: string; data: number[]; backgroundColor: string; borderColor: string; borderWidth: number };
-type EditorDataset = ModelDataset;
-type RepositoryDataset = ModelDataset & { fullRepo?: string };
-
-type ChartPeriodData = {
-	labels: string[];
-	periodKeys?: string[];
-	tokensData: number[];
-	sessionsData: number[];
-	modelDatasets: ModelDataset[];
-	editorDatasets: EditorDataset[];
-	repositoryDatasets: RepositoryDataset[];
-	taskCategoryDatasets?: ModelDataset[];
-	taskCategoryTokenDatasets?: ModelDataset[];
-	taskCategorySessionDatasets?: ModelDataset[];
-	taskCategoryCostDatasets?: ModelDataset[];
-	periodCount: number;
-	totalTokens: number;
-	totalSessions: number;
-	avgPerPeriod: number;
-	costData: number[];
-	totalCost: number;
-	avgCostPerPeriod: number;
-	locData?: number[];
-	linesAddedData?: number[];
-	linesRemovedData?: number[];
-	languageDatasets?: ModelDataset[];
-	locEditorDatasets?: ModelDataset[];
-	locRepositoryDatasets?: RepositoryDataset[];
-	totalLinesAdded?: number;
-	totalLinesRemoved?: number;
-	avgLocPerPeriod?: number;
-	editorCostDatasets?: ModelDataset[];
-	billingGroupCostDatasets?: ModelDataset[];
-	modelCostDatasets?: ModelDataset[];
-	modelSessionsDatasets?: ModelDataset[];
-	editorSessionsDatasets?: ModelDataset[];
-	providerSessionsDatasets?: ModelDataset[];
-	providerTokensDatasets?: ModelDataset[];
-};
+/**
+ * The dataset and payload shapes come straight from the shared types (src/types.ts) that the
+ * one shared builder (`buildChartData`) every host calls must satisfy. A field this view starts
+ * relying on has to be added there, and the builder must then emit it — a missing field is a
+ * compile error in every host, not a blank Chart view (#2304, #2316).
+ */
+type ModelDataset = ChartDataset;
 
 type ChartPeriod = import('./projectionUtils').ChartPeriod;
 
-type InitialChartData = {
-	labels: string[];
-	tokensData: number[];
-	sessionsData: number[];
-	modelDatasets: ModelDataset[];
-	editorDatasets: EditorDataset[];
-	repositoryDatasets: RepositoryDataset[];
-	editorTotalsMap: Record<string, number>;
-	repositoryTotalsMap: Record<string, number>;
-	dailyCount: number;
-	totalTokens: number;
-	avgTokensPerDay: number;
-	totalSessions: number;
-	lastUpdated: string;
+/** The shared payload plus the host-specific view settings the extension layers on top. */
+type InitialChartData = Omit<ChartDataPayload, 'backendConfigured'> & {
 	backendConfigured?: boolean;
-	compactNumbers?: boolean;
 	monthlyCostBudget?: number;
-	periodsReady?: boolean;
-	hasLocData?: boolean;
 	initialPeriod?: ChartPeriod;
 	initialTimeWindow?: ChartTimeWindow;
 	initialView?: 'total' | 'model' | 'editor' | 'repository' | 'cost' | 'task' | 'taskCategory';
@@ -93,11 +44,6 @@ type InitialChartData = {
 	/** Host-persisted collapsed state of "By Editor"; outlives the panel, unlike webview state. */
 	initialEditorListCollapsed?: boolean;
 	monthlyBudget?: number;
-	periods?: {
-		day: ChartPeriodData;
-		week: ChartPeriodData;
-		month: ChartPeriodData;
-	};
 };
 
 // VS Code injects this in the webview environment
@@ -107,9 +53,8 @@ declare function acquireVsCodeApi<TState = unknown>(): {
 	getState: () => TState | undefined;
 };
 
-type VSCodeApi = ReturnType<typeof acquireVsCodeApi>;
 
-const vscode: VSCodeApi = acquireVsCodeApi();
+const vscode = acquireVsCodeApi<ChartWebviewState>();
 installSurfaceNavigation(vscode, 'chart');
 const initialData = getWindowData<InitialChartData & { localization?: Record<string, string> }>('__INITIAL_CHART__');
 
@@ -126,23 +71,26 @@ async function loadChartModule(): Promise<void> {
 	const mod = await import('chart.js/auto');
 	Chart = mod.default;
 }
-let currentMetric: 'tokens' | 'output' | 'cost' | 'sessions' = 'tokens';
-let currentSplit: 'total' | 'model' | 'editor' | 'repository' | 'language' | 'provider' | 'task' | 'taskCategory' = 'total';
+let currentMetric: ChartMetric = 'tokens';
+let currentSplit: ChartSplit = 'total';
 let currentPeriod: ChartPeriod = 'day';
 let currentTimeWindow: ChartTimeWindow = 'last30';
 // Stores state to restore after a background data update re-initializes the chart
-let pendingMetric: typeof currentMetric | null = null;
-let pendingSplit: typeof currentSplit | null = null;
+let pendingMetric: ChartMetric | null = null;
+let pendingSplit: ChartSplit | null = null;
 let pendingPeriod: ChartPeriod | null = null;
 
 type DisplayMode = 'actual' | 'rolling';
 let currentDisplayMode: DisplayMode = 'actual';
 
+type ChartMetric = 'tokens' | 'output' | 'cost' | 'sessions';
+type ChartSplit = 'total' | 'model' | 'editor' | 'repository' | 'language' | 'provider' | 'task' | 'taskCategory';
+
 type ChartWebviewState = {
 	period: ChartPeriod;
 	timeWindow: ChartTimeWindow;
-	metric: 'tokens' | 'output' | 'cost' | 'sessions';
-	split: 'total' | 'model' | 'editor' | 'repository' | 'language' | 'provider' | 'task' | 'taskCategory';
+	metric: ChartMetric;
+	split: ChartSplit;
 	displayMode: DisplayMode;
 	/** Whether the per-editor breakdown cards under the Summary section are collapsed. */
 	editorListCollapsed: boolean;
@@ -217,9 +165,6 @@ function getChartTitle(): string {
 	}
 	if (currentMetric === 'output') {
 		return periodMeta.outputTitle;
-	}
-	if (currentMetric === 'sessions') {
-		return periodMeta.sessionsTitle;
 	}
 	let titleText = periodMeta.title;
 	if (currentDisplayMode === 'rolling' && currentSplit === 'total') {
@@ -615,7 +560,7 @@ function wireInteractions(data: InitialChartData): void {
 	});
 
 	// Chart metric toggle buttons
-	const metricButtons: Array<{ id: string; metric: typeof currentMetric }> = [
+	const metricButtons: Array<{ id: string; metric: ChartMetric }> = [
 		{ id: 'metric-tokens', metric: 'tokens' },
 		{ id: 'metric-output', metric: 'output' },
 		{ id: 'metric-cost',   metric: 'cost'   },
@@ -627,7 +572,7 @@ function wireInteractions(data: InitialChartData): void {
 	});
 
 	// Chart split toggle buttons
-	const splitButtons: Array<{ id: string; split: typeof currentSplit }> = [
+	const splitButtons: Array<{ id: string; split: ChartSplit }> = [
 		{ id: 'split-total',      split: 'total'      },
 		{ id: 'split-model',      split: 'model'      },
 		{ id: 'split-editor',     split: 'editor'     },
@@ -706,7 +651,7 @@ async function switchPeriod(period: ChartPeriod, data: InitialChartData): Promis
 	chart = new Chart(ctx, createConfig(data));
 }
 
-function clampSplitForMetric(metric: typeof currentMetric): void {
+function clampSplitForMetric(metric: ChartMetric): void {
 	const normalizedSplit = currentSplit === 'taskCategory' ? 'task' : currentSplit;
 	if (metric === 'cost' && normalizedSplit !== 'model' && normalizedSplit !== 'editor' && normalizedSplit !== 'provider' && normalizedSplit !== 'task') { currentSplit = 'total'; return; }
 	if (metric === 'output' && (normalizedSplit === 'model' || normalizedSplit === 'provider' || normalizedSplit === 'task')) { currentSplit = 'total'; return; }
@@ -714,7 +659,7 @@ function clampSplitForMetric(metric: typeof currentMetric): void {
 	if (metric === 'sessions' && normalizedSplit !== 'total' && normalizedSplit !== 'model' && normalizedSplit !== 'editor' && normalizedSplit !== 'provider' && normalizedSplit !== 'task') { currentSplit = 'total'; }
 }
 
-async function switchMetric(metric: typeof currentMetric, data: InitialChartData): Promise<void> {
+async function switchMetric(metric: ChartMetric, data: InitialChartData): Promise<void> {
 	if (currentMetric === metric) { return; }
 	currentSplit = getPreferredSplitForMetric(metric, currentSplit);
 	currentMetric = metric;
@@ -743,7 +688,7 @@ async function switchTimeWindow(timeWindow: ChartTimeWindow, data: InitialChartD
 	await reinitChart(data);
 }
 
-function getPreferredSplitForMetric(metric: typeof currentMetric, split: typeof currentSplit): typeof currentSplit {
+function getPreferredSplitForMetric(metric: ChartMetric, split: ChartSplit): ChartSplit {
 	const normalized = split === 'taskCategory' ? 'task' : split;
 	if (metric === 'cost') {
 		return (normalized === 'editor' || normalized === 'provider' || normalized === 'task') ? normalized : 'total';
@@ -760,7 +705,7 @@ function getPreferredSplitForMetric(metric: typeof currentMetric, split: typeof 
 	return normalized;
 }
 
-function isSplitSupported(metric: typeof currentMetric, split: typeof currentSplit): boolean {
+function isSplitSupported(metric: ChartMetric, split: ChartSplit): boolean {
 	const normalized = split === 'taskCategory' ? 'task' : split;
 	if (metric === 'sessions') {
 		return normalized === 'total' || normalized === 'model' || normalized === 'editor' || normalized === 'provider' || normalized === 'task';
@@ -769,7 +714,7 @@ function isSplitSupported(metric: typeof currentMetric, split: typeof currentSpl
 		return normalized === 'total' || normalized === 'model' || normalized === 'editor' || normalized === 'provider' || normalized === 'task';
 	}
 	if (metric === 'output') {
-		return normalized !== 'model' && normalized !== 'provider' && normalized !== 'task' && normalized !== 'taskCategory';
+		return normalized !== 'model' && normalized !== 'provider' && normalized !== 'task';
 	}
 	return normalized !== 'language' && normalized !== 'provider';
 }
@@ -801,7 +746,7 @@ async function reinitChart(data: InitialChartData): Promise<void> {
 	chart = new Chart(ctx, createConfig(data));
 }
 
-async function switchSplit(split: typeof currentSplit, data: InitialChartData): Promise<void> {
+async function switchSplit(split: ChartSplit, data: InitialChartData): Promise<void> {
 	if (currentSplit === split) { return; }
 	if (!isSplitSupported(currentMetric, split)) { return; }
 	currentSplit = split;
@@ -827,7 +772,7 @@ function setActivePeriod(period: ChartPeriod): void {
 	});
 }
 
-function setActiveMetric(metric: typeof currentMetric): void {
+function setActiveMetric(metric: ChartMetric): void {
 	(['metric-tokens', 'metric-output', 'metric-cost', 'metric-sessions'] as const).forEach(id => {
 		const btn = document.getElementById(id);
 		if (!btn) { return; }
@@ -835,7 +780,7 @@ function setActiveMetric(metric: typeof currentMetric): void {
 	});
 }
 
-function setActiveSplit(split: typeof currentSplit): void {
+function setActiveSplit(split: ChartSplit): void {
 	const normalized = split === 'taskCategory' ? 'task' : split;
 	(['split-total', 'split-model', 'split-editor', 'split-repository', 'split-language', 'split-provider', 'split-task'] as const).forEach(id => {
 		const btn = document.getElementById(id);
@@ -857,7 +802,7 @@ function updateSplitButtonStates(): void {
 	splits.forEach(({ id, split }) => {
 		const btn = document.getElementById(id) as HTMLButtonElement | null;
 		if (!btn) { return; }
-		const supported = isSplitSupported(currentMetric, split as typeof currentSplit);
+		const supported = isSplitSupported(currentMetric, split as ChartSplit);
 		btn.disabled = !supported;
 		btn.classList.toggle('disabled', !supported);
 		btn.title = supported ? '' : `Not available for ${currentMetric} metric`;
@@ -904,13 +849,13 @@ function getChartColors(): ChartColors {
 
 function buildBaseOptions(c: ChartColors, periodsReady: boolean) {
 	const title = !periodsReady && (currentTimeWindow === 'last90' || currentTimeWindow === 'allTime')
-		? `${PERIOD_LABELS[currentTimeWindow]} (loading history…)`
-		: PERIOD_LABELS[currentTimeWindow];
+		? `${TIME_WINDOW_LABELS[currentTimeWindow]} (loading history…)`
+		: TIME_WINDOW_LABELS[currentTimeWindow];
 	return {
 		responsive: true, maintainAspectRatio: false,
 		interaction: { mode: 'index' as const, intersect: false },
 		plugins: {
-			title: { display: true, text: title, color: c.textColor, font: { size: 14, weight: 'bold' }, padding: { top: 4, bottom: 12 } },
+			title: { display: true, text: title, color: c.textColor, font: { size: 14, weight: 'bold' as const }, padding: { top: 4, bottom: 12 } },
 			legend: { position: 'top' as const, labels: { color: c.textColor, font: { size: 12 } } },
 			tooltip: { backgroundColor: c.bgColor, titleColor: c.textColor, bodyColor: c.textColor, borderColor: c.borderColor, borderWidth: 1, padding: 10, displayColors: true }
 		},
@@ -967,7 +912,7 @@ function buildSessionsViewConfig(view: string, period: ChartPeriodData, baseOpti
 		data: { labels: period.labels, datasets: seriesDatasets as any },
 		options: { ...baseOptions, plugins: { ...baseOptions.plugins, legend: { display: showLegend, position: 'top' as const, labels: { color: c.textColor, font: { size: 12 } } }, tooltip: { ...baseOptions.plugins.tooltip, callbacks: { label: (ctx: any) => ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toLocaleString()} sessions` } } },
 			scales: { x: { stacked: stackAxes, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 } } },
-				y: { stacked: stackAxes, type: 'linear' as const, display: true, position: 'left' as const, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() }, title: { display: true, text: 'Sessions', color: c.textColor, font: { size: 12, weight: 'bold' } } }
+				y: { stacked: stackAxes, type: 'linear' as const, display: true, position: 'left' as const, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() }, title: { display: true, text: 'Sessions', color: c.textColor, font: { size: 12, weight: 'bold' as const } } }
 			}
 		}
 	};
@@ -989,8 +934,8 @@ function buildTotalViewConfig(period: ChartPeriodData, baseOptions: ReturnType<t
 		] },
 		options: { ...baseOptions, scales: {
 			x: { stacked: true, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 } } },
-			y: { stacked: true, type: 'linear' as const, display: true, position: 'left' as const, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() }, title: { display: true, text: 'Tokens', color: c.textColor, font: { size: 12, weight: 'bold' } } },
-			y1: { type: 'linear' as const, display: true, position: 'right' as const, grid: { drawOnChartArea: false }, ticks: { color: c.textColor, font: { size: 11 } }, title: { display: true, text: 'Sessions', color: c.textColor, font: { size: 12, weight: 'bold' } } }
+			y: { stacked: true, type: 'linear' as const, display: true, position: 'left' as const, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() }, title: { display: true, text: 'Tokens', color: c.textColor, font: { size: 12, weight: 'bold' as const } } },
+			y1: { type: 'linear' as const, display: true, position: 'right' as const, grid: { drawOnChartArea: false }, ticks: { color: c.textColor, font: { size: 11 } }, title: { display: true, text: 'Sessions', color: c.textColor, font: { size: 12, weight: 'bold' as const } } }
 		} }
 	};
 }
@@ -1151,7 +1096,7 @@ function buildOutputViewConfig(view: string, period: ChartPeriodData, baseOption
 	return {
 		type: 'bar' as const, data: { labels: period.labels, datasets: locDatasets as any },
 		options: { ...baseOptions, plugins: { ...baseOptions.plugins, legend: { position: 'top' as const, labels: { color: c.textColor, font: { size: 11 } } }, tooltip: { ...baseOptions.plugins.tooltip, callbacks: { label: (ctx: any) => ` ${Math.abs(Number(ctx.parsed.y)).toLocaleString()} lines` } } },
-			scales: { x: { stacked, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 } } }, y: { stacked, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 }, callback: (value: any) => Math.abs(Number(value)).toLocaleString() }, title: { display: true, text: 'Lines of Code', color: c.textColor, font: { size: 12, weight: 'bold' } } } }
+			scales: { x: { stacked, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 } } }, y: { stacked, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 }, callback: (value: any) => Math.abs(Number(value)).toLocaleString() }, title: { display: true, text: 'Lines of Code', color: c.textColor, font: { size: 12, weight: 'bold' as const } } } }
 		}
 	};
 }
@@ -1326,12 +1271,12 @@ function buildStackedViewConfig(view: string, period: ChartPeriodData, baseOptio
 				if (items.some(i => i?.dataset?.label === 'Antigravity')) { return 'Antigravity: estimates from transcript content.\nActual API counts are not stored locally.'; }
 				return '';
 			} } } },
-			scales: { ...baseOptions.scales, y: { stacked: true, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() }, title: { display: true, text: 'Tokens', color: c.textColor, font: { size: 12, weight: 'bold' } } }, x: { stacked: true, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 } } }, y1: { type: 'linear' as const, display: true, position: 'right' as const, grid: { drawOnChartArea: false }, ticks: { color: c.textColor, font: { size: 11 } }, title: { display: true, text: 'Sessions', color: c.textColor, font: { size: 12, weight: 'bold' } } } }
+			scales: { ...baseOptions.scales, y: { stacked: true, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() }, title: { display: true, text: 'Tokens', color: c.textColor, font: { size: 12, weight: 'bold' as const } } }, x: { stacked: true, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 } } }, y1: { type: 'linear' as const, display: true, position: 'right' as const, grid: { drawOnChartArea: false }, ticks: { color: c.textColor, font: { size: 11 } }, title: { display: true, text: 'Sessions', color: c.textColor, font: { size: 12, weight: 'bold' as const } } } }
 		}
 	};
 }
 
-function resolveTokensView(split: typeof currentSplit): string {
+function resolveTokensView(split: ChartSplit): string {
 	if (split === 'model') { return 'model'; }
 	if (split === 'editor') { return 'editor'; }
 	if (split === 'repository') { return 'repository'; }
@@ -1340,7 +1285,7 @@ function resolveTokensView(split: typeof currentSplit): string {
 	return 'total';
 }
 
-function resolveCostView(split: typeof currentSplit): string {
+function resolveCostView(split: ChartSplit): string {
 	if (split === 'model') { return 'cost-model'; }
 	if (split === 'editor') { return 'cost-editor'; }
 	if (split === 'provider') { return 'cost-provider'; }
@@ -1348,7 +1293,7 @@ function resolveCostView(split: typeof currentSplit): string {
 	return 'cost';
 }
 
-function resolveSessionsView(split: typeof currentSplit): string {
+function resolveSessionsView(split: ChartSplit): string {
 	if (split === 'model') { return 'sessions-model'; }
 	if (split === 'editor') { return 'sessions-editor'; }
 	if (split === 'provider') { return 'sessions-provider'; }
@@ -1356,7 +1301,7 @@ function resolveSessionsView(split: typeof currentSplit): string {
 	return 'sessions';
 }
 
-function resolveChartView(metric: typeof currentMetric, split: typeof currentSplit): string {
+function resolveChartView(metric: ChartMetric, split: ChartSplit): string {
 	const normalized = split === 'taskCategory' ? 'task' : split;
 	if (metric === 'output') { return `output-${normalized}`; }
 	if (metric === 'sessions') { return resolveSessionsView(normalized); }
@@ -1386,7 +1331,7 @@ function createConfig(data: InitialChartData): ChartConfig {
 }
 
 
-type MetricSplit = { metric: typeof currentMetric; split: typeof currentSplit };
+type MetricSplit = { metric: ChartMetric; split: ChartSplit };
 
 function migrateViewKey(view: string): MetricSplit {
 	const map: Record<string, MetricSplit> = {
@@ -1471,7 +1416,7 @@ async function bootstrap(): Promise<void> {
 void bootstrap();
 
 // Listen for background data updates from the extension
-registerMessageHandler((message) => {
+registerMessageHandler<{ command?: string; data?: unknown }>((message) => {
 	if (message.command === 'updateChartData') {
 		// Save current toggles for restoration after chart re-initializes
 		pendingMetric = currentMetric;

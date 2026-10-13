@@ -33,6 +33,7 @@ import dataTableStyles from '../shared/dataTable.css';
 import { renderDataTable, rerenderDataTable, setDataTableState, type DataTableColumn, type DataTableSortValue } from '../shared/dataTable';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
+import type { UsageAnalysisViewData } from '../../../../src/usageAnalysisViewBuilder';
 import { registerMessageHandler } from '../shared/messageHandler';
 import { getModelDisplayName, getModelLookupCandidates } from '../../../../src/webview/shared/modelUtils';
 import { getModelBillingProvider } from '../../../../src/chartDataBuilder';
@@ -60,9 +61,10 @@ import { DarkFactoryTab } from './darkFactoryTab';
 import { insightCardElementId, isInsightCardAnchor } from '../../insightAnchors';
 import { placeBubbleLabels, scaleBubbleRadius, type BubbleLabelPlacement } from './modelLeaderboard';
 import { createUsageWebviewReadyNotifier, restoreGitHubActivityPanels } from './readiness';
-import { sanitizeServerMemoriesAnalysis as _sanitizeServerMemoriesAnalysis, buildServerMemoriesSectionHtml } from './serverMemories';
+import { sanitizeServerMemoriesAnalysis as _sanitizeServerMemoriesAnalysis, buildServerMemoriesSectionHtml, wireServerMemoriesButtons } from './serverMemories';
 import { buildBuiltinToolsHtml, buildUnusedMcpHtml, buildUnusedSkillsHtml } from './toolCurationTables';
 import { renderAgentPluginsFilter, renderAgentPluginsTable, renderMemoryFilesTable, renderMissedPotentialTable, renderRepoHygieneListTable, type RepoHygieneListRow } from './usageListTables';
+import { buildSkillSuggestionsSectionHtml, sanitizeRepeatedTaskReport, wireSkillSuggestions, type RepeatedTaskReport, type SkillSuggestionsMessage } from './skillSuggestions';
 
 type ModelSwitchingAnalysis = BaseModelSwitchingAnalysis & {
 	minModelsPerSession: number;
@@ -192,31 +194,6 @@ type CorrectionReport = {
 	sessionsWithMoments: number;
 };
 
-// ── Repeated-task types ─────────────────────────────────────────────────────
-// Mirror the interfaces in src/types.ts (RepeatedTaskReport etc.) — keep in
-// sync manually; the webview bundle cannot import them directly.
-
-type RepeatedTaskSessionRef = {
-	file: string;
-	title?: string | null;
-	lastInteraction?: string | null;
-	repository?: string;
-};
-
-type RepeatedTaskCluster = {
-	representativePrompt: string;
-	sessionCount: number;
-	repositories: string[];
-	sessions: RepeatedTaskSessionRef[];
-	sharedKeywords: string[];
-};
-
-type RepeatedTaskReport = {
-	minClusterSize: number;
-	sessionsScanned: number;
-	clusters: RepeatedTaskCluster[];
-};
-
 type UsageAnalysisStats = {
 	today: UsageAnalysisPeriod;
 	last30Days: UsageAnalysisPeriod;
@@ -282,7 +259,8 @@ interface CustomizationFileEntry {
 	icon?: string;
 	label?: string;
 	name?: string;
-	lastModified?: string;
+	/** Null when unknown, as the shared CustomizationFileEntry (src/types.ts) sends it. */
+	lastModified?: string | null;
 	isStale?: boolean;
 	category?: 'copilot' | 'non-copilot';
 }
@@ -293,6 +271,7 @@ interface WorkspaceCustomizationRow {
 	sessionCount: number;
 	interactionCount: number;
 	typeStatuses: { [typeId: string]: CustomizationTypeStatus };
+	memberPaths?: string[];
 }
 
 interface WorkspaceCustomizationMatrix {
@@ -300,6 +279,7 @@ interface WorkspaceCustomizationMatrix {
 	workspaces: WorkspaceCustomizationRow[];
 	totalWorkspaces: number;
 	workspacesWithIssues: number;
+	ungroupedWorkspaceNames?: string[];
 }
 
 interface MissedPotentialWorkspace {
@@ -384,6 +364,29 @@ function traceCurationOnce(key: string, stage: string, details?: Record<string, 
 
 type WorktreeBackgroundScanData = { scannedAt: string; totalBytes: number; worktreeCount: number; worktrees: unknown[] };
 type InitialUsageData = UsageAnalysisStats & { customizationMatrix?: WorkspaceCustomizationMatrix | null; missedPotential?: MissedPotentialWorkspace[]; worktreeScanRoots?: string[]; localization?: Record<string, string>; worktreeBackgroundScan?: WorktreeBackgroundScanData | null };
+
+/*
+ * Compile-time contract with the shared payload builder (src/usageAnalysisViewBuilder.ts), which
+ * the extension, the CLI and the desktop app all call. The view keeps local copies of the nested
+ * types, so the contract is checked field by field, in both directions — a field added on one
+ * side only is a compile error, not a silently blank section in some host (#2316):
+ *  - every field the builder emits is declared here;
+ *  - every field declared here is on the shared payload, or listed as a host extra below;
+ *  - every shared field's value, as the builder types it, is accepted by this view's type.
+ */
+/** Fields this view reads that hosts add on top of the shared payload (extension-only today). */
+type UsageHostExtraField = 'serverMemoriesAnalysis' | 'sessionColumnSettings' | 'copilotApiBalance' | 'accountBudgets' | 'monthBillingGroupCosts';
+type UsageFieldsMissingFromView = Exclude<keyof UsageAnalysisViewData, keyof UsageAnalysisStats>;
+type UsageFieldsNotFromBuilder = Exclude<keyof UsageAnalysisStats, keyof UsageAnalysisViewData | UsageHostExtraField>;
+type UsageFieldsWithIncompatibleTypes = {
+	[K in keyof UsageAnalysisViewData & keyof UsageAnalysisStats]: UsageAnalysisViewData[K] extends UsageAnalysisStats[K] ? never : K
+}[keyof UsageAnalysisViewData & keyof UsageAnalysisStats];
+type AssertNever<T extends never> = T;
+export type UsagePayloadContract = [
+	AssertNever<UsageFieldsMissingFromView>,
+	AssertNever<UsageFieldsNotFromBuilder>,
+	AssertNever<UsageFieldsWithIncompatibleTypes>,
+];
 const initialData = getWindowData<InitialUsageData>('__INITIAL_USAGE__');
 
 // Initialize localization for webview
@@ -441,6 +444,13 @@ let currentMemoryFilesAnalysis: MemoryFilesAnalysisView | null = null;
 // trip — a refresh that omits them must keep showing the last good read rather than blank
 // the section while the next fetch is in flight.
 let currentServerMemoriesAnalysis: ServerMemoriesAnalysisView | null = null;
+// Skill Suggestions read the report on click, so the buttons act on what is rendered.
+let currentRepeatedTasks: RepeatedTaskReport | null = null;
+const skillSuggestionsWiring = {
+	getReport: () => currentRepeatedTasks,
+	getWorkspacePaths: () => currentWorkspacePaths,
+	postMessage: (message: SkillSuggestionsMessage) => vscode.postMessage(message),
+};
 
 type WorktreeResult = {
 	path: string;
@@ -474,7 +484,7 @@ type WorktreeScanStatus = {
 };
 
 // Worktree discovery tab state
-let worktreeRoots: string[] = initialData?.worktreeScanRoots ? [...initialData.worktreeScanRoots] : [];
+const worktreeRoots: string[] = initialData?.worktreeScanRoots ? [...initialData.worktreeScanRoots] : [];
 let worktreeResults: WorktreeResult[] = initialData?.worktreeBackgroundScan
 	? initialData.worktreeBackgroundScan.worktrees.map(sanitizeWorktreeResult)
 	: [];
@@ -518,6 +528,8 @@ type WorktreeCleanupDiagnostics = {
 /** Live state of a "Delete anyway…" retry on a cleanup-log row, keyed by worktree path. */
 type WorktreeRetryState = { status: "running" | "deleted" | "error"; reason?: string };
 const worktreeRetryState = new Map<string, WorktreeRetryState>();
+/** Bytes freed per deleted worktree path, captured from the scan row just before it leaves the list. */
+const worktreeDeletedBytes = new Map<string, number>();
 type WorktreeCleanupLogEntry = { path: string; branch: string; repoLabel: string; status: WorktreeCleanupOutcome; reason?: string; diagnostics?: WorktreeCleanupDiagnostics };
 let worktreeCleanupLog: WorktreeCleanupLogEntry[] = [];
 
@@ -1219,11 +1231,11 @@ const presetForcedColumns = new Set<SessionColumnId>();
 
 // --- Recent Sessions pill filters (Editor / Model / Model vendor / HydraFusion) ---
 /** Active editor pill filters. Empty set means "no filter" (show all editors). */
-let sessionFilterEditors: Set<string> = new Set();
+const sessionFilterEditors: Set<string> = new Set();
 /** Active model-vendor pill filters (e.g. "Anthropic", "OpenAI"). Empty set means "no filter". */
-let sessionFilterVendors: Set<string> = new Set();
+const sessionFilterVendors: Set<string> = new Set();
 /** Active model pill filters. Empty set means "no filter". */
-let sessionFilterModels: Set<string> = new Set();
+const sessionFilterModels: Set<string> = new Set();
 /** Quick toggle: when true, only show sessions that used a HydraFusion model. */
 let sessionFilterHydraFusionOnly = false;
 /** Quick toggle: when true, only show sessions that nearly filled their context window. */
@@ -1741,40 +1753,6 @@ function sanitizeCorrectionReport(raw: any): CorrectionReport | null {
 	};
 }
 
-function sanitizeRepeatedTaskCluster(raw: any): RepeatedTaskCluster | null {
-	if (!raw || typeof raw !== 'object') { return null; }
-	if (typeof raw.representativePrompt !== 'string' || typeof raw.sessionCount !== 'number' || !Array.isArray(raw.sessions)) { return null; }
-	const sessions: RepeatedTaskSessionRef[] = raw.sessions
-		.filter((s: any) => s && typeof s === 'object' && typeof s.file === 'string')
-		.map((s: any): RepeatedTaskSessionRef => ({
-			file: s.file,
-			title: typeof s.title === 'string' ? s.title : null,
-			lastInteraction: typeof s.lastInteraction === 'string' ? s.lastInteraction : null,
-			repository: typeof s.repository === 'string' ? s.repository : undefined,
-		}));
-	if (sessions.length === 0) { return null; }
-	return {
-		representativePrompt: raw.representativePrompt,
-		// Derive from the sanitized session list so the UI count can never
-		// disagree with it (and NaN/float counts are impossible).
-		sessionCount: sessions.length,
-		repositories: Array.isArray(raw.repositories) ? raw.repositories.filter((r: unknown) => typeof r === 'string') : [],
-		sessions,
-		sharedKeywords: Array.isArray(raw.sharedKeywords) ? raw.sharedKeywords.filter((k: unknown) => typeof k === 'string') : [],
-	};
-}
-
-function sanitizeRepeatedTaskReport(raw: any): RepeatedTaskReport | null {
-	if (!raw || typeof raw !== 'object' || !Array.isArray(raw.clusters)) { return null; }
-	const clusters = raw.clusters.map(sanitizeRepeatedTaskCluster).filter((c: RepeatedTaskCluster | null): c is RepeatedTaskCluster => c !== null);
-	if (clusters.length === 0) { return null; }
-	return {
-		minClusterSize: typeof raw.minClusterSize === 'number' ? raw.minClusterSize : 2,
-		sessionsScanned: typeof raw.sessionsScanned === 'number' ? raw.sessionsScanned : 0,
-		clusters,
-	};
-}
-
 function _sanitizeCurationAnalysis(rawCa: unknown): ToolCurationAnalysis | null {
 	if (!rawCa || typeof rawCa !== 'object') { return null; }
 	const ca = rawCa as Partial<ToolCurationAnalysis>;
@@ -2079,6 +2057,13 @@ function _handleWorktreeRowLinkClick(event: MouseEvent, target: HTMLElement): bo
 		if (p) { vscode.postMessage({ command: "openWorktreeInEditor", path: p }); }
 		return true;
 	}
+	const copyPromptBtn = target.closest(".worktree-copy-prompt-btn") as HTMLElement | null;
+	if (copyPromptBtn) {
+		event.preventDefault();
+		const prompt = buildWorktreeDiffPrompt(decodeURIComponent(copyPromptBtn.getAttribute("data-branch") || ""));
+		copyWorktreePrompt(copyPromptBtn, prompt);
+		return true;
+	}
 	const revealLink = target.closest(".worktree-reveal-link, .worktree-reveal-btn") as HTMLElement | null;
 	if (revealLink) {
 		event.preventDefault();
@@ -2238,6 +2223,8 @@ function handleWorktreeDeleted(message: any): void {
 	if (!targetPath) { return; }
 	const idx = worktreeResults.findIndex((w) => w.path === targetPath);
 	if (idx === -1) { return; }
+	const freed = knownBytes(worktreeResults[idx]);
+	if (freed > 0) { worktreeDeletedBytes.set(targetPath, freed); }
 	worktreeResults.splice(idx, 1);
 	updateWorktreeResults();
 }
@@ -2254,6 +2241,7 @@ function handleCleanupStarted(message: any): void {
 	worktreeCleanupStatus = { processed: 0, total: numField(message.total) };
 	worktreeCleanupLog = [];
 	worktreeRetryState.clear();
+	worktreeDeletedBytes.clear();
 	updateWorktreeResults();
 }
 
@@ -3370,50 +3358,8 @@ function usageTabStripInput(stats: UsageAnalysisStats): UsageTabStripInput {
 		activeTab,
 		newInsightCount: (stats.insights ?? []).filter(i => i.status === 'new').length,
 		correctionSessionCount: stats.correctionReport?.sessionsWithMoments ?? 0,
-		readinessButtonHtml: darkFactoryTab.button(activeTab),
+		readinessAvailable: darkFactoryTab.isAvailable(),
 	};
-}
-
-// ── Skill suggestions (repeated tasks) ──────────────────────────────────────
-
-function buildRepeatedTaskSessionLinkHtml(session: RepeatedTaskSessionRef): string {
-	const title = session.title || session.file.split(/[\\/]/).pop() || session.file;
-	const date = session.lastInteraction ? new Date(session.lastInteraction) : null;
-	const dateLabel = date && !isNaN(date.getTime()) ? date.toLocaleDateString() : '';
-	const repo = session.repository ? ` · ${session.repository}` : '';
-	return `<div style="font-size:11px; color:var(--text-secondary); padding:2px 0; overflow-wrap:anywhere;">${escapeHtml(title)}${escapeHtml(dateLabel ? ` · ${dateLabel}` : '')}${escapeHtml(repo)}</div>`;
-}
-
-function buildRepeatedTaskClusterHtml(cluster: RepeatedTaskCluster): string {
-	const keywords = cluster.sharedKeywords.length > 0
-		? `<div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:4px;">${cluster.sharedKeywords.map(k => `<span style="font-size:10px; padding:1px 7px; border-radius:8px; background:var(--bg-tertiary); color:var(--text-secondary);">${escapeHtml(k)}</span>`).join('')}</div>`
-		: '';
-	return `
-		<div style="margin-top:10px; padding:12px 14px; border-radius:8px; background:var(--bg-tertiary); border:1px solid var(--border-color, transparent);">
-			<div style="display:flex; align-items:flex-start; gap:10px;">
-				<span style="flex-shrink:0; font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px; background:rgba(74,222,128,0.15); border:1px solid rgba(74,222,128,0.5); color:var(--text-primary); white-space:nowrap;">${cluster.sessionCount}× repeated</span>
-				<div style="flex:1; min-width:0; font-size:12px; color:var(--text-primary); font-style:italic; overflow-wrap:anywhere;">&ldquo;${escapeHtml(cluster.representativePrompt)}&rdquo;</div>
-			</div>
-			${keywords}
-			<details style="margin-top:8px;">
-				<summary style="font-size:11px; color:var(--text-secondary); cursor:pointer;">Sessions (${cluster.sessions.length})</summary>
-				<div style="margin-top:4px;">${cluster.sessions.map(buildRepeatedTaskSessionLinkHtml).join('')}</div>
-			</details>
-		</div>`;
-}
-
-/** "Skill suggestions" section for the Tools & Integrations tab (empty string when no candidates). */
-function buildSkillSuggestionsSectionHtml(report: RepeatedTaskReport | null): string {
-	if (!report || report.clusters.length === 0) { return ''; }
-	return `
-		<div class="section" id="section-skill-suggestions">
-			<div class="section-title"><span>🧩</span><span>Skill Suggestions</span></div>
-			<div class="section-subtitle">
-				Tasks you keep prompting for across sessions (first prompt per session, ${report.sessionsScanned} sessions scanned).
-				A repeated task is a good candidate for a reusable skill, prompt file, or custom agent.
-			</div>
-			${report.clusters.map(buildRepeatedTaskClusterHtml).join('')}
-		</div>`;
 }
 
 const CORRECTION_TYPE_META: Record<CorrectionMomentType, { label: string; color: string }> = {
@@ -4188,12 +4134,39 @@ function buildWorktreeCleanupDetailChips(d: WorktreeCleanupDiagnostics | undefin
 	return chips.length === 0 ? "" : `<div class="worktree-cleanup-chips">${chips.join("")}</div>`;
 }
 
+const worktreePromptResetTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
+
+/** Copies the prompt and flashes "Copied!"; always restores the stable localized label, never whatever is showing. */
+function copyWorktreePrompt(button: HTMLElement, prompt: string): void {
+	let write: Promise<void>;
+	try {
+		if (typeof navigator.clipboard?.writeText !== "function") { return; }
+		write = navigator.clipboard.writeText(prompt);
+	} catch {
+		return;
+	}
+	write.then(() => {
+		button.textContent = localize("usage.worktreeCleanup.copied");
+		clearTimeout(worktreePromptResetTimers.get(button));
+		worktreePromptResetTimers.set(button, setTimeout(() => {
+			worktreePromptResetTimers.delete(button);
+			button.textContent = localize("usage.worktreeCleanup.copyPrompt");
+		}, 2000));
+	}).catch(() => { /* clipboard unavailable: leave the label unchanged */ });
+}
+
+/** Starter prompt for a chat session opened in a worktree that could not be deleted, to understand what its diff holds. */
+function buildWorktreeDiffPrompt(branch: string): string {
+	return localizeFormat("usage.worktreeCleanup.starterPrompt", branch || "?");
+}
+
 /** Per-row remediation actions for a worktree the cleanup could not delete. */
 function buildWorktreeCleanupActions(e: WorktreeCleanupLogEntry): string {
 	const p = encodeURIComponent(e.path);
 	return `<div class="worktree-cleanup-log-actions">
       <button type="button" class="button secondary worktree-open-editor-btn" data-path="${p}" title="Open this worktree folder in a new VS Code window so you can commit, push, or clean it up">💻 Open in VS Code</button>
       <button type="button" class="button secondary worktree-reveal-btn" data-path="${p}" title="Show this folder in the OS file explorer">📂 Reveal folder</button>
+      <button type="button" class="button secondary worktree-copy-prompt-btn" data-branch="${encodeURIComponent(e.branch)}" title="${escapeHtml(localize("usage.worktreeCleanup.copyPromptTitle"))}">${escapeHtml(localize("usage.worktreeCleanup.copyPrompt"))}</button>
       <button type="button" class="button secondary worktree-delete-btn" data-path="${p}" data-branch="${encodeURIComponent(e.branch)}" data-repo="${encodeURIComponent(e.repoLabel)}" data-pushed="?" title="Try removing it again — you will be asked to confirm, and to force-delete if it still has uncommitted changes">🗑️ Delete anyway…</button>
     </div>`;
 }
@@ -4238,6 +4211,18 @@ function renderWorktreeCleanupLog(): string {
 	return `<div class="worktree-cleanup-log">${rows}</div>`;
 }
 
+/** Total bytes freed by the deleted worktrees of this run (bulk deletions and later "Delete anyway…" retries). */
+function getCleanupRecoveredBytes(): number {
+	let total = 0;
+	for (const e of worktreeCleanupLog) {
+		// Only rows this run actually deleted (or the user retried successfully) free space; a late
+		// delete from an earlier run or an unrelated manual delete must not inflate the total.
+		const deleted = e.status === "deleted" || worktreeRetryState.get(e.path)?.status === "deleted";
+		if (deleted) { total += worktreeDeletedBytes.get(e.path) ?? 0; }
+	}
+	return total;
+}
+
 function renderWorktreeCleanupStatus(): string {
 	if (worktreeCleanupInProgress) {
 		const { processed, total } = worktreeCleanupStatus;
@@ -4245,6 +4230,7 @@ function renderWorktreeCleanupStatus(): string {
 		return `<div class="info-box" style="margin-top: 12px;">
       <div class="info-box-title">🧹 Cleaning up pushed worktrees…</div>
       <div>${processed} / ${total} processed</div>
+      <div>${escapeHtml(localizeFormat("usage.worktreeCleanup.recovered", formatFileSize(getCleanupRecoveredBytes())))}</div>
       <div class="worktree-progress-bar"><div class="worktree-progress-fill" style="width: ${pct}%;"></div></div>
     </div>${renderWorktreeCleanupLog()}`;
 	}
@@ -4257,6 +4243,7 @@ function renderWorktreeCleanupStatus(): string {
 	return `<div class="info-box" style="margin-top: 12px;">
     <div class="info-box-title">🧹 Cleanup finished</div>
     <div>✅ ${deleted} deleted · ⏭️ ${skipped} skipped (uncommitted/unpushed) · ${errors > 0 ? `❌ ${errors} error${errors === 1 ? "" : "s"}` : "0 errors"}</div>
+    <div>💾 ${escapeHtml(localizeFormat("usage.worktreeCleanup.recovered", formatFileSize(getCleanupRecoveredBytes())))}</div>
   </div>${renderWorktreeCleanupLog()}`;
 }
 
@@ -5354,6 +5341,7 @@ function syncRenderLayoutState(stats: UsageAnalysisStats): WorkspaceCustomizatio
 	if (Array.isArray(stats.currentWorkspacePaths)) {
 		currentWorkspacePaths = stats.currentWorkspacePaths;
 	}
+	currentRepeatedTasks = stats.repeatedTasks ?? null;
 	// Persist curation analysis across refreshes — periodic updateStats may omit it
 	if (stats.curationAnalysis) {
 		currentCurationAnalysis = stats.curationAnalysis;
@@ -5422,6 +5410,8 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	wireMcpPeriodToggle();
 	wireRepositoryButtons();
 	wireCurationButtons();
+	wireServerMemoriesButtons(message => vscode.postMessage(message));
+	wireSkillSuggestions(skillSuggestionsWiring);
 	renderRepositoryHygienePanels();
 	// Before setupTabs(): its first-visit replay marks new insights as seen when the render opens
 	// on the Insights tab (a deep link can), and that reads currentInsights. Assigned after, the

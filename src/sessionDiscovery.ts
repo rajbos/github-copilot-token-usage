@@ -15,10 +15,10 @@
  *   - A short-term TTL cache so rapid successive scans don't re-walk the FS.
  *   - Path-based deduplication so adapters that overlap (or future bug-fix
  *     additions) cannot double-count the same physical session file.
- *   - checkCopilotExtension() which uses the VS Code extension API and
- *     therefore stays attached to this discovery class.
+ *   - checkCopilotExtension() which reports Copilot extension status through
+ *     the injected `getExtensionStatus` dependency (supplied by the VS Code
+ *     extension; the CLI has no extension host and leaves it unset).
  */
-import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { IEcosystemAdapter } from './ecosystemAdapter';
@@ -33,6 +33,16 @@ export interface SessionDiscoveryDeps {
 	ecosystems: IEcosystemAdapter[];
 	windsurf?: WindsurfDataAccess;
 	sampleDataDirectoryOverride?: () => string | undefined;
+	/**
+	 * The user-configured `aiEngineeringFluency.sampleDataDirectory`, consulted when
+	 * `sampleDataDirectoryOverride` returns nothing. Supplied by the VS Code extension.
+	 */
+	getConfiguredSampleDataDirectory?: () => string | undefined;
+	/**
+	 * Looks up an installed editor extension by id (e.g. 'GitHub.copilot'). Supplied by the
+	 * VS Code extension; absent outside an extension host.
+	 */
+	getExtensionStatus?: (extensionId: string) => { isActive: boolean } | undefined;
 }
 
 /** What one discovery pass observed; published to the instance only if the pass is still current. */
@@ -138,8 +148,10 @@ export class SessionDiscovery {
 	}
 
 	checkCopilotExtension(): void {
-		const copilotExtension = vscode.extensions.getExtension('GitHub.copilot');
-		const copilotChatExtension = vscode.extensions.getExtension('GitHub.copilot-chat');
+		const getExtensionStatus = this.deps.getExtensionStatus;
+		if (!getExtensionStatus) { return; }
+		const copilotExtension = getExtensionStatus('GitHub.copilot');
+		const copilotChatExtension = getExtensionStatus('GitHub.copilot-chat');
 
 		if (!copilotExtension && !copilotChatExtension) {
 			this.deps.log('⚠️ GitHub Copilot extensions not found');
@@ -170,7 +182,7 @@ export class SessionDiscovery {
 
 	private async tryGetSampleDataFiles(now: number, generation: number): Promise<string[] | undefined> {
 		const sampleDir = this.deps.sampleDataDirectoryOverride?.()
-			?? vscode.workspace.getConfiguration('aiEngineeringFluency').get<string>('sampleDataDirectory');
+			?? this.deps.getConfiguredSampleDataDirectory?.();
 		if (!sampleDir || sampleDir.trim().length === 0) { return undefined; }
 		const resolvedSampleDir = sampleDir.trim();
 		try {

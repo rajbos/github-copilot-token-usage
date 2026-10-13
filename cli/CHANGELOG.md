@@ -4,14 +4,20 @@ All notable changes to the CLI (@rajbos/ai-engineering-fluency) will be document
 
 ## [Unreleased]
 
+### Features
+- `usage-analysis --json` (and the `usage` key of `all --json`, which Visual Studio and JetBrains render) is now built by the same shared payload builder as the VS Code extension's Usage Analysis view, so it carries the fields the view reads: `customizationMatrix`, `missedPotential`, `curationAnalysis`, evaluated `insights`, `correctionReport`, `memoryFilesAnalysis` and the display settings. The customization matrix rows are now sorted busiest workspace first, like the extension's. `all --json` computes the customization matrix and curation once for its `usage`, `fluency` and `curation` payloads (#2418)
+
 ## [0.7.0] - 2026-10-10
 
 ### Features
 - **Programmatic use:** the package now works as a Node library. `require('@rajbos/ai-engineering-fluency/session')` (or `import`) gives you `analyzeSessionFile()` and `analyzeSessionFiles()`, which return per-session token usage per model, an estimated USD cost at provider and Copilot rates, and the exact GitHub Copilot billed amount (`copilotNanoAiu`, `copilotCredits`) when the session records it. Results are cached in memory by file path, modification time and size, so polling a running session is cheap. Unknown files resolve to `null` instead of throwing, nothing is written to the console, and the CLI's on-disk cache is left alone. It ships with TypeScript types. See [Programmatic use](https://github.com/rajbos/ai-engineering-fluency/blob/main/docs/cli/README.md#programmatic-use).
 - New `skill-suggestions` command: finds tasks you keep prompting for by hand (similar first prompts across sessions) as candidates for a reusable skill or prompt file — the same report as the VS Code extension's Skill Suggestions section, built by the same shared code. `--json` leaves prompt text, prompt-derived keywords and session titles out unless `--include-prompts` is passed. `usage-analysis --json --repeated-tasks` adds the report to the usage-analysis payload (#2288)
+- `memory-files --promote` names the suggested target file in its Markdown block and prints the checkout it analyzed to stderr; `--json` server output gains `repoRoot`, `promotionTarget` and `documentedMemories` (#2286)
 
 ### Bug Fixes
 - The exact Copilot billed amount for a Copilot CLI session is the latest `session.usage_checkpoint` or `session.shutdown` value. `totalNanoAiu` is a running total for the whole session, so the previous sum over shutdowns counted resumed sessions more than once. Sessions that are still running now get the amount from their latest checkpoint.
+- Resumed Copilot CLI sessions are no longer counted two or three times: `session.shutdown` model metrics are running totals for the whole session, so the latest shutdown now replaces earlier ones instead of being summed, and daily totals get each shutdown's increase. Older per-run logs still add up. Cache version bumped so existing entries are re-parsed
+- The Customization category of `fluency` (and of `all --json`) now counts worktrees, scratch clones and case/WSL spellings of one repository as one workspace, with the same shared rules as the VS Code extension, instead of counting every folder separately, so its workspace counts match the extension's. The matrix behind it now carries the grouped workspace rows (display name, session count, merged `memberPaths`) instead of an empty list (#2290)
 
 ## [0.6.2] - 2026-10-02
 

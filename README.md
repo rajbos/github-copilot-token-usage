@@ -5,7 +5,7 @@
 
 Track your GitHub Copilot token usage and AI Fluency across VS Code, Visual Studio, the GitHub Copilot app, and the command line. All data is read from local session logs — nothing leaves your machine unless you opt in to cloud sync, or ask an agent in the GitHub Copilot app about your stats (the numbers it reads are then sent to the model like any other tool result; see [what the agent sees](docs/copilot-app/README.md#what-you-get)).
 
-[![Build](https://github.com/rajbos/ai-engineering-fluency/actions/workflows/build.yml/badge.svg)](https://github.com/rajbos/ai-engineering-fluency/actions/workflows/build.yml) [![Watch the Explainer Video](https://img.shields.io/badge/Watch-Explainer%20Video-FF0000?logo=youtube)](https://youtu.be/Odm3wNursCY)
+[![Build](https://github.com/rajbos/ai-engineering-fluency/actions/workflows/ci.yml/badge.svg)](https://github.com/rajbos/ai-engineering-fluency/actions/workflows/ci.yml) [![Watch the Explainer Video](https://img.shields.io/badge/Watch-Explainer%20Video-FF0000?logo=youtube)](https://youtu.be/Odm3wNursCY)
 
 ## Supported AI engineering tools
 
@@ -223,7 +223,7 @@ services:
     environment:
       - GITHUB_CLIENT_ID=...
       - GITHUB_CLIENT_SECRET=...
-      - SESSION_SECRET=...
+      - SESSION_SECRET=${SESSION_SECRET:?Missing SESSION_SECRET}
       - BASE_URL=https://copilot.example.com
     volumes:
       - sharing_data:/data

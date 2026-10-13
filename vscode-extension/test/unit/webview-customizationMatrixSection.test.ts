@@ -23,6 +23,8 @@ import {
 	customizationStatusRank,
 	hasNoCustomization,
 	renderCustomizationTable,
+	renderMergedWorkspaceMembers,
+	renderUngroupedWorkspaceNote,
 } from '../../src/webview/usage/customizationMatrixSection';
 
 beforeEach(() => initializeWebviewLocalization({}));
@@ -265,4 +267,23 @@ test('customizationMatrix: the filter toggles once from the label text and from 
 		setDataTableFilter(CUSTOMIZATION_TABLE_ID, CUSTOMIZATION_FILTER_NONE_ONLY, false);
 		dom.window.close();
 	}
+});
+
+test('merged-folder list: a single worktree grouped under a checkout found only through its pointer shows both folders', () => {
+	// groupFolders() puts the synthetic canonical checkout first, even though it had no sessions itself.
+	const html = renderMergedWorkspaceMembers(['/code/gadget', '/wt/feature']);
+	assert.match(html, /2 folders merged/);
+	assert.ok(html.includes('/code/gadget'));
+	assert.ok(html.includes('/wt/feature'));
+	assert.equal(renderMergedWorkspaceMembers(['/code/only']), '', 'one folder: nothing to expand');
+	assert.equal(renderMergedWorkspaceMembers(undefined), '');
+});
+
+test('merged-folder list and ungrouped note escape folder names and carry an accessible badge label', () => {
+	const html = renderMergedWorkspaceMembers(['/a/<b>', '/c/"d"']);
+	assert.ok(!html.includes('<b>'), 'paths are escaped');
+	const note = renderUngroupedWorkspaceNote(['repo-85ed99', 'goofy-wozniak-42f712']);
+	assert.ok(note.includes('2 workspace name(s) look like ungrouped worktrees or clones: repo-85ed99, goofy-wozniak-42f712'));
+	assert.match(note, /aria-label="Ungrouped workspace names"/);
+	assert.equal(renderUngroupedWorkspaceNote([]), '');
 });

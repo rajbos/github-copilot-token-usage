@@ -23,7 +23,7 @@
  * an `=== 'literal'` comparison and a `Record<string, Handler>` dispatch map
  * all count). The *handled* side is additionally widened by a plain-text scan,
  * which also picks up handlers living inside inline `<script>` template
- * literals (loadingHtml.ts, backend/configPanel.ts). Widening the handled set
+ * literals (src/loadingHtml.ts, vscode-extension/src/backend/configPanel.ts). Widening the handled set
  * can only ever hide a finding, never invent one — that asymmetry is
  * deliberate, because a checker that cries wolf gets switched off.
  *
@@ -295,9 +295,11 @@ function main() {
   const direction = args.includes('--direction') ? directionArg : 'both';
 
   const webviewFiles = collectTsFiles(WEBVIEW_DIR);
+  // src/loadingHtml.ts lives in the shared repo-root src/ (also used by the desktop app) but is
+  // still extension-side code that ships inline <script> handlers, so it is scanned too.
   const extensionFiles = collectTsFiles(path.join(EXT_DIR, 'src')).filter(
     (file) => !file.startsWith(WEBVIEW_DIR + path.sep)
-  );
+  ).concat(path.join(REPO_ROOT, 'src', 'loadingHtml.ts'));
 
   if (webviewFiles.length === 0 || extensionFiles.length === 0) {
     console.error('❌ Found no sources to check — is this running from the repo root?');

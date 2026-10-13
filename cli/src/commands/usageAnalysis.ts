@@ -4,7 +4,8 @@
 import { Command } from 'commander';
 import { discoverSessionFiles, calculateUsageAnalysisStats } from '../helpers';
 import { shouldOutputJson } from '../commandUtils';
-import { createEmptyUsageAnalysisPayload, createUsageAnalysisPayload } from './payloads';
+import { createEmptyUsageAnalysisStats, createUsageAnalysisPayload } from './payloads';
+import { withUsageAnalysisViewStats } from '../usageAnalysisView';
 
 export const usageAnalysisCommand = new Command('usage-analysis')
 	.description('Output usage analysis stats for the usage analysis webview')
@@ -18,12 +19,12 @@ export const usageAnalysisCommand = new Command('usage-analysis')
 
 		const files = await discoverSessionFiles();
 		const now = new Date();
-		if (files.length === 0) {
-			process.stdout.write(JSON.stringify(createEmptyUsageAnalysisPayload(now)));
-			return;
-		}
-
-		const stats = await calculateUsageAnalysisStats(files, { includeRepeatedTasks: Boolean(options.repeatedTasks) });
+		// No session files still runs the shared view enrichment: the workspace's configured MCP
+		// servers and skills belong in the curation analysis without any session data.
+		const sessionStats = files.length === 0
+			? createEmptyUsageAnalysisStats(now)
+			: await calculateUsageAnalysisStats(files, { includeRepeatedTasks: Boolean(options.repeatedTasks) });
+		const stats = await withUsageAnalysisViewStats(files, sessionStats, { workspaceFolderPaths: [process.cwd()] });
 		const payload = createUsageAnalysisPayload(stats, now);
 		process.stdout.write(JSON.stringify(payload));
 	});

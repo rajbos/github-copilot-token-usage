@@ -23,7 +23,6 @@ import type { ModelUsage } from '../../src/types';
 import { getModelUsageFromSession } from '../../src/usageAnalysis';
 import { preserveAutoRouting, reconcileModelUsageToActualTokens } from '../../src/statsHelpers';
 import { readTextFileWithSizeGuard } from '../../src/utils/safeFileRead';
-import * as vscodeStub from './vscode-stub';
 import { type SessionData, getEditorSourceFromPath } from './analysis';
 
 import tokenEstimatorsData from '../../src/tokenEstimators.json';
@@ -67,9 +66,10 @@ let _ecosystems: IEcosystemAdapter[] | null = null;
 /** Returns the shared ecosystem adapter registry, creating it on first call. */
 export function getEcosystems(): IEcosystemAdapter[] {
 	if (_ecosystems) { return _ecosystems; }
-	const fakeUri = vscodeStub.Uri.file(__dirname);
+	// No extension host here: the data-access constructors only need a file-URI-shaped path.
+	const fakeUri = { fsPath: __dirname, path: __dirname, scheme: 'file' };
 	_ecosystems = buildAdapterRegistry({
-		...createDataAccessInstances(fakeUri as any),
+		...createDataAccessInstances(fakeUri),
 		estimateTokens: (t, m) => estimateTokensFromText(t, m ?? 'gpt-4', tokenEstimators),
 		isMcpTool,
 		extractMcpServerName,

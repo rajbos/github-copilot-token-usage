@@ -1,4 +1,4 @@
-﻿# AI Engineering Fluency — Visual Studio Extension: Debugging Guide
+# AI Engineering Fluency — Visual Studio Extension: Debugging Guide
 
 ## Prerequisites
 
@@ -19,8 +19,8 @@ The Visual Studio extension re-uses the compiled webview bundles from the VS Cod
 ```powershell
 # From the repo root
 cd vscode-extension
-npm ci
-npm run compile   # produces vscode-extension/dist/webview/{details,chart,usage,diagnostics}.js
+pnpm install --frozen-lockfile
+pnpm run compile   # produces vscode-extension/dist/webview/{details,chart,usage,diagnostics}.js
 ```
 
 Or from the repo root:
@@ -101,7 +101,7 @@ Window:
 
 - The webview JS bundle was not found.  Verify that
   `visualstudio-extension/src/AIEngineeringFluency/webview/details.js` exists.
-- Re-run `npm run compile` in `vscode-extension/` and rebuild the C# project.
+- Re-run `pnpm run compile` in `vscode-extension/` and rebuild the C# project.
 
 ### "Session data not available" / empty charts
 

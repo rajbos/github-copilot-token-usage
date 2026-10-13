@@ -243,15 +243,31 @@ export interface DailyModelEfficiency {
 export type ChartTimeWindow = 'today' | 'last7' | 'last30' | 'last90' | 'currentMonth' | 'allTime';
 
 /** Aggregated data for one time window (day/week/month) in the chart. */
+/**
+ * One Chart.js dataset the chart webview draws. Every dataset the shared builder
+ * (src/chartDataBuilder.ts) emits has this shape, and the webview reads it from the same
+ * type, so a field it relies on cannot go missing in one host without a compile error.
+ */
+export interface ChartDataset {
+  label: string;
+  /** One value per bar, aligned with the period's `labels`. */
+  data: number[];
+  backgroundColor: string;
+  borderColor: string;
+  borderWidth: number;
+  /** Repository datasets: the full repository URL behind the display `label`. */
+  fullRepo?: string;
+}
+
 export interface ChartPeriodData {
   labels: string[];
   /** ISO date keys for each bar, used for time-window filtering. Day=YYYY-MM-DD, week=Monday YYYY-MM-DD, month=YYYY-MM. */
   periodKeys: string[];
   tokensData: number[];
   sessionsData: number[];
-  modelDatasets: object[];
-  editorDatasets: object[];
-  repositoryDatasets: object[];
+  modelDatasets: ChartDataset[];
+  editorDatasets: ChartDataset[];
+  repositoryDatasets: ChartDataset[];
   /** Number of bars / data points in this period. */
   periodCount: number;
   totalTokens: number;
@@ -267,9 +283,9 @@ export interface ChartPeriodData {
   locData?: number[];
   linesAddedData?: number[];
   linesRemovedData?: number[];
-  languageDatasets?: object[];
-  locEditorDatasets?: object[];
-  locRepositoryDatasets?: object[];
+  languageDatasets?: ChartDataset[];
+  locEditorDatasets?: ChartDataset[];
+  locRepositoryDatasets?: ChartDataset[];
   totalLinesAdded?: number;
   totalLinesRemoved?: number;
   avgLocPerPeriod?: number;
@@ -278,36 +294,36 @@ export interface ChartPeriodData {
    * Each dataset's `data` array aligns with `labels`; values are estimated costs in USD.
    * Computed from per-day `editorModelUsage` using the appropriate pricing source for each editor.
    */
-  editorCostDatasets?: object[];
+  editorCostDatasets?: ChartDataset[];
   /**
    * Cost datasets split by billing provider — one dataset per provider group.
    * Groups: "GitHub Copilot" (all Copilot surfaces), "Anthropic" (Claude Code, etc.),
    * "Google" (Gemini CLI, etc.), "Mistral AI", "OpenAI", etc.
    * Copilot group uses AI-Credit pricing; all others use direct provider pricing.
    */
-  billingGroupCostDatasets?: object[];
+  billingGroupCostDatasets?: ChartDataset[];
   /** Token datasets split by task category (e.g. "Coding", "Debugging", "Testing") — one stacked-bar dataset per category. */
-  taskCategoryDatasets?: object[];
+  taskCategoryDatasets?: ChartDataset[];
   /** Task-token datasets split by category. */
-  taskCategoryTokenDatasets?: object[];
+  taskCategoryTokenDatasets?: ChartDataset[];
   /** Task-session datasets split by category. */
-  taskCategorySessionDatasets?: object[];
+  taskCategorySessionDatasets?: ChartDataset[];
   /** Task-cost datasets split by category. */
-  taskCategoryCostDatasets?: object[];
+  taskCategoryCostDatasets?: ChartDataset[];
   /**
    * Cost datasets split by model — one dataset per top model (by total cost), plus an
    * "Other models" dataset for the remainder. Each model's usage is priced using the
    * correct pricing source per editor it was used from.
    */
-  modelCostDatasets?: object[];
+  modelCostDatasets?: ChartDataset[];
   /** Session-count datasets split by model — one stacked-bar dataset per model. */
-  modelSessionsDatasets?: object[];
+  modelSessionsDatasets?: ChartDataset[];
   /** Session-count datasets split by editor — one stacked-bar dataset per editor. */
-  editorSessionsDatasets?: object[];
+  editorSessionsDatasets?: ChartDataset[];
   /** Session-count datasets split by billing provider — one stacked-bar dataset per provider group. */
-  providerSessionsDatasets?: object[];
+  providerSessionsDatasets?: ChartDataset[];
   /** Token datasets split by billing provider — one stacked-bar dataset per provider group. */
-  providerTokensDatasets?: object[];
+  providerTokensDatasets?: ChartDataset[];
 }
 
 /** Shape of the data payload sent to the chart webview (via window.__INITIAL_CHART__ or postMessage). */
@@ -315,12 +331,12 @@ export interface ChartDataPayload {
   labels: string[];
   tokensData: number[];
   sessionsData: number[];
-  modelDatasets: object[];
-  editorDatasets: object[];
+  modelDatasets: ChartDataset[];
+  editorDatasets: ChartDataset[];
   editorTotalsMap: Record<string, number>;
-  repositoryDatasets: object[];
+  repositoryDatasets: ChartDataset[];
   repositoryTotalsMap: Record<string, number>;
-  taskCategoryDatasets?: object[];
+  taskCategoryDatasets?: ChartDataset[];
   dailyCount: number;
   totalTokens: number;
   avgTokensPerDay: number;
@@ -793,6 +809,11 @@ export interface RepeatedTaskCluster {
   sessions: RepeatedTaskSessionRef[];
   /** Tokens shared by every prompt in the cluster (display hint). */
   sharedKeywords: string[];
+  /**
+   * Up to a few other distinct prompts from the cluster, truncated like the
+   * representative prompt. Optional: payloads cached by older builds lack it.
+   */
+  examplePrompts?: string[];
 }
 
 /** Repeated-task candidates across all scanned sessions. */
@@ -1003,6 +1024,11 @@ export interface WorkspaceCustomizationRow {
   sessionCount: number;
   interactionCount: number;
   typeStatuses: { [typeId: string]: CustomizationTypeStatus };
+  /**
+   * Folders merged into this row by workspace grouping (worktrees, clones, case/remote
+   * variants — see src/workspaceGrouping.ts). Present only when more than one folder merged.
+   */
+  memberPaths?: string[];
 }
 
 export interface WorkspaceCustomizationMatrix {
@@ -1010,6 +1036,12 @@ export interface WorkspaceCustomizationMatrix {
   workspaces: WorkspaceCustomizationRow[];
   totalWorkspaces: number;
   workspacesWithIssues: number;
+  /**
+   * Display names that still look like worktree / clone artefacts after grouping
+   * (detectArtefactWorkspaceNames). A non-empty list means a naming pattern the grouping
+   * does not know yet.
+   */
+  ungroupedWorkspaceNames?: string[];
 }
 
 // ── Dark Factory readiness ────────────────────────────────────────────────
@@ -1248,6 +1280,14 @@ export interface ContextWindowStats {
 
 /** Fraction of a session's context window that counts as "almost full". */
 export const CONTEXT_NEAR_LIMIT_RATIO = 0.8;
+
+/**
+ * A key-based translation function, injected into pure modules (insightsEngine.ts) that
+ * render localized text without importing the bundles. Hosts build one with
+ * `createLocalization(bundles).createTranslator()` from `src/localization.ts` (bound to the
+ * shipped bundles in `vscode-extension/src/l10nCore.ts` and `cli/src/l10n.ts`), or pass `l10n.ts`'s `t()`.
+ */
+export type Translate = (key: string, ...args: Array<string | number | boolean>) => string;
 
 /**
  * How often a period's sessions ran out of context window, counted per
@@ -1718,6 +1758,12 @@ export interface ServerMemoryPromotionGroup {
   representativeFact: string;
   /** Every distinct citation across the group, sorted. */
   citations: string[];
+  /**
+   * The subset of {@link citations} whose file is an existing regular file in the checkout —
+   * the evidence that made the group promotable — with the representative member's own first.
+   * Listed first wherever citations are capped.
+   */
+  liveCitations?: string[];
   memoryIds: string[];
 }
 
@@ -1732,6 +1778,37 @@ export interface ServerMemoryStaleCitation {
 }
 
 /**
+ * A server memory that already cites an instruction or documentation file — "already
+ * documented". Note the instruction-path pattern also matches `docs/` and
+ * `.github/skills|agents/`, so this covers documentation, not only instruction files.
+ */
+export interface ServerMemoryDocumentedEntry {
+  id: string;
+  subject: string;
+  fact: string;
+  /** The repo-relative instruction/doc file paths this memory cites, de-duplicated. */
+  instructionFiles: string[];
+  /**
+   * The subset of {@link instructionFiles} that is not an existing regular file in the checkout.
+   * When every cited file is missing, the fact is *not* actually written down any more, so the
+   * stored memory may be its only remaining copy.
+   */
+  missingInstructionFiles?: string[];
+}
+
+/**
+ * Which checked-in file a promotion should be written into. Rule (v1, intentionally simple):
+ * an existing root `AGENTS.md`, else an existing `.github/copilot-instructions.md`, else a
+ * new root `AGENTS.md`. See `selectPromotionTarget()`.
+ */
+export interface ServerMemoryPromotionTarget {
+  /** Repo-relative path. */
+  path: 'AGENTS.md' | '.github/copilot-instructions.md';
+  /** False when the file does not exist yet and the prompt asks for it to be created. */
+  exists: boolean;
+}
+
+/**
  * Full analysis of one repository's server-side memory store, produced by
  * `analyzeServerMemories()`. Consumed by the CLI report and the VS Code extension host;
  * the webview gets the smaller {@link ServerMemoriesAnalysisView} instead.
@@ -1739,6 +1816,11 @@ export interface ServerMemoryStaleCitation {
 export interface ServerMemoriesAnalysis {
   /** `owner/name` the store was read for. */
   repo: string;
+  /**
+   * Local checkout citations and {@link promotionTarget} were resolved against, when the host
+   * analyzed the repository it has checked out (set by the CLI; the extension keeps its own).
+   */
+  repoRoot?: string;
   /** `undefined` means the enablement check itself failed, not that memory is off. */
   enabled: boolean | undefined;
   /** Why the read produced nothing, when it produced nothing. */
@@ -1751,8 +1833,27 @@ export interface ServerMemoriesAnalysis {
   truncated: boolean;
   totalMemories: number;
   distinctSubjects: number;
+  /**
+   * Memory *records* citing an instruction/doc file. {@link documentedCount} counts distinct ids
+   * (one "already documented" row per id); this counts records, in the same unit as
+   * {@link totalMemories}, {@link unverifiableCount} and {@link fullyStaleCount}.
+   */
+  documentedRecordCount?: number;
   /** Memories citing an instruction/doc file — already written down somewhere agents read. */
   documentedCount: number;
+  /** The memories behind {@link documentedCount}, in store order. */
+  documentedMemories: ServerMemoryDocumentedEntry[];
+  /**
+   * Where promotions should be written; see {@link ServerMemoryPromotionTarget}. Absent when
+   * it could not be safely determined: the repository is not checked out here, or the file
+   * the rule would pick is occupied by something unsafe to edit (e.g. an escaping symlink).
+   */
+  promotionTarget?: ServerMemoryPromotionTarget;
+  /**
+   * The candidate the target rule would have picked but rejected as unsafe (e.g. an escaping
+   * symlink at `AGENTS.md`). Set only when {@link promotionTarget} is absent for that reason.
+   */
+  promotionTargetBlockedPath?: string;
   /** Total memories sitting inside a promotion group. */
   promotionCandidateCount: number;
   /** Promotion groups with more than one member, i.e. facts re-learned at least twice. */
@@ -1781,6 +1882,42 @@ export interface ServerMemoryPromotionGroupView {
   repeatCount: number;
   representativeFact: string;
   citationCount: number;
+  /**
+   * The group's normalized subject key. The promote button sends this, and the host rebuilds the
+   * prompt and re-probes the target file at click time.
+   */
+  subject?: string;
+  /**
+   * Fingerprint of what this row displays (subject, fact, citations). The button sends it with
+   * the subject, and the host refuses to draft if the current analysis's group no longer
+   * matches — so a background refresh cannot swap the content behind a visible row.
+   */
+  fingerprint?: string;
+  /**
+   * Copilot Chat prompt asking the agent to verify this fact and move it into the promotion
+   * target, built by the shared `buildPromotionPrompt()`. Drafted, never auto-submitted.
+   */
+  prompt?: string;
+}
+
+/** One instruction/doc file a documented memory cites, as the webview renders it. */
+export interface ServerMemoryDocumentedFileView {
+  /**
+   * Repo-relative path, for display and as the "Open file" button's payload. The host resolves
+   * and re-validates it at click time; the webview never receives an absolute path.
+   */
+  path: string;
+  /** A regular file inside the checkout when the payload was built: the row gets "Open file". */
+  openable?: boolean;
+  /** No longer an existing regular file in the checkout, so it does not document anything. */
+  missing?: boolean;
+}
+
+/** One "already documented" memory as the webview renders it. */
+export interface ServerMemoryDocumentedEntryView {
+  subject: string;
+  fact: string;
+  files: ServerMemoryDocumentedFileView[];
 }
 
 /**
@@ -1804,4 +1941,15 @@ export interface ServerMemoriesAnalysisView {
   repeatedGroupCount: number;
   fullyStaleCount: number;
   topPromotionGroups: ServerMemoryPromotionGroupView[];
+  /**
+   * Local checkout the repository was resolved from. The store itself is per GitHub
+   * repository, not per workspace, so the UI names both to make the scope unambiguous.
+   */
+  repoRoot?: string;
+  /** Number of open workspace folders; above one, only the first GitHub-backed folder is shown. */
+  workspaceFolderCount?: number;
+  /** See {@link ServerMemoriesAnalysis.promotionTarget}. */
+  promotionTarget?: ServerMemoryPromotionTarget;
+  /** The first few already-documented memories; {@link documentedCount} is the full count. */
+  documentedMemories?: ServerMemoryDocumentedEntryView[];
 }

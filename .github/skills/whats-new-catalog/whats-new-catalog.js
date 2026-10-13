@@ -129,7 +129,7 @@ function loadCatalog() {
   }
   if (!ts) {
     throw new ConfigError(
-      'TypeScript not found. Run `npm ci` in vscode-extension/ first — this script ' +
+      'TypeScript not found. Run `pnpm install` in vscode-extension/ first — this script ' +
       'evaluates catalog.ts rather than pattern-matching its prose.',
     );
   }
