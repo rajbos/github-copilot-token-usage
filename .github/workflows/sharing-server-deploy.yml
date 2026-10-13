@@ -212,6 +212,11 @@ jobs:
 
       - name: Verify the published entry point loads
         working-directory: sharing-server
+        # createApp() refuses to run without a strong SESSION_SECRET unless NODE_ENV is
+        # development/test. This smoke step only checks exports, so use the test mode
+        # instead of supplying a secret.
+        env:
+          NODE_ENV: test
         run: |
           node -e "
             const api = require('./lib/index.js');
