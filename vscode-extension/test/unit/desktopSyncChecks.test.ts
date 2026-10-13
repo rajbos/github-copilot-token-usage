@@ -38,7 +38,7 @@ const desktopContract = requireFromHere(path.join(REPO_ROOT, 'scripts', 'validat
 	analyse: () => { views: string[]; findings: Finding[] };
 };
 const webviewShell = requireFromHere(path.join(REPO_ROOT, 'scripts', 'validate-webview-shell.js')) as {
-	analyse: () => { referenced: number; findings: string[] };
+	analyse: (options?: { themeDir?: string }) => { referenced: number; findings: string[] };
 };
 
 test('desktop contract: every message a desktop view posts is handled or listed as unsupported', () => {
@@ -247,6 +247,23 @@ test('desktop-build.yml: push paths match the PR desktop-relevant filter', () =>
 	const filterBlock = yml.slice(filterStart, yml.indexOf('\n\n', filterStart));
 	assert.ok(quotedPaths(pushBlock).length > 0, 'no push paths found in desktop-build.yml');
 	assert.deepEqual(quotedPaths(pushBlock), quotedPaths(filterBlock));
+});
+
+test('webview shell: a used colour missing from a high-contrast overlay fails', () => {
+	// The overlays are layered after the base themes, so a token only the base
+	// themes define would quietly render with the Modern value in high contrast.
+	const realDir = path.join(REPO_ROOT, '.github', 'skills', 'visual-view-diff', 'lib');
+	const dir = makeTmpFixtureDir('webview-shell-');
+	for (const name of ['theme-dark.css', 'theme-light.css', 'theme-hc.css', 'theme-hc-light.css']) {
+		fs.copyFileSync(path.join(realDir, name), path.join(dir, name));
+	}
+	assert.deepEqual(webviewShell.analyse({ themeDir: dir }).findings, []);
+
+	const hc = path.join(dir, 'theme-hc.css');
+	fs.writeFileSync(hc, fs.readFileSync(hc, 'utf8').replace(/^\s*--vscode-dropdown-border:[^\n]*\n/m, ''));
+	const findings = webviewShell.analyse({ themeDir: dir }).findings;
+	assert.equal(findings.length, 1, findings.join('\n'));
+	assert.match(findings[0], /--vscode-dropdown-border .* not defined in theme-hc\.css/);
 });
 
 test('webview shell: every --vscode-* token the webviews use is defined for the desktop app and harness', () => {

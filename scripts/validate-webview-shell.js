@@ -14,7 +14,11 @@
  * This script checks that:
  *
  *   1. every `--vscode-*` token referenced under vscode-extension/src/webview/
- *      or src/webview/ is defined in both theme files;
+ *      or src/webview/ is defined in both theme files, and every referenced
+ *      colour token also in the harness's high-contrast overlays
+ *      (theme-hc.css, theme-hc-light.css). The desktop app does not load the
+ *      overlays, but the visual diff renders the views with them: a colour
+ *      missing there silently falls back to the Modern value in high contrast;
  *   2. the two theme files define the same set of tokens;
  *   3. desktop/src/main.ts takes its tokens from those files rather than
  *      defining its own copy, which is how the desktop app drifted before;
@@ -33,6 +37,9 @@ const path = require('path');
 const REPO_ROOT = path.resolve(__dirname, '..');
 const THEME_DIR = path.join(REPO_ROOT, '.github', 'skills', 'visual-view-diff', 'lib');
 const THEME_FILES = ['theme-dark.css', 'theme-light.css'];
+/** Layered after the base themes by the harness; they list colours only, so fonts are inherited on purpose. */
+const HC_OVERLAY_FILES = ['theme-hc.css', 'theme-hc-light.css'];
+const NOT_COLOURS = new Set(['--vscode-font-family', '--vscode-font-size', '--vscode-font-weight', '--vscode-editor-font-family']);
 const WEBVIEW_SOURCE_DIRS = [
   path.join(REPO_ROOT, 'vscode-extension', 'src', 'webview'),
   path.join(REPO_ROOT, 'src', 'webview'),
@@ -82,12 +89,16 @@ function definedTokens(cssText) {
   return new Set([...cssText.matchAll(TOKEN_DEFINITION)].map((m) => m[1]));
 }
 
-function analyse() {
+function analyse({ themeDir = THEME_DIR } = {}) {
   const findings = [];
   const referenced = collectReferencedTokens();
   const themes = THEME_FILES.map((name) => ({
     name,
-    tokens: definedTokens(fs.readFileSync(path.join(THEME_DIR, name), 'utf8')),
+    tokens: definedTokens(fs.readFileSync(path.join(themeDir, name), 'utf8')),
+  }));
+  const overlays = HC_OVERLAY_FILES.map((name) => ({
+    name,
+    tokens: definedTokens(fs.readFileSync(path.join(themeDir, name), 'utf8')),
   }));
 
   // 1. Every referenced token is defined in every theme.
@@ -95,6 +106,11 @@ function analyse() {
     for (const theme of themes) {
       if (!theme.tokens.has(token)) {
         findings.push(`${token} (used at ${where}) is not defined in ${theme.name} — the desktop app and the visual-diff harness render it as unset`);
+      }
+    }
+    for (const overlay of overlays) {
+      if (!NOT_COLOURS.has(token) && !overlay.tokens.has(token)) {
+        findings.push(`${token} (used at ${where}) is not defined in ${overlay.name} — high-contrast screenshots fall back to the Modern-theme value`);
       }
     }
   }

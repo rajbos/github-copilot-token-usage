@@ -359,7 +359,10 @@ or from the repo root, `./build.ps1 -Project desktop -Target test`.
 - **`check:shell`** (`scripts/validate-webview-shell.js`) — every `--vscode-*`
   token used under `vscode-extension/src/webview/` and `src/webview/` must be
   defined in the visual-view-diff harness's `lib/theme-dark.css` and
-  `lib/theme-light.css`. The desktop app inlines those two files rather than
+  `lib/theme-light.css`, and every used colour token also in the high-contrast
+  overlays `lib/theme-hc.css` / `lib/theme-hc-light.css` (the desktop app does
+  not load those, but the visual diff renders with them, and a missing colour
+  falls back to the Modern value). The desktop app inlines the two base files rather than
   keeping its own copy, and the check fails if `main.ts` starts defining tokens
   itself. It also checks the codicon stylesheet and font are copied and linked.
 - **`check:views`** — the `sync-host-views` skill, which reports extension views
