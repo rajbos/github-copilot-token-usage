@@ -169,13 +169,13 @@ When adding a new tool to `toolNames.json`, also determine if it belongs in `aut
 
 After editing `src/toolNames.json`:
 
-1. Run `npm --prefix vscode-extension run validate` to verify type-checking, ESLint, and the build pass
+1. Run `pnpm --prefix vscode-extension run validate` to verify type-checking, ESLint, and the build pass
 2. Ensure the JSON is valid (no trailing commas, proper quoting)
-3. Run tests with `npm --prefix vscode-extension run test:node` to confirm nothing is broken
+3. Run tests with `pnpm --prefix vscode-extension run test:node` to confirm nothing is broken
 
 ## Upstream Sync Reference
 
-The `sync-toolnames` workflow (`.github/workflows/sync-toolnames.yml`) automatically syncs tool IDs from `microsoft/vscode-copilot-chat` using the prompt at `.github/workflows/prompts/sync-toolnames-prompt.md`. This covers VS Code built-in and Copilot tools. MCP tool names from user sessions are **not** covered by this sync and must be added manually via issues.
+The `sync-toolnames` workflow (`.github/workflows/sync-toolnames.yml`) automatically syncs tool IDs from `microsoft/vscode-copilot-chat` with the deterministic script `.github/scripts/sync_toolnames.py` (no AI agent reads the upstream repo). This covers VS Code built-in and Copilot tools. MCP tool names from user sessions are **not** covered by this sync and must be added manually via issues.
 
 ## Antigravity Tool Names
 
@@ -217,5 +217,5 @@ This is already handled by `workspaceHelpers.ts` (`detectToolEditorFromPath`, `d
 - [ ] Generate friendly names following the conventions above
 - [ ] Add entries to `src/toolNames.json` in the correct location
 - [ ] For each new tool, decide if it is **automatic** or **intentional** — add automatic tools to `src/automaticTools.json`
-- [ ] Run `npm --prefix vscode-extension run validate`
-- [ ] Run `npm --prefix vscode-extension run test:node` to confirm tests pass
+- [ ] Run `pnpm --prefix vscode-extension run validate`
+- [ ] Run `pnpm --prefix vscode-extension run test:node` to confirm tests pass

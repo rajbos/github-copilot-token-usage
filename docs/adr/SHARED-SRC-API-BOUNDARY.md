@@ -1,5 +1,9 @@
 # Shared `src/` API Boundary — Analysis & Recommendation
 
+> **Status:** Proposed (analysis and recommendation only; no barrel file, `@internal` marking or export removal has been made) · **Added:** 2026-09-12 · **Verified against code on:** 2026-10-11 (no barrel/index exists under `src/`)
+>
+> The symbol counts (549 exported, 269 public, 135 test-only, 103 unused) were measured on 2026-09-12 with a one-off scan and are not reproduced by any checked-in script. Re-run an equivalent scan before acting on them.
+
 ## Problem Statement
 
 The repo-root `src/` folder is the shared "brain" behind the VS Code extension and

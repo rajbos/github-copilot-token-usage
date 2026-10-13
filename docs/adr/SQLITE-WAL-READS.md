@@ -1,5 +1,7 @@
 # Reading SQLite databases another process may hold open (WAL mode)
 
+> **Status:** Implemented · **Decided/added:** 2026-09-07 · **Verified against code on:** 2026-10-11 (`src/utils/sqliteWal.ts` exists and is used by the readers listed below)
+
 ## Context
 
 The extension reads several local SQLite databases it does not own:

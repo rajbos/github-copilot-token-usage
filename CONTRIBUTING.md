@@ -53,11 +53,11 @@ You have two options for setting up your development environment:
 
 4. **Wait for setup:**
    - The container will build and initialize automatically
-   - Dependencies will be installed via `npm install` (runs automatically)
+   - Dependencies will be installed via `pnpm install` (runs automatically)
    - All required VS Code extensions will be pre-installed
 
 5. **Start developing:**
-   - Run `npm run watch` to start the TypeScript compiler in watch mode
+   - Run `pnpm run watch` to start the TypeScript compiler in watch mode
    - Press `F5` to launch the Extension Development Host
 
 ### What's Included in the DevContainer?
@@ -68,7 +68,7 @@ The devcontainer provides a complete, pre-configured development environment:
 - **Pre-installed Tools:**
   - Git
   - PowerShell (for running build scripts)
-  - Node.js and npm
+  - Node.js and pnpm
 - **VS Code Extensions:**
   - ESLint (code linting)
   - Prettier (code formatting)
@@ -89,7 +89,7 @@ The devcontainer is **especially valuable when working with AI coding assistants
 When you give AI assistants permission to execute commands, install packages, or make system changes, you want protection:
 
 - **Sandboxed Environment:** The container runs in complete isolation from your host machine
-- **No Host System Impact:** AI-suggested npm installs, file operations, or scripts can't affect your personal system
+- **No Host System Impact:** AI-suggested pnpm installs, file operations, or scripts can't affect your personal system
 - **Easy Reset:** If something goes wrong, you can rebuild the container in minutes without affecting your machine
 - **Reproducible State:** Every time you rebuild, you get the same clean environment
 
@@ -97,7 +97,7 @@ When you give AI assistants permission to execute commands, install packages, or
 
 The devcontainer allows you to confidently let AI assistants:
 
-- **Execute Commands Freely:** Let AI run `npm install`, build scripts, or test commands without worrying about side effects
+- **Execute Commands Freely:** Let AI run `pnpm install`, build scripts, or test commands without worrying about side effects
 - **Install Packages:** AI can suggest and install experimental packages without polluting your global environment
 - **Modify Configuration:** Let AI experiment with settings, configs, or tooling versions safely
 - **Run Tests:** Execute test suites that might create temporary files or modify state
@@ -123,7 +123,7 @@ Imagine this workflow with AI assistance:
 
 1. **You ask:** "Add support for tracking a new model type"
 2. **AI suggests:** Code changes + a new npm package dependency
-3. **AI executes:** `npm install <new-package>` directly in the container
+3. **AI executes:** `pnpm install <new-package>` directly in the container
 4. **AI tests:** Runs the extension and verifies it works
 5. **Result:** If something breaks, you simply rebuild the container - your host machine is untouched
 
@@ -141,7 +141,7 @@ If you prefer not to use the devcontainer, you can set up the extension locally:
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) 18.x or 20.x
-- [npm](https://www.npmjs.com/) (comes with Node.js)
+- [pnpm](https://pnpm.io/) (install via `npm install -g pnpm` or `corepack enable`)
 - [Visual Studio Code](https://code.visualstudio.com/)
 - [Git](https://git-scm.com/)
 
@@ -157,19 +157,19 @@ If you prefer not to use the devcontainer, you can set up the extension locally:
 2. **Install dependencies:**
 
    ```bash
-   npm install
+   pnpm install
    ```
 
-   **Note:** The project uses `package-lock.json` for reproducible builds. The `.npmrc` file ensures consistent behavior across different npm versions and environments. CI/CD workflows use `npm ci` to ensure exact dependency versions are installed.
+   **Note:** The project uses `pnpm-lock.yaml` for reproducible builds. CI/CD workflows use `pnpm install --frozen-lockfile` to ensure exact dependency versions are installed.
 
 3. **Build the extension:**
 
    ```bash
-   npm run compile
+   pnpm run compile
    ```
 
 4. **Start developing:**
-   - Run `npm run watch` for auto-rebuild on changes
+   - Run `pnpm run watch` for auto-rebuild on changes
    - Press `F5` to launch the Extension Development Host
 
 ## Development Workflow
@@ -178,13 +178,13 @@ If you prefer not to use the devcontainer, you can set up the extension locally:
 
 ```bash
 # One-time build
-npm run compile
+pnpm run compile
 
 # Watch mode (auto-rebuild on changes)
-npm run watch
+pnpm run watch
 
 # Production build
-npm run package
+pnpm run package
 ```
 
 ### Running the Extension
@@ -194,13 +194,13 @@ To test and debug the extension in a local VS Code environment:
 1. **Install dependencies** (if not already done):
 
    ```bash
-   npm install
+   pnpm install
    ```
 
 2. **Start watch mode** (automatically recompiles on file changes):
 
    ```bash
-   npm run watch
+   pnpm run watch
    ```
 
 3. **Press `F5`** in VS Code to launch the Extension Development Host
@@ -222,7 +222,7 @@ To test and debug the extension in a local VS Code environment:
 To create an installable VSIX package:
 
 ```bash
-npx vsce package
+pnpm exec vsce package
 ```
 
 ### Debugging
@@ -234,87 +234,65 @@ npx vsce package
 
 ## Available Scripts
 
-- `npm run lint` - Run ESLint to check code quality
-- `npm run lint:css` - Run Stylelint to check CSS code quality
-- `npm run lint:json` - Validate all JSON files in the repository
-- `npm run check-types` - Run TypeScript type checking
-- `npm run compile` - Build development version (includes linting and type checking)
-- `npm run package` - Build production version (optimized)
-- `npm run watch` - Watch mode for development (auto-recompile on changes)
-- `npm run watch:tsc` - TypeScript compiler in watch mode
-- `npm run watch:esbuild` - esbuild bundler in watch mode
-- `npm test` - Run tests (requires VS Code)
-- `npm run watch-tests` - Run tests in watch mode
+- `pnpm run lint` - Run ESLint to check code quality
+- `pnpm run lint:css` - Run Stylelint to check CSS code quality
+- `pnpm run lint:json` - Validate all JSON files in the repository
+- `pnpm run check-types` - Run TypeScript type checking
+- `pnpm run compile` - Build development version (includes linting and type checking)
+- `pnpm run package` - Build production version (optimized)
+- `pnpm run watch` - Watch mode for development (auto-recompile on changes)
+- `pnpm run watch:tsc` - TypeScript compiler in watch mode
+- `pnpm run watch:esbuild` - esbuild bundler in watch mode
+- `pnpm test` - Run tests (requires VS Code)
+- `pnpm run watch-tests` - Run tests in watch mode
 
-## NPM and Dependency Management
+## pnpm and Dependency Management
 
-The project uses **`package-lock.json`** for reproducible builds and dependency consistency across all environments.
+The project uses **`pnpm-lock.yaml`** for reproducible builds and dependency consistency across all environments for the pnpm-managed packages (`vscode-extension/`, `cli/`, `sharing-server/`, `desktop/`). Auxiliary tooling (`release-video/`, `.github/scripts/`, `.github/workflows/dependencies/`, and some skill packages) still uses npm and its own `package-lock.json`; follow each folder's README for those.
 
 ### Key Files
 
-- **`.npmrc`**: Configures npm behavior (use `save-exact=true`, etc.)
-- **`package-lock.json`**: Lockfile that pins exact dependency versions (committed to the repository)
+- **`.npmrc`**: Configures pnpm behavior
+- **`pnpm-lock.yaml`**: Lockfile that pins exact dependency versions (committed to the repository)
 - **`package.json`**: Defines project dependencies and scripts
 
 ### Installation Commands
 
 **RECOMMENDED for day-to-day development:**
 
-- **`npm ci`**: Clean install from lockfile
-  - Requires `package-lock.json` to exist
+- **`pnpm install --frozen-lockfile`**: Clean install from lockfile
+  - Requires `pnpm-lock.yaml` to exist
   - Installs exact versions from the lockfile (no modifications)
-  - Deletes `node_modules` before installing
   - **Use this after pulling changes** to avoid lockfile churn
   - **Used in all CI/CD workflows** for reproducible builds
-  - Faster and more reliable than `npm install`
 
 **Only when adding/updating dependencies:**
 
-- **`npm install`**: Install/update dependencies
-  - Respects `package-lock.json` and may update it
-  - Use when adding new dependencies: `npm install <package>`
-  - Use when updating dependencies: `npm install <package>@latest`
-  - **After adding dependencies, commit both `package.json` and `package-lock.json`**
+- **`pnpm install`**: Install/update dependencies
+  - Respects `pnpm-lock.yaml` and may update it
+  - Use when adding new dependencies: `pnpm install <package>`
+  - Use when updating dependencies: `pnpm install <package>@latest`
+  - **After adding dependencies, commit both `package.json` and `pnpm-lock.yaml`**
 
 ### Best Practices
 
-1. **Use `npm ci` for routine development** - This prevents accidental lockfile changes and ensures you have the exact dependency versions
-2. **Only use `npm install` when intentionally changing dependencies** - This makes dependency updates explicit and trackable
-3. **Always commit both files together** - When you modify dependencies, commit both `package.json` and `package-lock.json` in the same commit
-4. **Don't manually edit `package-lock.json`** - Let npm manage it automatically
+1. **Use `pnpm install --frozen-lockfile` for routine development** - This prevents accidental lockfile changes and ensures you have the exact dependency versions
+2. **Only use `pnpm install` when intentionally changing dependencies** - This makes dependency updates explicit and trackable
+3. **Always commit both files together** - When you modify dependencies, commit both `package.json` and `pnpm-lock.yaml` in the same commit
+4. **Don't manually edit `pnpm-lock.yaml`** - Let pnpm manage it automatically
 
-### Why We Use package-lock.json
+### Why We Use pnpm-lock.yaml
 
 1. **Reproducible Builds**: Ensures all developers and CI/CD get identical dependency versions
 2. **Consistency**: Prevents "works on my machine" issues caused by different dependency versions
 3. **Security**: Locks down transitive dependencies to prevent supply chain attacks
-4. **Performance**: CI/CD can cache dependencies more effectively with a lockfile
-
-### About Peer Dependencies and "peer": true
-
-Different npm versions (7+) may add or remove `"peer": true` properties in `package-lock.json` when running `npm install`. This is expected behavior for peer dependencies that aren't satisfied.
-
-Some dependencies (like `@vscode/webview-ui-toolkit`) declare peer dependencies (e.g., `react`) that we don't use directly. You may see entries like this in `package-lock.json`:
-
-```json
-"node_modules/react": {
-  "version": "19.2.3",
-  "peer": true,
-  ...
-}
-```
-
-**This is normal and doesn't affect functionality.** To avoid lockfile churn from these changes:
-
-- **Use `npm ci` for routine development** (doesn't modify the lockfile)
-- Only use `npm install` when you're intentionally adding or updating dependencies
-- If you accidentally modify the lockfile, run `git checkout package-lock.json` to restore it
+4. **Performance**: pnpm's content-addressable store makes installs faster with a lockfile
 
 ## Code Guidelines
 
 ### Project Structure
 
-- **All extension logic** is in `vscode-extension/src/extension.ts` in the `CopilotTokenTracker` class
+- **Extension entry point and orchestration** are in `vscode-extension/src/extension.ts` (the `CopilotTokenTracker` class); put new logic in separate modules rather than adding to it (see `AGENTS.md`)
 - **Shared code** (session parsing, token estimation, adapters) lives in the repo-root `src/` folder and is consumed by both the VS Code extension and the CLI
 - **Data files** are in JSON format in the repo-root `src/` folder: `tokenEstimators.json`, `modelPricing.json`, `toolNames.json`
 - **Webview code** is in `vscode-extension/src/webview/` organized by feature
@@ -338,14 +316,8 @@ extension-specific workflow below.
 Always run a full build to ensure code quality:
 
 ```bash
-npm run compile
+pnpm run compile
 ```
-
-This will:
-
-- Lint your code with ESLint
-- Type-check with TypeScript
-- Build the extension with esbuild
 
 ### JSON File Validation
 
@@ -364,7 +336,7 @@ The repository includes automatic validation of all JSON files. This ensures tha
 **Run JSON validation manually:**
 
 ```bash
-npm run lint:json
+pnpm run lint:json
 ```
 
 **Note:** JSON validation is automatically run in CI/CD pipelines to catch syntax errors early.
@@ -379,7 +351,7 @@ isolated SQLite fixtures and stubbed GitHub access, never production data.
 - Verify token tracking works correctly
 - Check that webviews render properly
 - Ensure status bar updates as expected
-- Run `npm test` to execute automated tests
+- Run `pnpm test` to execute automated tests
 - Ensure all tests pass before submitting changes
 
 ## CI/CD
@@ -388,10 +360,10 @@ The project includes comprehensive GitHub Actions workflows:
 
 ### Build Pipeline
 
-- **Platforms:** Tests on Ubuntu, Windows, and macOS
-- **Node Versions:** 18.x and 20.x
+- **Platforms:** Full gates on Ubuntu; build, package and unit tests also on Windows (`ci.yml`)
+- **Node Version:** 24.x
 - **Checks:** Linting, type checking, compilation, and packaging
-- **Badge:** [![Build](https://github.com/rajbos/ai-engineering-fluency/actions/workflows/build.yml/badge.svg)](https://github.com/rajbos/ai-engineering-fluency/actions/workflows/build.yml)
+- **Badge:** [![Build](https://github.com/rajbos/ai-engineering-fluency/actions/workflows/ci.yml/badge.svg)](https://github.com/rajbos/ai-engineering-fluency/actions/workflows/ci.yml)
 
 ### What Gets Tested
 
@@ -406,10 +378,10 @@ All builds must pass these checks before merging.
 
 ## Pre-Release Checklist
 
-Run `npm run pre-release` to validate the version and compile.
+Run `pnpm run pre-release` to validate the version and compile.
 
 - [ ] Version bumped in `package.json`
-- [ ] `npm run compile` completed successfully
+- [ ] `pnpm run compile` completed successfully
 - [ ] Commit and push to main branch
 - [ ] Trigger Release workflow (GitHub UI → Actions → Release → Run workflow)
 
@@ -451,7 +423,7 @@ Pushing a version tag (e.g., `git push origin v0.0.19`) triggers the build and c
 To manually sync the changelog with all GitHub release notes:
 
 ```bash
-npm run sync-changelog
+pnpm run sync-changelog
 ```
 
 Or trigger the **Sync Release Notes** workflow from the Actions tab.
@@ -470,7 +442,7 @@ If you need to re-publish manually (e.g., after a marketplace upload failure):
 2. **Create a feature branch** from `main`
 3. **Make your changes** in the devcontainer
 4. **Test thoroughly** using the Extension Development Host
-5. **Run `npm run compile`** to ensure everything builds
+5. **Run `pnpm run compile`** to ensure everything builds
 6. **Commit with clear messages** describing your changes
 7. **Push to your fork** and create a Pull Request
 

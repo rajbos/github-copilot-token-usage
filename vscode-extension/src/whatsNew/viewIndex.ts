@@ -210,7 +210,7 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 						id: 'usage.readiness',
 						title: 'AI Readiness',
 						description: 'How ready each repository is for autonomous agents, stage by stage, with what is missing.',
-						keywords: ['dark factory', 'maturity', 'controls'],
+						keywords: ['dark factory', 'readiness', 'controls'],
 						nav: { tab: 'readiness' },
 						condition: 'When a readiness scan is available',
 					},

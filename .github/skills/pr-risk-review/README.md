@@ -29,7 +29,7 @@ node .github/skills/pr-risk-review/render-comment.js --out pr-risk/comment.md
 | CI | `.github/workflows/pr-risk-review.yml` drives the Copilot CLI through the same steps |
 
 The `SKILL.md` is mirrored byte-for-byte into `.claude/skills/pr-risk-review/`
-per the rule in [`.github/copilot-instructions.md`](../../copilot-instructions.md).
+per the rule in [`AGENTS.md`](../../../AGENTS.md).
 The scripts and this README live only here — the Claude-side copy points at
 these same paths, so there is one source of truth for the code.
 

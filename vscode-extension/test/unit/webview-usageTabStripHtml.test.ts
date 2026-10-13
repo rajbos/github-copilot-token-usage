@@ -16,10 +16,17 @@ const input = (activeTab: string): UsageTabStripInput => ({
 	activeTab,
 	newInsightCount: 0,
 	correctionSessionCount: 0,
-	readinessButtonHtml: '<button class="tab-button" data-tab="readiness">AI Readiness</button>',
+	readinessAvailable: true,
 });
 
 describe('usageLeafTabButtons', () => {
+	test('builds the AI Readiness button from usage.tab.readiness, only when available', () => {
+		const on = usageLeafTabButtons(input('readiness')).readiness;
+		assert.match(on, /class="tab-button active" data-tab="readiness"/);
+		assert.match(on, /AI Readiness/);
+		assert.equal(usageLeafTabButtons({ ...input('readiness'), readinessAvailable: false }).readiness, '');
+	});
+
 	test('renders a button for every tab the groups claim', () => {
 		const buttons = usageLeafTabButtons(input('activity'));
 		for (const tab of allUsageTabs()) {
@@ -31,9 +38,6 @@ describe('usageLeafTabButtons', () => {
 	test('labels every tab from the localization dictionary, not a literal', () => {
 		const buttons = usageLeafTabButtons(input('activity'));
 		for (const tab of allUsageTabs()) {
-			// AI Readiness arrives as a prebuilt button from DarkFactoryTab, so it is not this
-			// module's string to resolve.
-			if (tab === 'readiness') { continue; }
 			assert.equal(buttons[tab].includes(`usage.tab.${tab}`), false,
 				`"${tab}" rendered its localization key, so the key is missing from the dictionary`);
 			// Escaped, not raw: "Tools & Integrations" has to reach the DOM as `&amp;`, which is

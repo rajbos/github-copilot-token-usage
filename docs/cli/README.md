@@ -169,6 +169,8 @@ Figures are estimates: tokens are weighted by type (output fully, fresh input an
 
 Your AI Engineering Fluency stage (1–4) overall and across six categories — Prompt Engineering, Context Engineering, Agentic, Tool Usage, Customization and Workflow Integration — based on the last 30 days, with the evidence behind each score. Scoring rules: [FLUENCY-LEVELS.md](../FLUENCY-LEVELS.md).
 
+The Customization category counts the workspaces you worked in that have an instructions file. Worktrees, scratch clones and case or WSL spellings of one repository are counted as one workspace, using the same grouping rules as the VS Code extension ([workspace grouping](../features/WORKSPACE-GROUPING.md)), so the workspace counts in the evidence match the extension's.
+
 ```bash
 ai-engineering-fluency fluency
 ai-engineering-fluency fluency --tips  # Show how to reach the next stage in each category
@@ -239,12 +241,12 @@ Optionally also read this repository's **server-side** Copilot memories — the 
 | `--server` | Also fetch the server-side memories for this repository. |
 | `--repo <owner/name>` | Repository to read. Default: the current checkout's `origin` remote. Implies `--server`. |
 | `--limit <n>` | Maximum number of server memories to request. |
-| `--promote` | Print the memories worth promoting into `AGENTS.md` as a ready-to-paste Markdown block. Implies `--server`. |
+| `--promote` | Print the memories worth promoting into `AGENTS.md` as a ready-to-paste Markdown block. Implies `--server`. The block names the suggested target file (root `AGENTS.md`, else `.github/copilot-instructions.md`, else a new `AGENTS.md`), says it was not checked when `--repo` names a repository other than this checkout, or says there is none when the chosen file is not a regular file inside the checkout (e.g. an escaping symlink); the checkout analyzed is printed to stderr. |
 
 With `--json` and `--server`, `--repo` or `--promote`, the output gains a `serverMemories` key (`--limit` only controls a server read requested by one of those options):
 
 - `null` only when no repository could be determined — the current directory is not a checkout with a github.com `origin` remote, and no `--repo` was given.
-- Otherwise an object with the analysis. If the read failed (no `gh`, no github.com token, no Copilot access, memory disabled, or an invalid `--repo`), the object has an `error` string and zeroed counts. Check `serverMemories.error` rather than testing for `null`.
+- Otherwise an object with the analysis, including `repoRoot` (the checkout analyzed, when it is this one), `promotionTarget` (`{ path, exists }`, absent when it could not be safely determined; `promotionTargetBlockedPath` then names the rejected file if that was the reason) and `documentedMemories` (each memory that cites an instruction/doc file, with those `instructionFiles`). If the read failed (no `gh`, no github.com token, no Copilot access, memory disabled, or an invalid `--repo`), the object has an `error` string and zeroed counts. Check `serverMemories.error` rather than testing for `null`.
 
 `--json` takes precedence over `--promote`: the JSON is printed and no Markdown block is written. Without `--json`, a server read failure under `--promote` prints the reason to stderr and exits with code `1`, so an empty promotion list is never mistaken for "nothing to document". If no repository can be determined, the command instead prints guidance to stdout and exits with code `0`.
 
@@ -474,7 +476,7 @@ Run `ai-engineering-fluency diagnostics` to see exactly which of these locations
 Since 0.7.0 the package also works as a Node library. The `@rajbos/ai-engineering-fluency/session` entry point returns token usage and cost for one session file, so another app can show per-session cost without running the CLI. It works with `require()` and `import`, ships its own TypeScript types, and contains none of the CLI code.
 
 ```bash
-npm install @rajbos/ai-engineering-fluency
+pnpm install @rajbos/ai-engineering-fluency
 ```
 
 ```js
@@ -544,16 +546,16 @@ Every session file is parsed once; later runs only re-parse files that changed.
 
 ```bash
 # From the repository root
-npm run cli:build           # Build the CLI
-npm run cli:stats           # Run stats command
-npm run cli:usage           # Run usage command
-npm run cli:environmental   # Run environmental command
-npm run cli:fluency         # Run fluency command
-npm run cli:diagnostics     # Run diagnostics command
-npm run cli -- --help       # Run any CLI command
+pnpm run cli:build           # Build the CLI
+pnpm run cli:stats           # Run stats command
+pnpm run cli:usage           # Run usage command
+pnpm run cli:environmental   # Run environmental command
+pnpm run cli:fluency         # Run fluency command
+pnpm run cli:diagnostics     # Run diagnostics command
+pnpm run cli -- --help       # Run any CLI command
 ```
 
-From `cli/`: `npm run build`, `npm test`, `npm run check-types`, `npm run lint`. The CLI is a thin wrapper around the shared modules in the repository's [`src/`](../../src/) folder — parsing and cost logic belong there, not in `cli/`. See the [CLI contributor guide](../../.github/instructions/cli.instructions.md).
+From `cli/`: `pnpm run build`, `pnpm test`, `pnpm run check-types`, `pnpm run lint`. The CLI is a thin wrapper around the shared modules in the repository's [`src/`](../../src/) folder — parsing and cost logic belong there, not in `cli/`. See the [CLI contributor guide](../../.github/instructions/cli.instructions.md).
 
 When you add or change a command or option, update this page: a unit test (`cli/src/test/docsCoverage.test.ts`) fails if a command or option is missing here.
 

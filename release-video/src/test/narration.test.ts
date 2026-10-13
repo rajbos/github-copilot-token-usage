@@ -32,7 +32,7 @@ test('the narration says where you are, in the words on screen', () => {
 
 test('a title that already ends in "tab" does not get a second one', () => {
 	const text = featureNarration(feature(), { index: 0 });
-	assert.match(text, /a new tab called Corrections\./);
+	assert.match(text, /a new tab called Corrections(, under [A-Za-z ]+)?\./);
 	assert.doesNotMatch(text, /Corrections tab/);
 });
 

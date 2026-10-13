@@ -28,6 +28,7 @@
  *   node scripts/check-code-duplication.js --min-lines 8     # larger blocks only
  *   node scripts/check-code-duplication.js --include 'cli/src/<glob>'
  *   node scripts/check-code-duplication.js --fail-threshold 200
+ *   node scripts/check-code-duplication.js --min-lines 14 --baseline scripts/code-duplication-baseline.json
  *
  * Exit codes: 0 = ok (or report-only pass) | 1 = threshold exceeded | 2 = could not run.
  */
@@ -40,6 +41,9 @@ const DEFAULT_INCLUDES = [
 	'vscode-extension/src/**/*.ts',
 	'src/**/*.ts',
 	'cli/src/**/*.ts',
+	'sharing-server/src/**/*.ts',
+	'desktop/src/**/*.ts',
+	'release-video/src/**/*.ts',
 ];
 
 const MIN_LINES_DEFAULT = 6;
@@ -47,15 +51,19 @@ const MIN_LINES_DEFAULT = 6;
 function parseArgs(argv) {
 	const args = {
 		minLines: MIN_LINES_DEFAULT,
+		minLinesExplicit: false,
 		includes: [],
 		json: false,
 		failThreshold: null,
+		maxGroups: null,
+		baseline: null,
 		root: REPO_ROOT,
 	};
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
 		if (a === '--min-lines') {
 			args.minLines = Math.max(1, parseInt(argv[++i], 10) || MIN_LINES_DEFAULT);
+			args.minLinesExplicit = true;
 		} else if (a === '--include') {
 			args.includes.push(argv[++i]);
 		} else if (a === '--json') {
@@ -63,6 +71,11 @@ function parseArgs(argv) {
 		} else if (a === '--fail-threshold') {
 			args.failThreshold = parseInt(argv[++i], 10);
 			if (Number.isNaN(args.failThreshold)) { args.failThreshold = null; }
+		} else if (a === '--max-groups') {
+			args.maxGroups = parseInt(argv[++i], 10);
+			if (Number.isNaN(args.maxGroups)) { args.maxGroups = null; }
+		} else if (a === '--baseline') {
+			args.baseline = path.resolve(argv[++i]);
 		} else if (a === '--root') {
 			args.root = path.resolve(argv[++i]);
 		} else if (a === '--help' || a === '-h') {
@@ -76,9 +89,14 @@ function parseArgs(argv) {
 
 const USAGE = `Usage: check-code-duplication.js [options]
   --min-lines N        Minimum lines per duplicate block (default ${MIN_LINES_DEFAULT})
-  --include GLOB       Add a source glob (repeatable; default: the three source dirs)
+  --include GLOB       Add a source glob (repeatable; default: the six source trees in DEFAULT_INCLUDES)
   --json               Emit JSON instead of Markdown
   --fail-threshold N   Exit 1 when total duplicated lines > N (default: report only)
+  --max-groups N       Exit 1 when the number of duplicate groups > N
+  --baseline FILE      Ratchet: read minLines/maxGroups/maxDuplicatedLines from a JSON
+                       baseline; exit 1 when either limit grows. --min-lines is taken
+                       from the file unless given (it must then match the file); an
+                       explicit --max-groups/--fail-threshold wins over the file.
   --root DIR           Repo root to resolve globs against (default: repo root)
   -h, --help           Show this help
 `;
@@ -530,8 +548,53 @@ function renderJson(groups, scanned, threshold) {
 	}, null, 2);
 }
 
+/**
+ * Merge a committed baseline file into args. The baseline supplies defaults only;
+ * a limit given explicitly on the command line wins. Throws on an unreadable or
+ * malformed file so CI fails loudly instead of silently dropping the gate.
+ */
+function applyBaseline(args, readFile = (f) => fs.readFileSync(f, 'utf8')) {
+	if (!args.baseline) { return args; }
+	const b = JSON.parse(readFile(args.baseline));
+	if (!Number.isInteger(b.minLines) || b.minLines < 1) {
+		throw new Error(`baseline ${args.baseline}: "minLines" must be a positive integer`);
+	}
+	if (args.minLinesExplicit && args.minLines !== b.minLines) {
+		throw new Error(`--min-lines ${args.minLines} conflicts with baseline ${args.baseline} (measured at minLines ${b.minLines}); the limits are not comparable`);
+	}
+	args.minLines = b.minLines;
+	for (const k of ['maxGroups', 'maxDuplicatedLines']) {
+		if (!Number.isInteger(b[k]) || b[k] < 0) {
+			throw new Error(`baseline ${args.baseline}: "${k}" must be a non-negative integer`);
+		}
+	}
+	if (args.maxGroups === null) { args.maxGroups = b.maxGroups; }
+	if (args.failThreshold === null) { args.failThreshold = b.maxDuplicatedLines; }
+	return args;
+}
+
+/** Returns human-readable gate violations (empty when within limits). */
+function gateViolations(groups, args) {
+	const out = [];
+	const total = totalDuplicatedLines(groups);
+	if (args.failThreshold !== null && total > args.failThreshold) {
+		out.push(`total duplicated lines ${total} > ${args.failThreshold}`);
+	}
+	if (args.maxGroups !== null && groups.length > args.maxGroups) {
+		out.push(`duplicate groups ${groups.length} > ${args.maxGroups}`);
+	}
+	return out;
+}
+
 function main() {
-	const args = parseArgs(process.argv.slice(2));
+	let args;
+	try {
+		args = applyBaseline(parseArgs(process.argv.slice(2)));
+	} catch (e) {
+		process.stderr.write(`check-code-duplication: ${e.message}
+`);
+		process.exit(2);
+	}
 	const root = args.root;
 
 	const files = collectFiles(root, args.includes);
@@ -543,7 +606,6 @@ function main() {
 	}
 
 	const groups = findDuplicates(fileTokens, args.minLines);
-	const total = totalDuplicatedLines(groups);
 
 	if (args.json) {
 		process.stdout.write(renderJson(groups, fileTokens.length, args.failThreshold) + '\n');
@@ -551,7 +613,10 @@ function main() {
 		process.stdout.write(renderMarkdown(groups, fileTokens.length, args.failThreshold));
 	}
 
-	if (args.failThreshold !== null && total > args.failThreshold) {
+	const violations = gateViolations(groups, args);
+	if (violations.length > 0) {
+		process.stderr.write(`check-code-duplication: gate failed: ${violations.join('; ')}
+`);
 		process.exitCode = 1;
 	}
 }
@@ -559,6 +624,8 @@ function main() {
 // Exported for the unit test (mirrors scripts/validate-webview-contract.js).
 module.exports = {
 	parseArgs,
+	applyBaseline,
+	gateViolations,
 	normalizeLine,
 	isNoise,
 	classifyLine,

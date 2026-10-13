@@ -11,8 +11,8 @@
  *
  * The Visual Studio expectations are duplicated from
  * vscode-extension/test/unit/workspaceHelpers.test.ts. The later cases import
- * getEditorTypeFromPath directly — the CLI test bundle aliases `vscode` to the CLI stub —
- * and assert both detectors return the same name for the same path.
+ * getEditorTypeFromPath directly (src/workspaceHelpers.ts is editor-neutral: it
+ * imports no `vscode`, so the CLI test bundle needs no stub) and assert both detectors return the same name for the same path.
  */
 
 import test from 'node:test';

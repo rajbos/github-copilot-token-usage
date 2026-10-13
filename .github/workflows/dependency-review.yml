@@ -17,11 +17,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
       - name: 'Checkout Repository'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: 'Dependency Review'
+        id: review
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # No patched release exists for these; both are transitive dev-only deps already present in main's lockfiles:
+          # sprintf-js (electron-builder), braces 3.0.3 (vsce/stylelint glob chain)
+          allow-ghsas: GHSA-hp3w-g68c-fv3c,GHSA-vfj7-8cjw-p6xm
+
+      - name: 'Show why dependency review failed'
+        if: failure() && steps.review.outcome == 'failure'
+        env:
+          VULNERABLE: ${{ steps.review.outputs.vulnerable-changes }}
+          LICENSES: ${{ steps.review.outputs.invalid-license-changes }}
+          DENIED: ${{ steps.review.outputs.denied-changes }}
+        run: |
+          {
+            echo "## Dependency review failed"
+            echo
+            echo "### Vulnerable packages"
+            echo '```json'
+            echo "${VULNERABLE:-[]}"
+            echo '```'
+            echo "### Invalid licenses"
+            echo '```json'
+            echo "${LICENSES:-{}}"
+            echo '```'
+            echo "### Denied packages"
+            echo '```json'
+            echo "${DENIED:-[]}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error title=Dependency review failed::See the job summary for the vulnerable/denied packages (each lists package, version and advisory)."

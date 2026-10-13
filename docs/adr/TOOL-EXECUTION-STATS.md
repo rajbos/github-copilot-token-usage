@@ -1,5 +1,7 @@
 # Per-tool execution stats: reliability, latency, MCP health, cost-vs-speed
 
+> **Status:** Implemented · **Decided/added:** 2026-10-08 · **Verified against code on:** 2026-10-11 (`vscode-extension/src/webview/usage/toolExecutionHtml.ts` exists). The phase list below is the plan; `git log` is the record of what landed. Counts such as the cache version are as of the decision date (the cache version was 79 on 2026-10-11) — read `CACHE_VERSION` in `vscode-extension/src/extension.ts` for the live value.
+
 ## Context
 
 Session logs already record, per tool call, whether it failed and when it started

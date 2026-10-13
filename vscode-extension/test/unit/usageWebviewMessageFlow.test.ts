@@ -752,6 +752,86 @@ test('the size chip reuses the scanned worktree size instead of a second disk wa
 	assert.ok(harness.text('.worktree-cleanup-log')?.includes('Size: '), 'expected a size chip taken from the scan result');
 });
 
+test('recovered space counts the bulk-deleted and retried worktrees, and resets on a new run', async () => {
+	const harness = await bootWebview(buildStats());
+	const row = (path: string, bytes: number) => ({ command: 'worktreeFound', worktree: { path, repoLabel: 'repo', branch: 'b', lastCommit: '', lastCommitDate: null, pushed: 'yes', files: 1, folders: 1, bytes } });
+	const bulk = 'C:\\wt\\bulk';
+	const retried = 'C:\\wt\\retried';
+	harness.post(row(bulk, 2 * 1024 * 1024));
+	harness.post(row(retried, 1024 * 1024));
+	harness.post({ command: 'cleanupStarted', total: 2 });
+	// The host sends worktreeDeleted before the per-row result.
+	harness.post({ command: 'worktreeDeleted', path: bulk });
+	harness.post({ command: 'cleanupWorktreeResult', path: bulk, branch: 'b', repoLabel: 'repo', status: 'deleted', processed: 1, total: 2 });
+	harness.post({
+		command: 'cleanupWorktreeResult', path: retried, branch: 'b', repoLabel: 'repo', status: 'error',
+		reason: 'Could not delete worktree.', diagnostics: { modifiedFiles: 0, untrackedFiles: 0 }, processed: 2, total: 2,
+	});
+	harness.post({ command: 'cleanupComplete' });
+	assert.ok(harness.window.document.body.textContent?.includes('2.00 MB recovered'), 'the bulk deletion frees its scanned size');
+
+	harness.post({ command: 'worktreeDeleteStarted', path: retried });
+	harness.post({ command: 'worktreeDeleted', path: retried });
+	harness.post({ command: 'worktreeDeleteResult', path: retried, status: 'deleted' });
+	assert.ok(harness.window.document.body.textContent?.includes('3.00 MB recovered'), 'a later retry adds its size');
+
+	// A stray delete of a row this run did not delete (e.g. a late event from an earlier run) adds nothing.
+	const stray = 'C:\\wt\\stray';
+	harness.post(row(stray, 5 * 1024 * 1024));
+	harness.post({ command: 'cleanupStarted', total: 1 });
+	harness.post({ command: 'worktreeDeleted', path: stray });
+	harness.post({
+		command: 'cleanupWorktreeResult', path: stray, branch: 'b', repoLabel: 'repo', status: 'error',
+		reason: 'Could not delete worktree.', diagnostics: { modifiedFiles: 0, untrackedFiles: 0 }, processed: 1, total: 1,
+	});
+	harness.post({ command: 'cleanupComplete' });
+	assert.ok(harness.window.document.body.textContent?.includes('0 B recovered'), 'a failed row never counts as recovered');
+	harness.post({ command: 'cleanupStarted', total: 1 });
+	assert.ok(harness.window.document.body.textContent?.includes('0 B recovered'), 'a new run starts from zero');
+});
+
+test('Copy prompt copies a branch-specific prompt, shows feedback, and survives a rejected clipboard', async () => {
+	const harness = await bootWebview(buildStats());
+	const worktreePath = 'C:\\wt\\copy';
+	harness.post({ command: 'cleanupStarted', total: 1 });
+	harness.post({
+		command: 'cleanupWorktreeResult', path: worktreePath, branch: 'feat/my-branch', repoLabel: 'repo', status: 'error',
+		reason: 'Could not delete worktree.', diagnostics: { modifiedFiles: 1, untrackedFiles: 0 }, processed: 1, total: 1,
+	});
+	harness.post({ command: 'cleanupComplete' });
+	const button = () => harness.window.document.querySelector('.worktree-copy-prompt-btn') as HTMLButtonElement;
+	const initialLabel = button().textContent;
+	const copied: string[] = [];
+	let reject = false;
+	Object.defineProperty(harness.window.navigator, 'clipboard', {
+		configurable: true,
+		value: { writeText: (text: string) => { copied.push(text); return reject ? Promise.reject(new Error('denied')) : Promise.resolve(); } },
+	});
+
+	button().click();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert.equal(copied.length, 1);
+	assert.ok(copied[0].includes('feat/my-branch'), 'the prompt names the branch');
+	assert.ok(button().textContent?.includes('Copied'), 'the button confirms the copy');
+
+	// A second click while "Copied!" is showing must not capture that text as the label to restore.
+	button().click();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert.equal(copied.length, 2);
+
+	// A rejected clipboard write is swallowed (no unhandled rejection) and gives no false confirmation.
+	harness.post({ command: 'cleanupStarted', total: 1 });
+	harness.post({
+		command: 'cleanupWorktreeResult', path: worktreePath, branch: 'feat/my-branch', repoLabel: 'repo', status: 'error',
+		reason: 'Could not delete worktree.', diagnostics: { modifiedFiles: 1, untrackedFiles: 0 }, processed: 1, total: 1,
+	});
+	harness.post({ command: 'cleanupComplete' });
+	reject = true;
+	button().click();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert.equal(button().textContent, initialLabel, 'a rejected write leaves the label unchanged');
+});
+
 test('a late delete result with no retry in flight is ignored, and empty worktrees still show a size', async () => {
 	const harness = await bootWebview(buildStats());
 	const worktreePath = 'C:\\wt\\empty';

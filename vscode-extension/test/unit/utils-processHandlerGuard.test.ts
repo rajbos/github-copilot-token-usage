@@ -141,3 +141,18 @@ test('withoutLeakedFatalHandlers: stays silent when nothing was installed', asyn
 	await withoutLeakedFatalHandlers(async () => undefined, () => { called = true; });
 	assert.equal(called, false);
 });
+
+test('snapshotFatalHandlers: records the live listeners for both fatal events', () => {
+	const existing = (): void => { /* does real work, not a rethrow */ };
+	process.on('uncaughtException', existing);
+	try {
+		const snapshot = snapshotFatalHandlers();
+
+		assert.deepEqual([...snapshot.keys()].sort(), ['uncaughtException', 'unhandledRejection']);
+		assert.deepEqual(snapshot.get('uncaughtException'), process.listeners('uncaughtException'));
+		assert.deepEqual(snapshot.get('unhandledRejection'), process.listeners('unhandledRejection'));
+		assert.ok(snapshot.get('uncaughtException')!.includes(existing));
+	} finally {
+		process.removeListener('uncaughtException', existing);
+	}
+});
