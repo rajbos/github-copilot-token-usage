@@ -577,7 +577,7 @@
     "@github/copilot": "^1.0.91",
     "@stryker-mutator/core": "^10.0.0",
     "@types/mocha": "^10.0.10",
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.5",
     "@types/sql.js": "1.4.11",
     "@types/vscode": "1.134.0",
     "@typescript-eslint/eslint-plugin": "^8.71.0",
