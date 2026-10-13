@@ -35,7 +35,7 @@ jobs:
       duplication-relevant: ${{ github.event_name == 'push' || steps.filter.outputs.duplication-relevant == 'true' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -117,7 +117,7 @@ jobs:
     if: github.event_name == 'pull_request' && needs.check-changes.outputs.coverage-relevant == 'true'
     steps:
     - name: Harden the runner (Block all outbound calls except allowed)
-      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
       with:
         egress-policy: block
         allowed-endpoints: >
@@ -156,7 +156,7 @@ jobs:
     if: needs.check-changes.outputs.duplication-relevant == 'true'
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
       with:
         egress-policy: audit
 
@@ -164,7 +164,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Setup Node.js
-      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version-file: '.nvmrc'
 
@@ -186,7 +186,7 @@ jobs:
 
     steps:
     - name: Harden the runner (Block all outbound calls except allowed)
-      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
       with:
         egress-policy: block
         # Allowlist inferred from the harden-runner audit output of the 10 most
@@ -214,7 +214,7 @@ jobs:
         version: '11.2.2'
 
     - name: Setup Node.js
-      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version-file: '.nvmrc'
         cache: 'pnpm'
@@ -414,7 +414,7 @@ jobs:
       # Using manual xvfb instead to avoid the Node.js deprecation warning.
       
     - name: Upload build artifacts
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: extension-build
         path: |
@@ -447,7 +447,7 @@ jobs:
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
       with:
         egress-policy: audit
 
@@ -461,7 +461,7 @@ jobs:
 
     # No package-manager cache on Windows (as in the former build.yml Windows leg).
     - name: Setup Node.js
-      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version: '24.x'
 
@@ -519,7 +519,7 @@ jobs:
     
     steps:
     - name: Harden the runner (Block all outbound calls except allowed)
-      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
       with:
         egress-policy: block
         # Allowlist inferred from the harden-runner audit output of the sampled
@@ -539,7 +539,7 @@ jobs:
       with:
         version: '11.2.2'
     - name: Setup Node.js
-      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version-file: '.nvmrc'
         cache: 'pnpm'
@@ -562,7 +562,7 @@ jobs:
       run: pnpm run validate:l10n -- --vsix "$(find . -maxdepth 1 -name 'ai-engineering-fluency-*.vsix' | head -n 1)"
       
     - name: Upload VSIX package
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: vsix-package
         path: 'vscode-extension/*.vsix'
@@ -588,7 +588,7 @@ jobs:
       cancel-in-progress: true
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
       with:
         egress-policy: audit
 
@@ -612,7 +612,7 @@ jobs:
         version: '11.2.2'
 
     - name: Setup Node.js
-      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version-file: '.nvmrc'
         cache: 'pnpm'
@@ -688,7 +688,7 @@ jobs:
 
     - name: Upload before/after/diff screenshots
       if: always()
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: webview-screenshots
         path: |
@@ -706,7 +706,7 @@ jobs:
     if: always()
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
