@@ -949,9 +949,16 @@ export interface AvailableToolSources {
 export function mergeAvailableToolEntries(sources: AvailableToolSources): AvailableToolEntry[] {
 	const runtime = sources.runtime ?? [];
 	const claimed = new Set(runtime.filter(e => e.source === 'mcp').map(e => e.server));
+	// Claimed entry by entry, not per source: one source can list the same server more than once
+	// (enumerateExtensionMcpServers() emits it for every extension that contributes it), and
+	// each must still be listed only once.
 	const unclaimed = (entries: AvailableToolEntry[] | undefined): AvailableToolEntry[] => {
-		const kept = (entries ?? []).filter(e => !claimed.has(e.server));
-		for (const e of kept) { claimed.add(e.server); }
+		const kept: AvailableToolEntry[] = [];
+		for (const e of entries ?? []) {
+			if (claimed.has(e.server)) { continue; }
+			claimed.add(e.server);
+			kept.push(e);
+		}
 		return kept;
 	};
 	const mcpJson = unclaimed(sources.mcpJson);

@@ -197,3 +197,21 @@ test('buildCurationAnalysis is null when a host found no tools', () => {
 	assert.equal(analysis?.windowDays, 14);
 	assert.equal(analysis?.availableTools.length, 1);
 });
+
+test('mergeAvailableToolEntries lists a server once even when one source repeats it', () => {
+	// enumerateExtensionMcpServers() emits a server once per extension that contributes it;
+	// claiming per source kept every copy and inflated the available / unused tool counts.
+	const merged = mergeAvailableToolEntries({
+		extensionMcp: [mcp('db', 'ext-a'), mcp('db', 'ext-b'), mcp('files', 'ext-a')],
+		settingsMcp: [mcp('db', 'settings')],
+	});
+	assert.deepEqual(merged.map(e => `${e.name}:${e.description}`), ['mcp__db:ext-a', 'mcp__files:ext-a']);
+});
+
+test('buildUsageAnalysisViewData carries the recent-session buckets for every host', () => {
+	// The desktop app calls the builder directly and has no recentSessionsLoaded round-trip, so
+	// without the buckets its Last 7 / 30 days and Current Month tabs stayed on "Loading…".
+	const recentSessions = { last7: [], last30: [], currentMonth: [] };
+	assert.deepEqual(buildUsageAnalysisViewData(stats({ recentSessions }), inputs()).recentSessions, recentSessions);
+	assert.equal(buildUsageAnalysisViewData(stats(), inputs()).recentSessions, undefined, 'absent when the host has none');
+});

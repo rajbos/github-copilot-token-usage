@@ -375,7 +375,7 @@ type InitialUsageData = UsageAnalysisStats & { customizationMatrix?: WorkspaceCu
  *  - every shared field's value, as the builder types it, is accepted by this view's type.
  */
 /** Fields this view reads that hosts add on top of the shared payload (extension-only today). */
-type UsageHostExtraField = 'recentSessions' | 'serverMemoriesAnalysis' | 'sessionColumnSettings' | 'copilotApiBalance' | 'accountBudgets' | 'monthBillingGroupCosts';
+type UsageHostExtraField = 'serverMemoriesAnalysis' | 'sessionColumnSettings' | 'copilotApiBalance' | 'accountBudgets' | 'monthBillingGroupCosts';
 type UsageFieldsMissingFromView = Exclude<keyof UsageAnalysisViewData, keyof UsageAnalysisStats>;
 type UsageFieldsNotFromBuilder = Exclude<keyof UsageAnalysisStats, keyof UsageAnalysisViewData | UsageHostExtraField>;
 type UsageFieldsWithIncompatibleTypes = {

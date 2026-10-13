@@ -66,6 +66,13 @@ export interface UsageAnalysisViewData {
 	suppressedUnknownTools: string[];
 	toolCallsByEditor: NonNullable<UsageAnalysisStats['toolCallsByEditor']>;
 	todaySessions: TodaySessionSummary[];
+	/**
+	 * Last 7 / last 30 days / current month session buckets. Part of the shared payload: the
+	 * view seeds its Recent Sessions tabs from it, and a host without the extension's
+	 * `recentSessionsLoaded` round-trip (the desktop app) would otherwise stay on "Loading…".
+	 * Undefined when the host's stats carry none.
+	 */
+	recentSessions: UsageAnalysisStats['recentSessions'];
 	claudeDesktopCoverage: ClaudeDesktopCoverage | null;
 	use24HourTime: boolean;
 	hideAutomaticToolCalls: boolean;
@@ -81,7 +88,7 @@ export const USAGE_ANALYSIS_VIEW_KEYS: ReadonlyArray<keyof UsageAnalysisViewData
 	'today', 'last30Days', 'month', 'lastMonth', 'autoCompactionsLast7Days', 'locale',
 	'customizationMatrix', 'missedPotential', 'lastUpdated', 'backendConfigured',
 	'readinessAvailable', 'currentWorkspacePaths', 'suppressedUnknownTools', 'toolCallsByEditor',
-	'todaySessions', 'claudeDesktopCoverage', 'use24HourTime', 'hideAutomaticToolCalls',
+	'todaySessions', 'recentSessions', 'claudeDesktopCoverage', 'use24HourTime', 'hideAutomaticToolCalls',
 	'insights', 'correctionReport', 'repeatedTasks', 'curationAnalysis', 'memoryFilesAnalysis',
 ];
 
@@ -102,6 +109,7 @@ export function buildUsageAnalysisViewData(stats: UsageAnalysisStats, inputs: Us
 		suppressedUnknownTools: inputs.suppressedUnknownTools,
 		toolCallsByEditor: stats.toolCallsByEditor ?? {},
 		todaySessions: stats.todaySessions ?? [],
+		recentSessions: stats.recentSessions,
 		claudeDesktopCoverage: stats.claudeDesktopCoverage ?? null,
 		use24HourTime: inputs.use24HourTime,
 		hideAutomaticToolCalls: inputs.hideAutomaticToolCalls,
