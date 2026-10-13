@@ -71,7 +71,7 @@
 		"@typescript-eslint/no-require-imports": {
 			"src/copilotServerMemories.ts": 6,
 			"src/cursor.ts": 1,
-			"src/utils/sqliteWal.ts": 1,
+			"src/utils/sqliteWal.ts": 2,
 			"vscode-extension/src/backend/integration.ts": 2,
 			"vscode-extension/src/extension.ts": 13
 		},

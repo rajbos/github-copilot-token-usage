@@ -10,7 +10,7 @@
  *     appears that is not in the baseline.
  *
  * Counts are tracked per rule and per file, so one rule improving cannot hide another
- * getting worse. Counts may shrink freely; run `npm run lint:baseline:update` after
+ * getting worse. Counts may shrink freely; run `pnpm run lint:baseline:update` after
  * paying warnings down so the ratchet tightens.
  *
  * Same shape as check-hardcoded-strings.mjs / check-bare-tolocale.mjs.
@@ -112,7 +112,7 @@ function main() {
 	const regressions = findRegressions(counts, baseline);
 	if (regressions.length) {
 		console.error(`❌ ESLint warnings increased beyond lint-baseline.json:\n  ${regressions.join('\n  ')}`);
-		console.error('\nFix the new warnings. If you paid warnings down elsewhere, run `npm run lint:baseline:update`.');
+		console.error('\nFix the new warnings. If you paid warnings down elsewhere, run `pnpm run lint:baseline:update`.');
 		process.exit(1);
 	}
 
@@ -120,7 +120,7 @@ function main() {
 	for (const files of Object.values(baseline)) { for (const n of Object.values(files)) { baselineTotal += n; } }
 	console.log(`✅ ESLint: 0 errors, ${total} warning(s) (baseline ${baselineTotal}).`);
 	if (total < baselineTotal) {
-		console.log('   Warnings dropped — run `npm run lint:baseline:update` to lock in the improvement.');
+		console.log('   Warnings dropped — run `pnpm run lint:baseline:update` to lock in the improvement.');
 	}
 }
 
