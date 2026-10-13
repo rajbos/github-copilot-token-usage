@@ -13,14 +13,18 @@
     "start": "pnpm run build && electron .",
     "pack": "pnpm run build:production && electron-builder --dir",
     "dist": "pnpm run build:production && electron-builder --win nsis --publish never",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "check:contract": "node ../scripts/validate-desktop-contract.js",
+    "check:shell": "node ../scripts/validate-webview-shell.js",
+    "check:views": "node ../.github/skills/sync-host-views/sync-host-views.js",
+    "check": "pnpm run check-types && pnpm run check:contract && pnpm run check:shell"
   },
   "dependencies": {
     "electron-updater": "^6.3.9"
   },
   "devDependencies": {
     "@msgpack/msgpack": "^3.1.3",
-    "@types/node": "^24.19.2",
+    "@types/node": "^26.6.4",
     "chalk": "^6.0.1",
     "electron": "^44.6.0",
     "electron-builder": "^26.15.3",

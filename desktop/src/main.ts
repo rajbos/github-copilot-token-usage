@@ -47,6 +47,11 @@ import tokenEstimatorsData from '../../src/tokenEstimators.json';
 import modelPricingData from '../../src/modelPricing.json';
 import toolNamesData from '../../src/toolNames.json';
 import automaticToolsData from '../../src/automaticTools.json';
+// Messages the shared views post that this app does not handle (checked by scripts/validate-desktop-contract.js).
+import unsupportedWebviewCommands from './unsupportedWebviewCommands.json';
+// --vscode-* theme tokens, shared with the headless visual-view-diff harness.
+import themeDarkCss from '../../.github/skills/visual-view-diff/lib/theme-dark.css';
+import themeLightCss from '../../.github/skills/visual-view-diff/lib/theme-light.css';
 
 // In dev mode use a local userData directory so cache files never conflict
 // between hot-reload restarts (the default %APPDATA%\Electron is shared with
@@ -120,119 +125,28 @@ function resolveAppIcon(): string {
 // ---------------------------------------------------------------------------
 // VS Code CSS variable seed
 // Provides concrete values for --vscode-* custom properties so the existing
-// webview IIFE bundles render correctly outside of VS Code.
+// webview IIFE bundles render correctly outside of VS Code. The values come from
+// the visual-view-diff harness's theme files, the one list of tokens the shared
+// views reference; scripts/validate-webview-shell.js fails when a view starts
+// using a token that list does not define.
 // ---------------------------------------------------------------------------
 
-const VSCODE_DARK_VARS = `
-:root {
-    --vscode-editor-background: #1e1e1e;
-    --vscode-sideBar-background: #252526;
-    --vscode-editorWidget-background: #252526;
-    --vscode-editor-foreground: #d4d4d4;
-    --vscode-descriptionForeground: #9d9d9d;
-    --vscode-disabledForeground: #585858;
-    --vscode-panel-border: #454545;
-    --vscode-widget-border: #454545;
-    --vscode-button-background: #0e639c;
-    --vscode-button-foreground: #ffffff;
-    --vscode-button-hoverBackground: #1177bb;
-    --vscode-button-secondaryBackground: #3a3d41;
-    --vscode-button-secondaryForeground: #cccccc;
-    --vscode-button-secondaryHoverBackground: #45494e;
-    --vscode-input-background: #3c3c3c;
-    --vscode-input-foreground: #cccccc;
-    --vscode-input-border: #3c3c3c;
-    --vscode-list-hoverBackground: #2a2d2e;
-    --vscode-list-activeSelectionBackground: #094771;
-    --vscode-list-activeSelectionForeground: #ffffff;
-    --vscode-list-inactiveSelectionBackground: #37373d;
-    --vscode-badge-background: #4d4d4d;
-    --vscode-badge-foreground: #cccccc;
-    --vscode-focusBorder: #007fd4;
-    --vscode-textLink-foreground: #3794ff;
-    --vscode-textLink-activeForeground: #3794ff;
-    --vscode-errorForeground: #f48771;
-    --vscode-editorWarning-foreground: #cca700;
-    --vscode-terminal-ansiGreen: #4ec94c;
-    --vscode-contrastBorder: #6fc3df;
-    --vscode-foreground: #cccccc;
-    --vscode-editor-font-family: Consolas, 'Courier New', monospace;
-    --vscode-button-border: transparent;
-    --vscode-dropdown-background: #313131;
-    --vscode-dropdown-foreground: #cccccc;
-    --vscode-dropdown-border: #3c3c3c;
-    --vscode-textBlockQuote-background: #2b2b2b;
-    --vscode-editorInfo-foreground: #3794ff;
-    --vscode-inputValidation-infoBackground: #063b49;
-    --vscode-inputValidation-infoBorder: #1a85ff;
-    --vscode-inputValidation-warningBackground: #352a05;
-    --vscode-inputValidation-warningBorder: #b89500;
-    --vscode-inputValidation-errorBackground: #5a1d1d;
-    --vscode-inputValidation-errorBorder: #be1100;
-    --vscode-charts-blue: #4daafc;
-    --vscode-charts-green: #89d185;
-    --vscode-charts-orange: #d18616;
-    --vscode-charts-purple: #b180d7;
-    --vscode-charts-red: #f14c4c;
-    --vscode-charts-yellow: #cca700;
-    --vscode-terminal-ansiCyan: #11a8cd;
+const VSCODE_THEME_VARS = `
+${themeDarkCss}
+@media (prefers-color-scheme: light) {
+${themeLightCss}
 }
 `;
 
-const VSCODE_LIGHT_VARS = `
-@media (prefers-color-scheme: light) {
-    :root {
-        --vscode-editor-background: #ffffff;
-        --vscode-sideBar-background: #f3f3f3;
-        --vscode-editorWidget-background: #f3f3f3;
-        --vscode-editor-foreground: #000000;
-        --vscode-descriptionForeground: #717171;
-        --vscode-disabledForeground: #717171;
-        --vscode-panel-border: #e7e7e7;
-        --vscode-widget-border: #c8c8c8;
-        --vscode-button-background: #007acc;
-        --vscode-button-foreground: #ffffff;
-        --vscode-button-hoverBackground: #0062a3;
-        --vscode-button-secondaryBackground: #5f6a79;
-        --vscode-button-secondaryForeground: #ffffff;
-        --vscode-button-secondaryHoverBackground: #4c5561;
-        --vscode-input-background: #ffffff;
-        --vscode-input-foreground: #616161;
-        --vscode-input-border: #cecece;
-        --vscode-list-hoverBackground: #e8e8e8;
-        --vscode-list-activeSelectionBackground: #0060c0;
-        --vscode-list-activeSelectionForeground: #ffffff;
-        --vscode-list-inactiveSelectionBackground: #e4e6f1;
-        --vscode-badge-background: #c4c4c4;
-        --vscode-badge-foreground: #333333;
-        --vscode-focusBorder: #0090f1;
-        --vscode-textLink-foreground: #006ab1;
-        --vscode-textLink-activeForeground: #006ab1;
-        --vscode-errorForeground: #a1260d;
-        --vscode-editorWarning-foreground: #b89500;
-        --vscode-terminal-ansiGreen: #00bc00;
-        --vscode-contrastBorder: #6fc3df;
-        --vscode-foreground: #3b3b3b;
-        --vscode-dropdown-background: #ffffff;
-        --vscode-dropdown-foreground: #3b3b3b;
-        --vscode-dropdown-border: #cecece;
-        --vscode-textBlockQuote-background: #f8f8f8;
-        --vscode-editorInfo-foreground: #1a85ff;
-        --vscode-inputValidation-infoBackground: #d6ecf2;
-        --vscode-inputValidation-infoBorder: #007acc;
-        --vscode-inputValidation-warningBackground: #f6f5d2;
-        --vscode-inputValidation-warningBorder: #b89500;
-        --vscode-inputValidation-errorBackground: #f2dede;
-        --vscode-inputValidation-errorBorder: #be1100;
-        --vscode-charts-blue: #1a85ff;
-        --vscode-charts-green: #388a34;
-        --vscode-charts-purple: #652d90;
-        --vscode-charts-red: #e51400;
-        --vscode-charts-yellow: #bf8803;
-        --vscode-terminal-ansiCyan: #0598bc;
-    }
-}
-`;
+/**
+ * Controls the desktop app cannot act on yet. They are rendered by the shared
+ * webview bundles, so the only host-side way to avoid a dead control is to hide
+ * it. The list is the 'hidden' entries of unsupportedWebviewCommands.json, which
+ * scripts/validate-desktop-contract.js checks against the views' messages and
+ * registerIpcHandlers — remove an entry there when its message gets a handler.
+ */
+const HIDDEN_CONTROL_SELECTORS: string[] = [...new Set(Object.values(unsupportedWebviewCommands.commands)
+    .flatMap(entry => (entry as { hiddenBy?: string[] }).hiddenBy ?? []))];
 
 const BASE_BODY_STYLE = `
 body {
@@ -243,34 +157,7 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 13px;
 }
-/* Controls the desktop app cannot act on yet. They are rendered by the shared
-   webview bundles, so the only host-side way to avoid a dead control is to hide
-   it. Remove a selector here when its message gets a handler in registerIpcHandlers. */
-/* Efficiency: the Value tab's "Connect GitHub and open Repository PRs" hint and its
-   button — the whole hint, since this host has no GitHub sign-in or PR loader. */
-.value-hint,
-/* Diagnostics: formatted-file viewer, editor-path reporting, GitHub sign-in,
-   backend/team-server setup, VS Code settings, folder analysis, cache reset,
-   social sharing. */
-.view-formatted-link,
-.report-editor-link,
-#btn-authenticate-github,
-#btn-sign-out-github,
-#btn-team-server-auth-warning,
-#btn-configure-backend,
-#btn-configure-backend-team,
-#btn-open-settings,
-#btn-open-display-settings,
-#btn-open-tool-families-settings,
-#btn-browse-folder,
-#btn-analyze-folder,
-#btn-clear-cache,
-#btn-clear-cache-tab,
-#btn-reset-insights,
-#btn-reset-insights-tab,
-#btn-reset-discovered-editors,
-#btn-reset-debug-counters,
-.share-btn { display: none !important; }
+${HIDDEN_CONTROL_SELECTORS.length > 0 ? `${HIDDEN_CONTROL_SELECTORS.join(',\n')} { display: none !important; }` : ''}
 `;
 
 // ---------------------------------------------------------------------------
@@ -879,7 +766,7 @@ async function buildPanelHtml(panel: PanelId): Promise<string> {
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' app://panel; script-src 'nonce-${nonce}' app://static; img-src data: app://static blob:; font-src app://panel data:;" />
     <link id="vscode-codicon-stylesheet" rel="stylesheet" href="app://panel/${PANEL_ASSET_PREFIX}codicons/codicon.css" />
     <title>${title}</title>
-    <style>${VSCODE_DARK_VARS}${VSCODE_LIGHT_VARS}${BASE_BODY_STYLE}</style>
+    <style>${VSCODE_THEME_VARS}${BASE_BODY_STYLE}</style>
 </head>
 <body>
     <div id="root"></div>
@@ -916,7 +803,7 @@ function buildLoadingHtml(): string {
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data:;" />
     <title>AI Engineering Fluency — Loading</title>
     <style>
-${VSCODE_DARK_VARS}${VSCODE_LIGHT_VARS}
+${VSCODE_THEME_VARS}
 ${getLoadingHtmlCssBase()}
 ${getLoadingHtmlCssSteps()}
     </style>
@@ -935,7 +822,7 @@ function buildErrorHtml(panel: string, err: unknown): string {
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';" />
     <title>Error</title>
     <style>
-        ${VSCODE_DARK_VARS}${VSCODE_LIGHT_VARS}
+        ${VSCODE_THEME_VARS}
         body { margin: 0; padding: 24px; background: var(--vscode-editor-background);
                color: var(--vscode-editor-foreground); font-family: -apple-system, 'Segoe UI', sans-serif; }
         h2 { font-weight: 400; color: var(--vscode-errorForeground); }
@@ -1290,9 +1177,6 @@ function registerIpcHandlers(): void {
                 showPanel('fluency-level-viewer');
                 break;
 
-            case 'saveSortSettings':
-                // Persist sort preferences — stored in memory for now
-                break;
 
             case 'openFile':
                 if (typeof message.path === 'string' && message.path) {

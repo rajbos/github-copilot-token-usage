@@ -59,6 +59,7 @@ Run `ls -a` (or `git ls-files | cut -d/ -f1 | sort -u`) for the live top level.
 | `visualstudio-extension/` | `.github/instructions/visualstudio-extension.instructions.md` |
 | `jetbrains-plugin/` | `.github/instructions/jetbrains-plugin.instructions.md` |
 | `sharing-server/` | [sharing-server/AGENTS.md](sharing-server/AGENTS.md), `.github/instructions/sharing-server.instructions.md` |
+| `desktop/` | [desktop/README.md](desktop/README.md); checks in [docs/VALIDATION.md](docs/VALIDATION.md#desktop-app) |
 | `.github/workflows/` | `.github/instructions/workflows.instructions.md` |
 
 All sharing-server coding, testing, documentation and downstream customization

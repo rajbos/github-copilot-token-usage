@@ -61,6 +61,25 @@ test('collectPostedCommands: treats `type` as a message name too', () => {
 	assert.ok(contract.collectPostedCommands([file]).has('testResult'));
 });
 
+test('collectPostedCommands: sees literals wrapped in parentheses, casts and satisfies', () => {
+	// The wrapper changes nothing about the message that is posted; skipping it
+	// would let a new command bypass the contract.
+	const file = fixture(`
+		type Msg = { command: string };
+		declare const vscode: any;
+		vscode.postMessage(({ command: 'parenthesized' }));
+		vscode.postMessage({ command: 'castObject' } as Msg);
+		vscode.postMessage(<Msg>{ command: 'angleCast' });
+		vscode.postMessage({ command: 'satisfiesObject' } satisfies Msg);
+		vscode.postMessage({ command: 'constValue' as const });
+		vscode.postMessage({ command: ('parenthesizedValue') });
+	`);
+	assert.deepEqual(
+		[...contract.collectPostedCommands([file]).keys()].sort(),
+		['angleCast', 'castObject', 'constValue', 'parenthesized', 'parenthesizedValue', 'satisfiesObject'],
+	);
+});
+
 test('collectPostedCommands: ignores a command name it cannot resolve statically', () => {
 	// A runtime-computed name is the interaction smoke test's job, not this one's;
 	// guessing here would produce findings nobody can act on.

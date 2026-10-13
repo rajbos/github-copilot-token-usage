@@ -136,3 +136,22 @@ pnpm run check-types
 The authoritative build gate remains `pnpm run build` (esbuild, which follows only
 the real import graph). `check-types` is the stricter companion that also reports
 type errors in every file it touches.
+
+## Staying in sync with the extension
+
+The views are the extension's, but the host code around them (message handlers,
+theme tokens, which views exist) is this app's own. `pnpm run check` runs the
+type-check plus two checks that fail when that host code falls behind the
+extension; the `desktop-build` workflow runs them on every PR that touches
+`desktop/`, `src/`, `cli/` or the extension's sources.
+
+- `pnpm run check:contract` — every message a bundled view can post is handled in
+  `registerIpcHandlers` or listed in
+  [`src/unsupportedWebviewCommands.json`](src/unsupportedWebviewCommands.json).
+  Hiding a control is done there (status `hidden` plus its selectors), not in
+  `main.ts`. When you add a handler, remove the command's entry.
+- `pnpm run check:shell` — the `--vscode-*` theme tokens come from the
+  visual-view-diff harness's `lib/theme-*.css`; add a missing token there.
+- `pnpm run check:views` — reports extension views this app does not ship yet.
+
+Details: [docs/VALIDATION.md](../docs/VALIDATION.md#desktop-app).
