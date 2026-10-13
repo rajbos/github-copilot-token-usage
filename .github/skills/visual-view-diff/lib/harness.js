@@ -138,6 +138,21 @@ function loadFixture(fixturePath, repoRoot) {
 	return resolve(raw);
 }
 
+/**
+ * The colour schemes the harness can render. `kind` is what VS Code puts on
+ * `<body data-vscode-theme-kind>` / class and what `shared/theme.css` keys its
+ * light and high-contrast rules on; `overlay` is an extra token file layered
+ * over the `base` token file (high contrast only changes a handful of tokens).
+ * `dark` and `light` are the default pair CI renders; `hc` and `hc-light` are
+ * opt-in (`--theme hc`, `--theme all`).
+ */
+const THEMES = {
+	dark: { base: 'dark', kind: 'vscode-dark', colorScheme: 'dark' },
+	light: { base: 'light', kind: 'vscode-light', colorScheme: 'light' },
+	hc: { base: 'dark', kind: 'vscode-high-contrast', colorScheme: 'dark', overlay: 'theme-hc.css' },
+	'hc-light': { base: 'light', kind: 'vscode-high-contrast-light', colorScheme: 'light', overlay: 'theme-hc-light.css' },
+};
+
 /** Escapes `<` so an embedded JSON payload can never close the script tag. */
 function toScriptJson(value) {
 	return JSON.stringify(value).replace(/</g, '\\u003c');
@@ -159,20 +174,24 @@ function readJsonConfigGlobals(repoRoot) {
  * @param {object} options
  * @param {string} options.globalName   e.g. `__INITIAL_DETAILS__`
  * @param {unknown} options.fixture     the view's initial data payload
- * @param {'dark'|'light'} options.theme
+ * @param {'dark'|'light'|'hc'|'hc-light'} options.theme
  * @param {string} options.bundlePath   absolute path to `dist/webview/<view>.js`
  * @param {string} options.repoRoot
  * @param {object} [options.extraGlobals]  additional window globals supplied by the panel shell
  * @returns {string} the full HTML document
  */
 function buildPageHtml({ globalName, fixture, theme, bundlePath, repoRoot, extraGlobals = {} }) {
-	// The theme names a CSS file next to this one; refuse anything else so a
-	// caller cannot turn it into a path.
-	if (theme !== 'dark' && theme !== 'light') {
-		throw new Error(`theme must be 'dark' or 'light', got ${JSON.stringify(theme)}`);
+	// The theme names CSS files next to this one; accept only the exact ids in
+	// THEMES (own keys, so `__proto__` and friends do not pass) so a caller
+	// cannot turn it into a path.
+	const def = Object.prototype.hasOwnProperty.call(THEMES, theme) ? THEMES[theme] : null;
+	if (!def) {
+		throw new Error(`theme must be one of ${Object.keys(THEMES).join(', ')}, got ${JSON.stringify(theme)}`);
 	}
-	const themeCss = fs.readFileSync(path.join(__dirname, `theme-${theme}.css`), 'utf8');
-	const themeKind = theme === 'light' ? 'vscode-light' : 'vscode-dark';
+	const readTheme = (name) => fs.readFileSync(path.join(__dirname, name), 'utf8');
+	const themeCss = readTheme(`theme-${def.base}.css`) + (def.overlay ? `
+${readTheme(def.overlay)}` : '');
+	const themeKind = def.kind;
 	const codiconCss = path.join(path.dirname(bundlePath), 'codicons', 'codicon.css');
 	const codiconTag = fs.existsSync(codiconCss)
 		? `<link rel="stylesheet" href="${pathToFileUrl(codiconCss)}" />`
@@ -249,6 +268,7 @@ module.exports = {
 	REPO_ROOT,
 	EXTENSION_DIR,
 	WEBVIEW_DIST,
+	THEMES,
 	buildPageHtml,
 	loadFixture,
 	anchorFor,

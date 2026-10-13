@@ -1,0 +1,65 @@
+/*
+ * VS Code "Light High Contrast" overlay for the headless webview harness.
+ * Layered AFTER theme-light.css (see THEMES in harness.js).
+ * Every themeable token from theme-dark.css / theme-light.css is listed (fonts
+ * are not theme colours), so nothing is inherited from the Modern theme by
+ * accident. Values come from the `hcLight` entries of VS Code's colour registry
+ * (src/vs/platform/theme/common/colors/*.ts, terminalColorRegistry.ts), audited
+ * against main on 2026-10-11. `initial` = the registry default is null for this
+ * theme, i.e. VS Code defines no value, so `var()` uses its fallback.
+ */
+:root {
+	--vscode-foreground: #292929;
+	--vscode-editor-background: #ffffff;
+	--vscode-editor-foreground: #292929;
+	--vscode-descriptionForeground: #292929b3;
+	--vscode-disabledForeground: #7f7f7f;
+	--vscode-errorForeground: #b5200d;
+	--vscode-icon-foreground: #292929;
+	--vscode-sideBar-background: #ffffff;
+	--vscode-editorWidget-background: #ffffff;
+	--vscode-panel-border: #0f4a85;
+	--vscode-widget-border: #0f4a85;
+	--vscode-focusBorder: #006bbd;
+	--vscode-contrastBorder: #0f4a85;
+	--vscode-button-background: #0f4a85;
+	--vscode-button-foreground: #ffffff;
+	--vscode-button-hoverBackground: #0f4a85;
+	--vscode-button-border: #0f4a85;
+	--vscode-button-separator: #0f4a85;
+	--vscode-button-secondaryBackground: #ffffff;
+	--vscode-button-secondaryForeground: #292929;
+	--vscode-button-secondaryHoverBackground: initial;
+	--vscode-input-background: #ffffff;
+	--vscode-input-foreground: #292929;
+	--vscode-input-border: #0f4a85;
+	--vscode-dropdown-background: #ffffff;
+	--vscode-dropdown-foreground: #292929;
+	--vscode-badge-background: #0f4a85;
+	--vscode-badge-foreground: #ffffff;
+	--vscode-activityBarBadge-background: #0f4a85;
+	--vscode-activityBarBadge-foreground: #ffffff;
+	--vscode-list-hoverBackground: #0f4a851a;
+	--vscode-list-activeSelectionBackground: #0f4a851a;
+	--vscode-list-activeSelectionForeground: initial;
+	--vscode-list-inactiveSelectionBackground: #0f4a851a;
+	--vscode-textLink-foreground: #0f4a85;
+	--vscode-textLink-activeForeground: #0f4a85;
+	--vscode-textBlockQuote-background: #f2f2f2;
+	--vscode-toolbar-hoverBackground: initial;
+	--vscode-toolbar-activeBackground: initial;
+	--vscode-editorWarning-foreground: #895503;
+	--vscode-editorInfo-foreground: #0063d3;
+	--vscode-inputValidation-infoBackground: #ffffff;
+	--vscode-inputValidation-infoBorder: #0f4a85;
+	--vscode-inputValidation-warningBackground: #ffffff;
+	--vscode-inputValidation-warningBorder: #0f4a85;
+	--vscode-charts-blue: #0063d3;
+	--vscode-charts-green: #374e06;
+	--vscode-charts-orange: initial;
+	--vscode-charts-purple: #652d90;
+	--vscode-charts-red: #b5200d;
+	--vscode-charts-yellow: #895503;
+	--vscode-terminal-ansiCyan: #0598bc;
+	--vscode-terminal-ansiGreen: #136c13;
+}

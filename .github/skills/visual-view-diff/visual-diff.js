@@ -6,7 +6,7 @@
  * the working tree, renders both, and reports which views changed.
  *
  * Usage:
- *   node visual-diff.js [--base <ref>] [--out <dir>] [--theme dark|light|both] [--view <id>]
+ *   node visual-diff.js [--base <ref>] [--out <dir>] [--theme dark|light|hc|hc-light|both|all] [--view <id>]
  *                       [--concurrency <n>]
  *
  * Both sides are built first, then rendered at the same time, each with

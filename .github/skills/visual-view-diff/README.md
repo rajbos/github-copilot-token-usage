@@ -65,7 +65,7 @@ Ask Copilot something like:
 ## Notes
 
 - Does **not** launch VS Code or the Extension Development Host, per the
-  "Never Launch a Real Editor/IDE Instance" rule in `.github/copilot-instructions.md`.
+  "Never Launch a Real Editor/IDE Instance" rule in `AGENTS.md`.
 - Fixtures use fixed timestamps and synthetic values so unchanged code always
   produces identical screenshots.
 - The Team Dashboard fixture supplies synthetic Azure rollups and a Team Server

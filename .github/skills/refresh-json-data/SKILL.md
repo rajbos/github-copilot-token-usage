@@ -138,7 +138,7 @@ Before updating these files, ensure you have:
 
 Validate JSON syntax, run `pnpm run compile && pnpm run test:node` (do not
 launch VS Code or the Extension Development Host — that is a manual,
-human-only debugging step; see `.github/copilot-instructions.md`), review
+human-only debugging step; see `AGENTS.md`), review
 with `git diff`, then commit/push as usual.
 
 ## Important Notes

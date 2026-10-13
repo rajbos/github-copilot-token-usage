@@ -177,7 +177,7 @@ const UI_STRING_SCANNED_FILES = [
 	'docs/USAGE-ANALYSIS.md',
 	'docs/specs/backend.md',
 	'docs/features/FLUENCY-LEVEL-VIEWER-TEST-PLAN.md',
-	'docs/adr/LIGHT-THEME-SUPPORT.md',
+	'docs/adr/history/LIGHT-THEME-SUPPORT.md',
 	'.claude/skills/azure-storage-loader/SKILL.md',
 	'.github/skills/azure-storage-loader/SKILL.md',
 	'visualstudio-extension/DEBUGGING-GUIDE.md',

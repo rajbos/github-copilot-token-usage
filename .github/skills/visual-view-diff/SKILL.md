@@ -32,7 +32,7 @@ views it expects to change.
 ## Why this exists (and why it does not open VS Code)
 
 The repo forbids agents from launching a real editor window — see
-"Never Launch a Real Editor/IDE Instance" in `.github/copilot-instructions.md`.
+"Never Launch a Real Editor/IDE Instance" in `AGENTS.md`.
 That rules out the Extension Development Host, and with it the existing
 `aiEngineeringFluency.runLocalViewRegression` command, which only a human can
 run and which checks DOM *metrics* (node counts, text length) rather than
@@ -75,6 +75,8 @@ builds, renders, compare) and writes the same table to
 # Compare against something else, or render both themes
 node .github/skills/visual-view-diff/visual-diff.js --base origin/main --theme both
 node .github/skills/visual-view-diff/visual-diff.js --view details,chart
+# Include the high-contrast variants (opt-in; CI stays on dark + light)
+node .github/skills/visual-view-diff/visual-diff.js --theme all
 # Fewer pages at once, e.g. on a small machine or to rule out load-related noise
 node .github/skills/visual-view-diff/visual-diff.js --concurrency 1
 ```
@@ -88,6 +90,14 @@ visual-output/
 ├── diff/       <view>.<theme>.diff.png, report.md, report.json
 └── timings.md  — how long each phase took
 ```
+
+Themes: `dark` (default), `light`, `hc` (Dark High Contrast), `hc-light`
+(Light High Contrast); `both` = dark + light, `all` = all four. Each theme sets
+`body[data-vscode-theme-kind]` / class and the `--vscode-*` tokens, so
+`shared/theme.css`'s light and high-contrast rules apply exactly as in VS Code.
+High contrast is **opt-in** because it doubles the render count again; use it
+after touching `theme.css` or any colour in a stylesheet. The PR comment
+publisher only knows dark and light, so CI keeps `--theme both`.
 
 A view rendered in one of its declared states (a tab, a mode) is named
 `<view>--<state>.<theme>.png`, e.g. `usage--tools.dark.png`.
@@ -251,9 +261,12 @@ as a restyled badge that moves fewer than 200 pixels.
 
 - **Not a substitute for looking at the real extension.** The harness supplies
   VS Code's theme tokens from `lib/theme-dark.css` / `lib/theme-light.css`,
-  which track Dark Modern and Light Modern. A user's custom theme, high-contrast
-  mode, or a token these files do not define will look different in practice.
-  When a webview starts using a new `--vscode-*` token, add it to both files.
+  which track Dark Modern and Light Modern; `--theme hc` / `hc-light` layer
+  `lib/theme-hc.css` / `lib/theme-hc-light.css` over them (only the tokens high
+  contrast changes). A user's custom theme, or a token these files do not
+  define, will look different in practice. When a webview starts using a new
+  `--vscode-*` token, add it to both base files (and the overlays if high
+  contrast changes it).
 - **Fixtures are hand-authored**, so they can drift from the real payload shape.
   Drift shows up as a render error or a visibly wrong view, not as a silent pass.
 - **Only declared states are covered** — each view is screenshotted in its

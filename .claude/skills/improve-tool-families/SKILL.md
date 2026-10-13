@@ -1,6 +1,6 @@
 ---
 name: improve-tool-families
-description: Analyze coverage of the vscode-extension's tool-family definitions (DEFAULT_TOOL_FAMILIES in vscode-extension/src/toolFamilies.ts) against the canonical tool-name list in src/toolNames.json and/or a live agent tool list, and suggest which family missing tool names likely belong to. Use when the Tool Output Token Analysis tab shows too many tools bucketed under "Other Tools", after adding a new editor adapter, after a new agent/CLI's tool list grows, or when asked to improve/expand the preconfigured tool families.
+description: Analyze coverage of the vscode-extension's tool-family definitions (DEFAULT_TOOL_FAMILIES in src/toolFamilies.ts) against the canonical tool-name list in src/toolNames.json and/or a live agent tool list, and suggest which family missing tool names likely belong to. Use when the Tool Output Token Analysis tab shows too many tools bucketed under "Other Tools", after adding a new editor adapter, after a new agent/CLI's tool list grows, or when asked to improve/expand the preconfigured tool families.
 ---
 
 # Improve Tool Families Skill
@@ -10,7 +10,7 @@ calls into **families** (File Reading, File Writing, Search & Discovery,
 Shell / Terminal, Code Intelligence, Web & Research, ...) so a "built-in"
 tool's token efficiency can be compared against "alternative" tools that do
 the same job. That grouping comes from `DEFAULT_TOOL_FAMILIES` in
-`vscode-extension/src/toolFamilies.ts`, merged with any user overrides in the
+`src/toolFamilies.ts`, merged with any user overrides in the
 `aiEngineeringFluency.toolFamilies` VS Code setting.
 
 **The matching is an exact string match** against the raw tool name recorded
@@ -27,7 +27,7 @@ bucket instead of being compared.
 1. Loads the canonical set of known tool names from `src/toolNames.json`
    (the cross-editor tool-name → friendly-name map used elsewhere in the
    repo) and/or an ad-hoc list passed via `--tools`.
-2. Parses `DEFAULT_TOOL_FAMILIES` out of `vscode-extension/src/toolFamilies.ts`
+2. Parses `DEFAULT_TOOL_FAMILIES` out of `src/toolFamilies.ts`
    (no build step needed).
 3. Reports which candidate tool names are **not yet covered** by any
    family's `builtIn`/`alternatives` arrays.
@@ -80,7 +80,7 @@ node .github/skills/improve-tool-families/analyze-tool-families.js --json
    - Is it **not actually comparable** (e.g. issue/PR/notebook management
      tools, orchestration tools like `task`/`write_agent`) → leave it out;
      not every tool needs a family.
-3. Edit `vscode-extension/src/toolFamilies.ts` (`DEFAULT_TOOL_FAMILIES`).
+3. Edit `src/toolFamilies.ts` (`DEFAULT_TOOL_FAMILIES`).
 4. Verify with `cd vscode-extension && pnpm run validate` (tsc + eslint +
    esbuild).
 5. Re-run this script to confirm the previously-uncovered names are now
@@ -88,8 +88,9 @@ node .github/skills/improve-tool-families/analyze-tool-families.js --json
 
 ## Related files
 
-- `vscode-extension/src/toolFamilies.ts` — `DEFAULT_TOOL_FAMILIES`,
-  `mergeToolFamilies`, `getToolFamilies` (source of truth for family data)
+- `src/toolFamilies.ts` — `DEFAULT_TOOL_FAMILIES`,
+  `mergeToolFamilies` (source of truth for family data; the VS Code
+  settings lookup `getToolFamilies` is in `vscode-extension/src/toolFamilies.ts`)
 - `vscode-extension/package.json` — JSON schema for the
   `aiEngineeringFluency.toolFamilies` override setting
 - `vscode-extension/src/webview/diagnostics/main.ts` —

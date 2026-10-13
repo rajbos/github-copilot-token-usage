@@ -29,14 +29,14 @@ import {
     calculateMaturityScores,
     getFluencyLevelData,
 } from '../../src/maturityScoring';
-import { getToolFamilies } from '../../vscode-extension/src/toolFamilies';
+import { mergeToolFamilies } from '../../src/toolFamilies';
 import {
     getLoadingHtmlCssBase,
     getLoadingHtmlCssSteps,
     getLoadingHtmlBody,
-} from '../../vscode-extension/src/loadingHtml';
+} from '../../src/loadingHtml';
 import { detectEditorSource } from '../../src/workspaceHelpers';
-import { getEditorIconByName } from '../../vscode-extension/src/editorIcons';
+import { getEditorIconByName } from '../../src/editorIcons';
 import { buildWebviewLocalization } from '../../vscode-extension/src/webviewLocalization';
 import { createTranslator, resolvedLocale } from '../../vscode-extension/src/l10nCore';
 
@@ -827,7 +827,7 @@ async function buildPanelHtml(panel: PanelId): Promise<string> {
                 return { file: f, size: 0, modified: new Date().toISOString() };
             }
         }));
-        const toolFamilies = getToolFamilies();
+        const toolFamilies = mergeToolFamilies([]);
         const detailedSessionFiles = await buildDetailedSessionFiles(sessionFiles);
         if (detailedSessionFiles.length === 0) {
             // The shared view reads an empty initial list as "still loading" and
@@ -908,7 +908,7 @@ function getLoadingIconDataUri(): string | undefined {
 
 /**
  * The extension's animated "Building Activity Index" loading screen, reused via
- * the shared vscode-extension/src/loadingHtml.ts module. Progress messages are
+ * the shared src/loadingHtml.ts module. Progress messages are
  * sent over the 'loading-message' IPC channel and bridged to window messages by
  * the preload, so the shared script works exactly as it does in VS Code.
  */

@@ -6,7 +6,7 @@
  * one for its initial render and one per declared `state` (a tab, a mode).
  *
  * Usage:
- *   node render-views.js --out <dir> [--view <id>] [--theme dark|light|both]
+ *   node render-views.js --out <dir> [--view <id>] [--theme dark|light|hc|hc-light|both|all]
  *                        [--dist <dir>] [--repo-root <dir>] [--allow-missing]
  *                        [--config <views.config.json>] [--concurrency <n>]
  *
@@ -49,6 +49,7 @@ const {
 	loadFixture,
 	anchorFor,
 	resolveInside,
+	THEMES,
 } = require('./lib/harness');
 const { blockNetwork, loadChromium } = require('./lib/browser');
 const { parseArgs, parseThemes, readConfig, selectViews } = require('./lib/config');
@@ -158,7 +159,7 @@ async function renderView({ browser, view, state, theme, outDir, tmpDir, default
 		// Pinned so a date/number rendered by the view is stable between runs.
 		locale: 'en-US',
 		timezoneId: 'UTC',
-		colorScheme: theme,
+		colorScheme: THEMES[theme].colorScheme,
 		reducedMotion: 'reduce',
 	});
 
