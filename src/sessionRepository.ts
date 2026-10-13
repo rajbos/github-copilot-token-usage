@@ -158,6 +158,33 @@ export function repositoryFromEcosystemMeta(meta: { repository?: string; workspa
 	return meta.workspacePath ? getRepoNameFromWorkspacePath(meta.workspacePath) : undefined;
 }
 
+/**
+ * Lookups shared by the sessions of one walk. Thousands of historical sessions usually belong
+ * to a handful of workspaces, so without it every session re-reads its workspaceStorage
+ * `workspace.json` and re-scans the same folder's `.git` ancestors. Create one per walk (not per
+ * process), so a long-lived host still sees a changed remote on its next walk.
+ */
+export interface SessionAttributesCache {
+	/** workspaceStorage id → workspace folder, as resolveWorkspaceFolderWithFallback() caches it. */
+	readonly workspaceFolders: Map<string, string | undefined>;
+	/** Workspace folder → its repository remote; a promise, so concurrent sessions share one lookup. */
+	readonly folderRemotes: Map<string, Promise<string | undefined>>;
+}
+
+export function createSessionAttributesCache(): SessionAttributesCache {
+	return { workspaceFolders: new Map(), folderRemotes: new Map() };
+}
+
+function folderRemote(folder: string, cache: SessionAttributesCache | undefined): Promise<string | undefined> {
+	if (!cache) { return findRepositoryRemoteForFolder(folder); }
+	let remote = cache.folderRemotes.get(folder);
+	if (!remote) {
+		remote = findRepositoryRemoteForFolder(folder);
+		cache.folderRemotes.set(folder, remote);
+	}
+	return remote;
+}
+
 /** What {@link resolveSessionAttributes} found for one session. */
 export interface SessionAttributes {
 	/** The session's git remote; `''` when none was found. */
@@ -177,23 +204,25 @@ export interface SessionAttributes {
  * precedence: the adapter's recorded remote; else the remote of the session's workspace folder;
  * and only when the workspace is unknown, the remote of the files it referenced. One read of
  * the session (one getMeta() call for adapter sessions). Returns `undefined` when the session
- * could not be read (callers should not cache that).
+ * could not be read (callers should not cache that). Pass one {@link SessionAttributesCache}
+ * for a whole walk, so each workspace is resolved once.
  */
-export async function resolveSessionAttributes(ecosystems: IEcosystemAdapter[], sessionFile: string, content?: string): Promise<SessionAttributes | undefined> {
+export async function resolveSessionAttributes(ecosystems: IEcosystemAdapter[], sessionFile: string, content?: string, cache?: SessionAttributesCache): Promise<SessionAttributes | undefined> {
 	try {
 		const eco = ecosystems.find(e => e.handles(sessionFile));
 		if (eco) {
 			const meta = await eco.getMeta(sessionFile);
-			const repository = meta.repository || (meta.workspacePath ? await findRepositoryRemoteForFolder(meta.workspacePath) : undefined);
+			const repository = meta.repository || (meta.workspacePath ? await folderRemote(meta.workspacePath, cache) : undefined);
 			return { repository: repository ?? '', ...(meta.title ? { title: meta.title } : {}) };
 		}
 		const fileContent = content ?? await fs.promises.readFile(sessionFile, 'utf8');
 		const { refs, title } = await scanSessionContent(fileContent, undefined, sessionFile);
 		// workspaceStorage first, then an adapter that discovers this file without handling it
 		// (e.g. a Copilot CLI events.jsonl next to its workspace.yaml) — the extension's order.
-		const workspace = resolveWorkspaceFolderWithFallback(sessionFile, new Map())
+		const workspace = resolveWorkspaceFolderWithFallback(sessionFile, cache?.workspaceFolders ?? new Map())
 			?? await findWorkspacePathForDiscoveredPath(ecosystems, sessionFile);
-		const repository = await extractWorkspaceRepository(refs, workspace);
+		// The same rule as extractWorkspaceRepository(): the workspace's own remote when known.
+		const repository = workspace ? await folderRemote(workspace, cache) : await extractWorkspaceRepository(refs);
 		return { repository: repository ?? '', ...(title ? { title } : {}) };
 	} catch {
 		return undefined;

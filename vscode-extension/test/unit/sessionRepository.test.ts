@@ -6,6 +6,7 @@ import * as path from 'node:path';
 
 import {
 	collectSessionContentReferences,
+	createSessionAttributesCache,
 	extractRepositoryFromSessionContent,
 	extractWorkspaceRepository,
 	repositoryFromEcosystemMeta,
@@ -238,4 +239,23 @@ test('resolveSessionAttributes: a discovered-but-unhandled session uses the adap
 	const attrs = await resolveSessionAttributes([eco], eventsFile, content);
 	assert.equal(attrs?.repository, REMOTE);
 	assert.equal(attrs?.title, 'hello');
+});
+
+test('resolveSessionAttributes: sessions of one walk share one repository lookup per workspace', async () => {
+	// Thousands of historical sessions usually come from a handful of workspaces; each folder's
+	// .git ancestors must be scanned once per walk, not once per session.
+	const file = makeRepoWithFile();
+	const workspace = path.dirname(path.dirname(file));
+	const eco = {
+		handles: (f: string) => f.endsWith('.db#a') || f.endsWith('.db#b'),
+		getMeta: async () => ({ title: undefined, firstInteraction: null, lastInteraction: null, workspacePath: workspace }),
+	} as unknown as IEcosystemAdapter;
+	const cache = createSessionAttributesCache();
+	const [a, b] = await Promise.all([
+		resolveSessionAttributes([eco], 'store.db#a', undefined, cache),
+		resolveSessionAttributes([eco], 'store.db#b', undefined, cache),
+	]);
+	assert.equal(a?.repository, REMOTE);
+	assert.equal(b?.repository, REMOTE);
+	assert.deepEqual([...cache.folderRemotes.keys()], [workspace], 'one shared lookup for the workspace');
 });

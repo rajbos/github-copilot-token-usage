@@ -16,7 +16,7 @@ import type { CustomizationFileEntry, DailyTokenStats, DetailedStats, SessionUsa
 import { analyzeSessionUsage, mergeUsageAnalysis } from '../../src/usageAnalysis';
 import { activeSessionDays, addSessionToDailyStats, sortedDailyStats, sessionLocFromUsageAnalysis } from '../../src/statsHelpers';
 import { resolveSessionTaskAttribution } from '../../src/taskClassification';
-import { resolveSessionAttributes } from '../../src/sessionRepository';
+import { createSessionAttributesCache, resolveSessionAttributes, type SessionAttributesCache } from '../../src/sessionRepository';
 import { addSessionEfficiencyToDailyStats } from '../../src/modelEfficiency';
 import { EFFICIENCY_BEHAVIOR_WEEKS, toEfficiencySessionInput } from '../../src/efficiencyViewBuilder';
 import type { EfficiencySessionInput } from '../../src/efficiencyAnalysis';
@@ -430,7 +430,7 @@ function analyzeSessionUsageShared(
  * Likewise a repository that could not be resolved (unreadable file) is a failure, while a
  * session that names no repository resolves to `''` and is recorded as "Unknown".
  */
-async function sessionViewAttributes(filePath: string, version: SessionVersion | undefined): Promise<Pick<SessionData, 'repository' | 'taskCategory' | 'taskCategoryShares' | 'linesAdded' | 'linesRemoved' | 'languageUsage' | 'usageAnalysis'> | null> {
+async function sessionViewAttributes(filePath: string, version: SessionVersion | undefined, walkCache?: SessionAttributesCache): Promise<Pick<SessionData, 'repository' | 'taskCategory' | 'taskCategoryShares' | 'linesAdded' | 'linesRemoved' | 'languageUsage' | 'usageAnalysis'> | null> {
 	try {
 		// Read a file-based session once and hand the content to both passes; ecosystem
 		// (DB-backed) sessions are read through their adapter instead. A failed read throws
@@ -439,7 +439,7 @@ async function sessionViewAttributes(filePath: string, version: SessionVersion |
 		const content = ecosystems.some(e => e.handles(filePath)) ? undefined : await fs.promises.readFile(filePath, 'utf-8');
 		const [{ analysis, failed }, sessionAttributes] = await Promise.all([
 			analyzeSessionUsageShared(filePath, version, content),
-			resolveSessionAttributes(ecosystems, filePath, content),
+			resolveSessionAttributes(ecosystems, filePath, content, walkCache),
 		]);
 		if (failed || sessionAttributes === undefined) { return null; }
 		const { repository, title } = sessionAttributes;
@@ -488,7 +488,7 @@ function withoutViewAttributes(data: SessionData): SessionData {
  * session would store data parsed from an older version under the newer mtime. A failed
  * analysis is neither marked resolved nor cached, so the next run retries it.
  */
-export async function processSessionFileForViews(filePath: string, verbose = false): Promise<SessionData | null> {
+export async function processSessionFileForViews(filePath: string, verbose = false, walkCache?: SessionAttributesCache): Promise<SessionData | null> {
 	let before: SessionVersion | undefined;
 	try { before = await sessionVersion(filePath, await statSessionFile(filePath)); } catch { /* processSessionFile reports the failure */ }
 	let data = await processSessionFile(filePath, verbose);
@@ -504,7 +504,7 @@ export async function processSessionFileForViews(filePath: string, verbose = fal
 		if (!data) { return data; }
 	}
 	if (data.viewAttributesResolved && data.viewActivityMs === before?.activityMs) { return data; }
-	const attributes = await sessionViewAttributes(filePath, before);
+	const attributes = await sessionViewAttributes(filePath, before, walkCache);
 	const base = withoutViewAttributes(data);
 	if (!attributes) { return base; }
 	const enriched: SessionData = {
@@ -866,7 +866,8 @@ export async function calculateViewStats(sessionFiles: string[], verbose = false
 	let cancelled = false;
 	const isCancelled = () => (cancelled ||= options.isCancelled?.() ?? false);
 	if (isCancelled()) { throw new ViewStatsCancelledError(); }
-	const sessions = await runWithConcurrency(sessionFiles, async (file) => (isCancelled() ? null : processSessionFileForViews(file, verbose)));
+	const walkCache = createSessionAttributesCache();
+	const sessions = await runWithConcurrency(sessionFiles, async (file) => (isCancelled() ? null : processSessionFileForViews(file, verbose, walkCache)));
 	if (isCancelled()) { throw new ViewStatsCancelledError(); }
 	return {
 		dailyStats: dailyStatsFromSessions(sessions),
@@ -906,11 +907,12 @@ export interface DailyStatsOptions {
  * Use {@link calculateViewStats} when the Efficiency inputs are needed too.
  */
 export async function calculateDailyStats(sessionFiles: string[], verbose = false, options: DailyStatsOptions = {}): Promise<DailyTokenStats[]> {
-	return dailyStatsFromSessions(await runWithConcurrency(sessionFiles, async (file) => processSessionFileWithinWindow(file, verbose, options.enrichSince)));
+	const walkCache = createSessionAttributesCache();
+	return dailyStatsFromSessions(await runWithConcurrency(sessionFiles, async (file) => processSessionFileWithinWindow(file, verbose, options.enrichSince, walkCache)));
 }
 
 /** The view parse for a session modified since `enrichSince` (or always, without it), else the lean parse. */
-async function processSessionFileWithinWindow(filePath: string, verbose: boolean, enrichSince: Date | undefined): Promise<SessionData | null> {
+async function processSessionFileWithinWindow(filePath: string, verbose: boolean, enrichSince: Date | undefined, walkCache: SessionAttributesCache): Promise<SessionData | null> {
 	if (enrichSince) {
 		let modified: Date | undefined;
 		try { modified = (await statSessionFile(filePath)).mtime; } catch { /* processSessionFile reports it */ }
@@ -918,7 +920,7 @@ async function processSessionFileWithinWindow(filePath: string, verbose: boolean
 			return processSessionFile(filePath, verbose);
 		}
 	}
-	return processSessionFileForViews(filePath, verbose);
+	return processSessionFileForViews(filePath, verbose, walkCache);
 }
 
 /**
@@ -978,7 +980,8 @@ function dailyStatsFromSessions(sessions: Array<SessionData | null | undefined>)
  * needed too, so the files are walked once.
  */
 export async function calculateEfficiencySessionInputs(sessionFiles: string[], weeksBack = EFFICIENCY_BEHAVIOR_WEEKS): Promise<EfficiencySessionInput[]> {
-	return efficiencyInputsFromSessions(await runWithConcurrency(sessionFiles, async (file) => processSessionFileForViews(file)), weeksBack);
+	const walkCache = createSessionAttributesCache();
+	return efficiencyInputsFromSessions(await runWithConcurrency(sessionFiles, async (file) => processSessionFileForViews(file, false, walkCache)), weeksBack);
 }
 
 function efficiencyInputsFromSessions(sessions: Array<SessionData | null | undefined>, weeksBack: number): EfficiencySessionInput[] {
