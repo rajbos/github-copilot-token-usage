@@ -776,7 +776,7 @@ test('recovered space counts the bulk-deleted and retried worktrees, and resets 
 	assert.ok(harness.window.document.body.textContent?.includes('3.00 MB recovered'), 'a later retry adds its size');
 
 	// A stray delete of a row this run did not delete (e.g. a late event from an earlier run) adds nothing.
-	const stray = 'C:\wt\stray';
+	const stray = 'C:\\wt\\stray';
 	harness.post(row(stray, 5 * 1024 * 1024));
 	harness.post({ command: 'cleanupStarted', total: 1 });
 	harness.post({ command: 'worktreeDeleted', path: stray });
