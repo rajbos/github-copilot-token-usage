@@ -77,6 +77,11 @@ export interface SessionData {
 	 * outdated (see sessionVersion in helpers.ts).
 	 */
 	viewActivityMs?: number;
+	/**
+	 * DB-backed sessions: the session's own last-activity time this base parse (tokens,
+	 * interactions, model usage, day split) was made at; see processSessionFileAtVersion.
+	 */
+	baseActivityMs?: number;
 }
 
 // ── Billing group helpers ────────────────────────────────────────────────────────────────────

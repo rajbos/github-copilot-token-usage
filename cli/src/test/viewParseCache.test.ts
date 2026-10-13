@@ -13,7 +13,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { calculateDailyStats, calculateEfficiencySessionInputs, calculateUsageAnalysisStats, calculateViewStats, processSessionFileForViews, recentAnalysisCutoff, isSessionActiveSince, createSessionActivityLookup, sessionActivityTime, ViewStatsCancelledError, sessionVersion } from '../helpers';
+import { calculateDailyStats, calculateEfficiencySessionInputs, calculateUsageAnalysisStats, calculateViewStats, processSessionFileForViews, recentAnalysisCutoff, isSessionActiveSince, createSessionActivityLookup, sessionActivityTime, ViewStatsCancelledError, sessionVersion, processSessionFileAtVersion } from '../helpers';
 import { getCached } from '../cliCache';
 import { buildClassificationInputFromUsageAnalysis, classifySessionTask } from '../../../src/taskClassification';
 
@@ -240,4 +240,20 @@ test('calculateViewStats stays cancelled once cancellation was seen, even if the
 		calculateViewStats([filePath, missing], false, undefined, { isCancelled: () => ++checks === 2 }),
 		ViewStatsCancelledError,
 	);
+});
+
+test('processSessionFileAtVersion parses once per session activity, never twice on a cold cache', async t => {
+	// A DB-backed session's base cache entry is keyed by the shared database's stat, which a
+	// WAL-only write leaves unchanged; the entry is reused only while its activity still matches.
+	const { filePath, mtimes, reads } = mockSession(t, 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', false);
+	const size = (await fs.promises.stat(filePath)).size;
+	const at = (activityMs: number) => ({ mtimeMs: mtimes[0], size, activityMs });
+	const first = await processSessionFileAtVersion(filePath, false, at(5_000));
+	assert.equal(first?.baseActivityMs, 5_000);
+	assert.equal(reads(), 1, 'a cold cache parses the session once');
+	await processSessionFileAtVersion(filePath, false, at(5_000));
+	assert.equal(reads(), 1, 'the same activity reuses the stamped entry');
+	const later = await processSessionFileAtVersion(filePath, false, at(6_000));
+	assert.equal(later?.baseActivityMs, 6_000);
+	assert.equal(reads(), 2, 'a newer activity (a WAL-only write) re-parses it once');
 });

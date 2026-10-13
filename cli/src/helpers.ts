@@ -491,22 +491,10 @@ function withoutViewAttributes(data: SessionData): SessionData {
 export async function processSessionFileForViews(filePath: string, verbose = false, walkCache?: SessionAttributesCache): Promise<SessionData | null> {
 	let before: SessionVersion | undefined;
 	try { before = await sessionVersion(filePath, await statSessionFile(filePath)); } catch { /* processSessionFile reports the failure */ }
-	// Whether processSessionFile() below will answer from the cache rather than parse afresh.
-	const cachedBase = before ? getCached(filePath, before.mtimeMs, before.size) : null;
-	let data = await processSessionFile(filePath, verbose);
+	// The base parse at this session's own version, so fresh attributes are never merged onto a
+	// base parse left stale by a WAL-only write (see processSessionFileAtVersion).
+	const data = await processSessionFileAtVersion(filePath, verbose, before);
 	if (!data) { return data; }
-	// A DB-backed session's entry is keyed by the shared database's stat, so it is only current
-	// while the session's own activity time still matches what it was derived for (see
-	// sessionVersion). That covers the base parse too: a write still in the WAL leaves the
-	// database stat unchanged, so the cached tokens, interactions, model usage and day split can
-	// be as outdated as the view attributes. Re-parse without reading the cache before enriching,
-	// rather than merging fresh attributes onto a stale parse — but only when the parse came from
-	// the cache: on a cold cache processSessionFile() has just parsed it afresh, and parsing it a
-	// second time would double the cost of a full-history walk for no gain.
-	if (cachedBase && before?.activityMs !== undefined && cachedBase.viewActivityMs !== before.activityMs) {
-		data = await processSessionFileWith(filePath, { verbose, cache: { get: () => null, set: setCached } });
-		if (!data) { return data; }
-	}
 	if (data.viewAttributesResolved && data.viewActivityMs === before?.activityMs) { return data; }
 	const attributes = await sessionViewAttributes(filePath, before, walkCache);
 	const base = withoutViewAttributes(data);
@@ -524,6 +512,27 @@ export async function processSessionFileForViews(filePath: string, verbose = fal
 		// Not cacheable (file vanished): still return the enriched data for this run.
 	}
 	return enriched;
+}
+
+/**
+ * {@link processSessionFile} at a session's {@link SessionVersion}. A regular file's cache entry
+ * is keyed by its own stat, so the normal cached parse is current. A DB-backed session's entry
+ * is keyed by the shared database's stat, which a write still in the WAL leaves unchanged, so
+ * its cached tokens, interactions, model usage and day split can be outdated. Its base parse
+ * therefore records the session activity time it was parsed at (`baseActivityMs`) and is reused
+ * only while that still matches; otherwise (cold, or derived for an older activity) the session
+ * is parsed afresh once — not twice — and stamped. Used by every path that combines the base
+ * parse with fresher, activity-aware data: the view walk and Usage Analysis.
+ */
+export async function processSessionFileAtVersion(filePath: string, verbose: boolean, version: SessionVersion | undefined): Promise<SessionData | null> {
+	if (version?.activityMs === undefined) { return processSessionFile(filePath, verbose); }
+	const cached = getCached(filePath, version.mtimeMs, version.size);
+	if (cached && cached.baseActivityMs === version.activityMs) { return cached; }
+	const fresh = await processSessionFileWith(filePath, { verbose, cache: { get: () => null, set: setCached } });
+	if (!fresh) { return fresh; }
+	const stamped: SessionData = { ...fresh, baseActivityMs: version.activityMs };
+	setCached(filePath, version.mtimeMs, version.size, stamped);
+	return stamped;
 }
 
 /**
@@ -673,13 +682,16 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[], option
 
 			// Shared with the view enrichment, so `cli all` and the desktop Efficiency build do not
 			// analyze each recent session twice.
-			const { analysis } = await analyzeSessionUsageShared(file, await sessionVersion(file, stats, () => activity.lastActivity()));
+			const version = await sessionVersion(file, stats, () => activity.lastActivity());
+			const { analysis } = await analyzeSessionUsageShared(file, version);
 			if (options.includeRepeatedTasks) {
 				await addRepeatedTaskSource(repeatedTaskSources, activity, analysis.firstUserPrompt, stats.mtimeMs, cutoffStart);
 			}
 			// Period stats bucket by the same activity time.
 			let sessionSummary: TodaySessionSummary | undefined;
-			const data = activeAt >= last30DaysStart ? await processSessionFile(file) : undefined;
+			// At the session's own version: a DB-backed session admitted by its fresh adapter
+			// activity must not be summarised from a base parse the WAL has left stale.
+			const data = activeAt >= last30DaysStart ? await processSessionFileAtVersion(file, false, version) : undefined;
 			if (data && data.interactions > 0) {
 				let inputTokens = 0, outputTokens = 0, cachedTokens = 0;
 				for (const usage of Object.values(data.modelUsage)) {
