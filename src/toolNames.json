@@ -1499,4 +1499,6 @@
   ,"com-microsoft-azure-group_resource_list": "Microsoft Azure Group Resource List"
   ,"com-microsoft-azure-monitor": "Microsoft Azure Monitor"
   ,"com-microsoft-azure-subscription_list": "Microsoft Azure Subscription List"
+  ,"get_requirement": "Read Requirement"
+  ,"read_project_file": "Read Project File"
 }
