@@ -1821,6 +1821,31 @@ function applyMemoryFilesAnalysis(sanitized: UsageAnalysisStats, raw: any): void
 	}
 }
 
+// Validated pass-through for missedPotential (array of objects)
+function _applyMissedPotential(sanitized: UsageAnalysisStats, raw: any): void {
+	if (Array.isArray(raw.missedPotential)) {
+		sanitized.missedPotential = raw.missedPotential.filter(
+			(w: any) => w && typeof w === 'object' && typeof w.workspacePath === 'string'
+		) as MissedPotentialWorkspace[];
+	}
+}
+
+// Pass through curationAnalysis (already structured server-side).
+// Normalize required array/object fields so rendering paths don't throw on partial payloads.
+function _applyCurationAnalysis(sanitized: UsageAnalysisStats, raw: any): void {
+	const curationAnalysis = _sanitizeCurationAnalysis(raw.curationAnalysis);
+	if (curationAnalysis) {
+		sanitized.curationAnalysis = curationAnalysis;
+		traceCuration('sanitizeStats.curation.present', {
+			availableTools: curationAnalysis.availableTools.length,
+			unusedTools: curationAnalysis.unusedTools.length,
+			unusedServers: curationAnalysis.underusedMcpServers.filter(s => s && s.usedToolCount === 0).length,
+		});
+	} else {
+		traceCurationOnce('sanitize-no-curation', 'sanitizeStats.curation.missing');
+	}
+}
+
 function sanitizeStats(raw: any): UsageAnalysisStats | null {
 	if (!raw || typeof raw !== 'object') {
 		traceCurationOnce('sanitize-invalid-root', 'sanitizeStats.invalidRoot');
@@ -1854,12 +1879,7 @@ function sanitizeStats(raw: any): UsageAnalysisStats | null {
 			sanitized.customizationMatrix = safeMatrix as WorkspaceCustomizationMatrix;
 		}
 
-		// Validated pass-through for missedPotential (array of objects)
-		if (Array.isArray(raw.missedPotential)) {
-			sanitized.missedPotential = raw.missedPotential.filter(
-				(w: any) => w && typeof w === 'object' && typeof w.workspacePath === 'string'
-			) as MissedPotentialWorkspace[];
-		}
+		_applyMissedPotential(sanitized, raw);
 
 		applySessionSummaries(sanitized, raw);
 
@@ -1870,19 +1890,7 @@ function sanitizeStats(raw: any): UsageAnalysisStats | null {
 
 		sanitizeOptionalReports(sanitized, raw);
 
-		// Pass through curationAnalysis (already structured server-side).
-		// Normalize required array/object fields so rendering paths don't throw on partial payloads.
-		const curationAnalysis = _sanitizeCurationAnalysis(raw.curationAnalysis);
-		if (curationAnalysis) {
-			sanitized.curationAnalysis = curationAnalysis;
-			traceCuration('sanitizeStats.curation.present', {
-				availableTools: curationAnalysis.availableTools.length,
-				unusedTools: curationAnalysis.unusedTools.length,
-				unusedServers: curationAnalysis.underusedMcpServers.filter(s => s && s.usedToolCount === 0).length,
-			});
-		} else {
-			traceCurationOnce('sanitize-no-curation', 'sanitizeStats.curation.missing');
-		}
+		_applyCurationAnalysis(sanitized, raw);
 
 		// Pass through the memory-files hygiene analysis (compact MemoryFilesAnalysisView
 		// rollup: counts/rollup scalars only — no paths and no per-file metadata).
