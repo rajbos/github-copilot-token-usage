@@ -1179,7 +1179,7 @@ export function applyDelta(state: unknown, delta: unknown): unknown {
 	if (!Array.isArray(k) || k.length === 0) { return state; }
 
 	const pathArr = k.map(String);
-	let root: Record<string, unknown> | unknown[] = typeof state === 'object' && state !== null
+	const root: Record<string, unknown> | unknown[] = typeof state === 'object' && state !== null
 		? state as Record<string, unknown> | unknown[] : {};
 	let current: Record<string, unknown> | unknown[] = root;
 

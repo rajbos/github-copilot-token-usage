@@ -268,7 +268,7 @@ When adding or changing runtime localization keys (entries in `vscode-extension/
 
 ## File-size ceiling (`max-lines`)
 
-`vscode-extension/eslint.config.mjs` enforces a `max-lines` ceiling (the threshold and severity live in that file) alongside the per-function complexity rules. Small functions alone don't stop a file from becoming unmanageable, so new code should not push any linted file past the ceiling — split instead. Run `cd vscode-extension && pnpm run lint` to see the current offenders; `vscode-extension/src/extension.ts` is by far the largest offender (other large files, such as the usage webview's `main.ts`, may also show up). Ratchet the threshold down as files shrink; don't raise it to accommodate growth.
+`vscode-extension/eslint.config.mjs` enforces a `max-lines` ceiling (the threshold and severity live in that file) alongside the per-function complexity rules. Small functions alone don't stop a file from becoming unmanageable, so new code should not push any linted file past the ceiling — split instead. Run `cd vscode-extension && pnpm run lint` to see the current offenders; `vscode-extension/src/extension.ts` is by far the largest offender (other large files, such as the usage webview's `main.ts`, may also show up). `max-lines` is an `error`, and a per-file override in that config pins `extension.ts` at its current size, so it cannot grow and no second file can cross the ceiling. Ratchet the threshold (and that pin) down as files shrink; don't raise either to accommodate growth.
 
 ### Where the `extension.ts` decomposition stands
 
