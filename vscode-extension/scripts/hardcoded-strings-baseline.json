@@ -1459,119 +1459,119 @@
       "sample": "Usage Analysis"
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "6fe07953ee87",
       "count": 1,
       "line": 81,
       "sample": "Analyzing Your AI Activity"
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "8bc967f0b6dc",
       "count": 1,
       "line": 82,
       "sample": "Building Activity Index"
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "4f14a9ce00b2",
       "count": 1,
       "line": 83,
       "sample": "Discovering session files..."
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "06a13deeb130",
       "count": 1,
       "line": 88,
       "sample": "– files"
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "d161719382c8",
       "count": 1,
       "line": 95,
       "sample": "session files"
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "1fc1dcbdebdc",
       "count": 1,
       "line": 96,
       "sample": "processed"
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "dc49bf6780d3",
       "count": 1,
       "line": 100,
       "sample": "Discovering session files"
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "00f9aec55195",
       "count": 1,
       "line": 102,
       "sample": "Parsing session logs"
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "cb63f30062a9",
       "count": 1,
       "line": 103,
       "sample": "Computing statistics"
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "b691fa05b45e",
       "count": 1,
       "line": 104,
       "sample": "Ready!"
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "fcb20618ec45",
       "count": 1,
       "line": 138,
       "sample": "(function () {\\n    var t0 ="
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "fb21bad6cee6",
       "count": 1,
       "line": 139,
       "sample": ";\\n    var EDITORS = [];\\n    var editorsSeen = 0, barPct = 0, computing = false"
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "f1037402aec6",
       "count": 1,
       "line": 150,
       "sample": "/g,'&gt;'); }\\n    function setDone(id) {\\n        var el = document.getElementB"
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "29306d6a0fca",
       "count": 1,
       "line": 154,
       "sample": "'; }\\n    }\\n    function setActive(id) {\\n        var el = document.getElementB"
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "a90825c66ef1",
       "count": 1,
       "line": 159,
       "sample": "'; }\\n    }\\n    function setPending(id) {\\n        var el = document.getElement"
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "0b32509472c7",
       "count": 2,
       "line": 234,
       "sample": "' + editor.icon + '"
     },
     {
-      "file": "vscode-extension/src/loadingHtml.ts",
+      "file": "src/loadingHtml.ts",
       "hash": "ae89a9bba207",
       "count": 1,
       "line": 234,
@@ -5260,105 +5260,105 @@
       "sample": "No data available."
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "de4d24650f07",
       "count": 1,
       "line": 60,
       "sample": "Stage"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "bbdbc9c5d420",
       "count": 1,
       "line": 61,
       "sample": "every control observed"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "971bcb6ca104",
       "count": 3,
       "line": 65,
       "sample": "up to Stage"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "645fadfdfb07",
       "count": 1,
       "line": 66,
       "sample": "control(s) not checked"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "1c571447ca67",
       "count": 2,
       "line": 68,
       "sample": "Stage"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "fec1865057f9",
       "count": 2,
       "line": 85,
       "sample": "Detected by pattern matching — a candidate, not a verdict"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "6da9d51f7bf5",
       "count": 2,
       "line": 103,
       "sample": "Missing for Stage"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "cc6a0afa7711",
       "count": 1,
       "line": 115,
       "sample": "Could not check for Stage"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "03e394dbc29c",
       "count": 1,
       "line": 140,
       "sample": "Anti-patterns detected"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "75abe644d409",
       "count": 1,
       "line": 194,
       "sample": "local repository &mdash; no GitHub remote resolved"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "8d4d35e0358e",
       "count": 1,
       "line": 262,
       "sample": "No git repositories were found in this workspace, so there is nothing to assess."
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "ba68eb917183",
       "count": 1,
       "line": 269,
       "sample": "Dark Factory Readiness"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "a0aceac26af3",
       "count": 1,
       "line": 270,
       "sample": "per repository"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "c29c9cf4257c",
       "count": 1,
       "line": 278,
       "sample": "A dark factory is a governed, observable production system &mdash; humans specif"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "281a6ea98299",
       "count": 3,
       "line": 288,

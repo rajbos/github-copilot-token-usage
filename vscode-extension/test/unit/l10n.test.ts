@@ -261,8 +261,8 @@ test('l10n: tool curation UI strings resolve in English and zh-cn', () => {
 });
 
 test('l10n: AI Readiness command and navigation labels resolve in both languages', () => {
-	assert.equal(t('command.showReadiness.title'), 'Show AI Readiness');
-	assert.equal(t('nav.btnReadiness'), 'AI Readiness');
+	assert.equal(t('command.showReadiness.title'), 'Show AI Readiness (Usage Analysis)');
+	assert.equal(t('usage.tab.readiness'), 'AI Readiness');
 	assert.equal(t('readiness.loading'), 'Scanning repository controls…');
 	assert.equal(t('readiness.refreshing'), 'Showing the last scan while a fresh one runs…');
 	assert.equal(t('readiness.scanFailed'), 'Could not scan repository readiness. Check the AI Engineering Fluency output for details, then try Refresh.');
@@ -276,8 +276,8 @@ test('l10n: AI Readiness command and navigation labels resolve in both languages
 	assert.equal(t('whatsNew.feature.usage.group-tabs.description'), "The ten Usage Analysis tabs now sit under four group tabs (Usage, Workspace, GitHub, Coaching), and My Activity is split into Overview, Spend & models and Context bands.");
 	mock.setLanguage('zh-cn');
 	try {
-		assert.equal(t('command.showReadiness.title'), '显示 AI 就绪度');
-		assert.equal(t('nav.btnReadiness'), 'AI 就绪度');
+		assert.equal(t('command.showReadiness.title'), '显示 AI 就绪度（使用分析）');
+		assert.equal(t('usage.tab.readiness'), 'AI 就绪度');
 		assert.equal(t('readiness.loading'), '正在扫描仓库控制措施…');
 		assert.equal(t('readiness.refreshing'), '正在显示上次扫描结果，同时重新扫描…');
 		assert.equal(t('readiness.scanFailed'), '无法扫描仓库就绪度。请查看 AI 工程熟练度输出中的详细信息，然后重试刷新。');
@@ -1974,6 +1974,11 @@ const WORKTREE_CLEANUP_KEYS: Record<string, { en: string; zh: string }> = {
 	'usage.worktreeCleanup.deleting': { en: '⏳ Deleting worktree{0}…', zh: '⏳ 正在删除工作树{0}…' },
 	'usage.worktreeCleanup.deleted': { en: '✅ Deleted', zh: '✅ 已删除' },
 	'usage.worktreeCleanup.deleteFailed': { en: '❌ Delete failed: {0}', zh: '❌ 删除失败：{0}' },
+	'usage.worktreeCleanup.recovered': { en: '{0} recovered', zh: '已回收 {0}' },
+	'usage.worktreeCleanup.copyPrompt': { en: '📋 Copy prompt', zh: '📋 复制提示词' },
+	'usage.worktreeCleanup.copyPromptTitle': { en: 'Copy a starter prompt: open this worktree in VS Code, start a chat session there and paste it to learn what the diff contains', zh: '复制起始提示词：在 VS Code 中打开此工作树，开始聊天会话并粘贴，以了解其中的差异' },
+	'usage.worktreeCleanup.copied': { en: '✅ Copied!', zh: '✅ 已复制！' },
+	'usage.worktreeCleanup.starterPrompt': { en: 'This git worktree (branch "{0}") could not be deleted automatically. Inspect its current state: run git status and git diff against its upstream or base branch, summarize what changed and why, and tell me whether the work is already merged or pushed elsewhere, so I can decide whether it is safe to delete this worktree.', zh: '此 git 工作树（分支“{0}”）无法自动删除。请检查其当前状态：运行 git status，并对比其上游或基础分支运行 git diff，总结改动内容及原因，并告诉我这些工作是否已合并或已推送到别处，以便我判断是否可以安全删除此工作树。' },
 	'usage.worktreeCleanup.unknownError': { en: 'unknown error', zh: '未知错误' },
 	'usage.worktreeCleanup.revealMissing': { en: '"{0}" no longer exists on disk.', zh: '“{0}”在磁盘上已不存在。' },
 };

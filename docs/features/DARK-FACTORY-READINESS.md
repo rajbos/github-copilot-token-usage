@@ -92,7 +92,7 @@ Findings surface the anti-patterns from the research that are actually observabl
 | Scoring — **pure**, no VS Code API and no filesystem access | `src/darkFactoryReadiness.ts` |
 | Filesystem signal collection | `src/darkFactorySignals.ts` |
 | Orchestration (paths → signals → PR join → report) | `vscode-extension/src/darkFactoryService.ts` |
-| Rendering | `vscode-extension/src/webview/usage/main.ts` and the shared renderer `vscode-extension/src/webview/maturity/darkFactorySection.ts` |
+| Rendering | `vscode-extension/src/webview/usage/main.ts` and the shared renderer `vscode-extension/src/webview/usage/darkFactorySection.ts` |
 | Types | `src/types.ts` (`DarkFactory*`) |
 
 ## Cost
