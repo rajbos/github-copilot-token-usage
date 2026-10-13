@@ -491,6 +491,8 @@ function withoutViewAttributes(data: SessionData): SessionData {
 export async function processSessionFileForViews(filePath: string, verbose = false, walkCache?: SessionAttributesCache): Promise<SessionData | null> {
 	let before: SessionVersion | undefined;
 	try { before = await sessionVersion(filePath, await statSessionFile(filePath)); } catch { /* processSessionFile reports the failure */ }
+	// Whether processSessionFile() below will answer from the cache rather than parse afresh.
+	const cachedBase = before ? getCached(filePath, before.mtimeMs, before.size) : null;
 	let data = await processSessionFile(filePath, verbose);
 	if (!data) { return data; }
 	// A DB-backed session's entry is keyed by the shared database's stat, so it is only current
@@ -498,8 +500,10 @@ export async function processSessionFileForViews(filePath: string, verbose = fal
 	// sessionVersion). That covers the base parse too: a write still in the WAL leaves the
 	// database stat unchanged, so the cached tokens, interactions, model usage and day split can
 	// be as outdated as the view attributes. Re-parse without reading the cache before enriching,
-	// rather than merging fresh attributes onto a stale parse.
-	if (before?.activityMs !== undefined && data.viewActivityMs !== before.activityMs) {
+	// rather than merging fresh attributes onto a stale parse — but only when the parse came from
+	// the cache: on a cold cache processSessionFile() has just parsed it afresh, and parsing it a
+	// second time would double the cost of a full-history walk for no gain.
+	if (cachedBase && before?.activityMs !== undefined && cachedBase.viewActivityMs !== before.activityMs) {
 		data = await processSessionFileWith(filePath, { verbose, cache: { get: () => null, set: setCached } });
 		if (!data) { return data; }
 	}
