@@ -1,0 +1,168 @@
+name: Desktop - Build & Validate
+
+# PR check for the Electron desktop app (desktop/). The app has no code of its
+# own for its views: it copies the VS Code extension's webview bundles and
+# imports the CLI's and src/'s stats logic from source. A change in any of
+# those trees can break the desktop app without touching desktop/, so this
+# runs on all of them — before this workflow nothing built the desktop app
+# until a release tag was pushed.
+
+on:
+  push:
+    branches: [main]
+    # Keep in step with the `desktop-relevant` filter in check-changes below: a
+    # path missing here means a push to main touching only it never runs this
+    # workflow at all, and the push short-circuit in that job cannot help.
+    paths:
+      - 'desktop/**'
+      - 'src/**'
+      - 'cli/**'
+      - 'vscode-extension/src/**'
+      - 'vscode-extension/esbuild.js'
+      - 'vscode-extension/package.json'
+      - 'vscode-extension/pnpm-lock.yaml'
+      - 'vscode-extension/pnpm-workspace.yaml'
+      - 'vscode-extension/package.nls*.json'
+      - 'scripts/validate-desktop-contract.js'
+      - 'scripts/validate-webview-contract.js'
+      - 'scripts/validate-webview-shell.js'
+      - '.github/skills/visual-view-diff/lib/theme-*.css'
+      - '.github/skills/sync-host-views/**'
+      - '.github/workflows/desktop-build.yml'
+      - '.nvmrc'
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # Path gate, filtering in a job rather than with a `paths:` trigger so the
+  # build job still reports a (skipped) result on unrelated PRs and can be made
+  # a required check. Same pattern as cli-build.yml.
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      desktop-relevant: ${{ github.event_name == 'push' || steps.filter.outputs.desktop-relevant == 'true' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check for desktop-relevant file changes
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            desktop-relevant:
+              - 'desktop/**'
+              # Shared stats logic and webview helpers, imported from source.
+              - 'src/**'
+              - 'cli/**'
+              # The webview bundles the app copies, plus the extension modules
+              # main.ts imports (loading screen, localization, tool families).
+              - 'vscode-extension/src/**'
+              - 'vscode-extension/esbuild.js'
+              - 'vscode-extension/package.json'
+              - 'vscode-extension/pnpm-lock.yaml'
+              - 'vscode-extension/pnpm-workspace.yaml'
+              - 'vscode-extension/package.nls*.json'
+              # The checks this workflow runs and the theme files main.ts inlines.
+              - 'scripts/validate-desktop-contract.js'
+              - 'scripts/validate-webview-contract.js'
+              - 'scripts/validate-webview-shell.js'
+              - '.github/skills/visual-view-diff/lib/theme-*.css'
+              - '.github/skills/sync-host-views/**'
+              - '.github/workflows/desktop-build.yml'
+              - '.nvmrc'
+
+  build-and-validate:
+    needs: check-changes
+    if: needs.check-changes.outputs.desktop-relevant == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: '11.2.2'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+          cache-dependency-path: |
+            vscode-extension/pnpm-lock.yaml
+            cli/pnpm-lock.yaml
+            desktop/pnpm-lock.yaml
+
+      # The desktop app bundles the extension's webview bundles and imports the
+      # CLI's stats logic from source, so all three packages need dependencies.
+      # --ignore-scripts also skips Electron's binary download, which neither
+      # the type-check nor the esbuild build needs.
+      - name: Install extension dependencies
+        working-directory: vscode-extension
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install CLI dependencies
+        working-directory: cli
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Type-check desktop app
+        working-directory: desktop
+        run: pnpm run check-types
+
+      # Every message a bundled view can post is handled in desktop/src/main.ts
+      # or listed in desktop/src/unsupportedWebviewCommands.json.
+      - name: Validate desktop webview message contract
+        working-directory: desktop
+        run: pnpm run check:contract
+
+      # Every --vscode-* token the views use is defined, and the codicon font
+      # is shipped and linked.
+      - name: Validate webview page shell
+        working-directory: desktop
+        run: pnpm run check:shell
+
+      - name: Build extension webview bundles
+        working-directory: vscode-extension
+        # Production (minified), as desktop-publish.yml does: build:production
+        # below copies these bundles into the app as they are.
+        run: node esbuild.js --production
+
+      - name: Build desktop app
+        working-directory: desktop
+        run: pnpm run build:production
+
+      - name: Verify build output
+        working-directory: desktop
+        run: |
+          node -e '
+            const fs = require("fs");
+            const { readDesktopViews } = require("../scripts/validate-desktop-contract.js");
+            const expected = ["dist/main.js", "dist/preload.js", "dist/webview/codicons/codicon.css", "dist/webview/codicons/codicon.ttf",
+              ...readDesktopViews().map((v) => "dist/webview/" + v + ".js")];
+            const missing = expected.filter((f) => !fs.existsSync(f));
+            if (missing.length) { console.error("Missing from the desktop build:", missing.join(", ")); process.exit(1); }
+            console.log("Desktop build contains all " + expected.length + " expected files.");
+          '
+
+      # Informational: views the extension has that the desktop (or another
+      # host) does not ship are a product decision, not a build failure.
+      - name: Report host view sync (informational)
+        run: node .github/skills/sync-host-views/sync-host-views.js || true

@@ -31,7 +31,8 @@ async function main() {
       path.join(__dirname, '..', 'cli', 'node_modules'),
       path.join(__dirname, '..', 'vscode-extension', 'node_modules'),
     ],
-    loader: { '.json': 'json' },
+    // .css is inlined as text: the --vscode-* theme tokens main.ts injects into each page.
+    loader: { '.json': 'json', '.css': 'text' },
     banner: { js: 'var __importMetaUrl = require("url").pathToFileURL(__filename).href;' },
     define: { 'import.meta.url': '__importMetaUrl' },
     logLevel: 'info',
