@@ -3333,7 +3333,7 @@ function usageTabStripInput(stats: UsageAnalysisStats): UsageTabStripInput {
 		activeTab,
 		newInsightCount: (stats.insights ?? []).filter(i => i.status === 'new').length,
 		correctionSessionCount: stats.correctionReport?.sessionsWithMoments ?? 0,
-		readinessButtonHtml: darkFactoryTab.button(activeTab),
+		readinessAvailable: darkFactoryTab.isAvailable(),
 	};
 }
 

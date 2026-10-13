@@ -5,7 +5,7 @@
   "nav.btnUsage",
   "nav.btnDiagnostics",
   "nav.btnMaturity",
-  "nav.btnReadiness",
+  "usage.tab.readiness",
   "readiness.loading",
   "readiness.refreshing",
   "readiness.scanFailed",

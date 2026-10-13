@@ -261,8 +261,8 @@ test('l10n: tool curation UI strings resolve in English and zh-cn', () => {
 });
 
 test('l10n: AI Readiness command and navigation labels resolve in both languages', () => {
-	assert.equal(t('command.showReadiness.title'), 'Show AI Readiness');
-	assert.equal(t('nav.btnReadiness'), 'AI Readiness');
+	assert.equal(t('command.showReadiness.title'), 'Show AI Readiness (Usage Analysis)');
+	assert.equal(t('usage.tab.readiness'), 'AI Readiness');
 	assert.equal(t('readiness.loading'), 'Scanning repository controls…');
 	assert.equal(t('readiness.refreshing'), 'Showing the last scan while a fresh one runs…');
 	assert.equal(t('readiness.scanFailed'), 'Could not scan repository readiness. Check the AI Engineering Fluency output for details, then try Refresh.');
@@ -276,8 +276,8 @@ test('l10n: AI Readiness command and navigation labels resolve in both languages
 	assert.equal(t('whatsNew.feature.usage.group-tabs.description'), "The ten Usage Analysis tabs now sit under four group tabs (Usage, Workspace, GitHub, Coaching), and My Activity is split into Overview, Spend & models and Context bands.");
 	mock.setLanguage('zh-cn');
 	try {
-		assert.equal(t('command.showReadiness.title'), '显示 AI 就绪度');
-		assert.equal(t('nav.btnReadiness'), 'AI 就绪度');
+		assert.equal(t('command.showReadiness.title'), '显示 AI 就绪度（使用分析）');
+		assert.equal(t('usage.tab.readiness'), 'AI 就绪度');
 		assert.equal(t('readiness.loading'), '正在扫描仓库控制措施…');
 		assert.equal(t('readiness.refreshing'), '正在显示上次扫描结果，同时重新扫描…');
 		assert.equal(t('readiness.scanFailed'), '无法扫描仓库就绪度。请查看 AI 工程熟练度输出中的详细信息，然后重试刷新。');

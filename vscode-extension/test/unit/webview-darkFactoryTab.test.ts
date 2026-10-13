@@ -23,13 +23,13 @@ test('AI Readiness is a host-gated Usage Analysis tab with a lazy, refreshable s
 		const messages: Array<{ command: string; requestId?: number; prompt?: string }> = [];
 		const traces: string[] = [];
 		const tab = new DarkFactoryTab(message => messages.push(message), stage => traces.push(stage));
-		assert.equal(tab.button('activity'), '');
+		assert.equal(tab.isAvailable(), false);
 		assert.equal(tab.panel('readiness'), '');
 		tab.startIfNeeded();
 		assert.equal(messages.length, 0);
 
 		tab.setAvailable(true);
-		assert.match(tab.button('readiness'), /class="tab-button active" data-tab="readiness"/);
+		assert.equal(tab.isAvailable(), true);
 		dom.window.document.getElementById('root')!.innerHTML = tab.panel('readiness');
 		tab.attach();
 		assert.match(dom.window.document.getElementById('readiness-content')!.textContent!, /Scanning repository controls/);
