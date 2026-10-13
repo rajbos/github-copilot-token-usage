@@ -3834,3 +3834,26 @@ test('analyzeSessionUsage: an untagged MCP start (name-recognised, no mcpServerN
     assert.equal(result.toolCalls.failuresByTool, undefined);
     assert.equal(result.toolCalls.latencyByTool, undefined);
 });
+
+test('analyzeSessionUsage: onAnalysisError fires only when the session could not be analyzed', async () => {
+	const warnings: string[] = [];
+	const errors: unknown[] = [];
+	const deps: UsageAnalysisDeps = {
+		warn: (msg) => { warnings.push(msg); },
+		onAnalysisError: (error) => { errors.push(error); },
+		ecosystems: [], tokenEstimators: {}, modelPricing: {}, toolNameMap: {},
+	};
+
+	// A non-fatal notice: the format is unexpected, the (empty) analysis is still the answer.
+	await analyzeSessionUsage(deps, 'unexpected-format.json', JSON.stringify({ requests: 'not-an-array' }));
+	assert.equal(warnings.length, 1, 'the unexpected format is reported as a warning');
+	assert.equal(errors.length, 0, 'a warning alone is not an analysis failure');
+
+	// A real failure: the file cannot be read, so the empty analysis stands in for one that failed.
+	// A path that does not exist next to this test, not one under os.tmpdir(): the OS temp dir
+	// is shared and attacker-writable, and nothing here needs it.
+	const missing = path.join(__dirname, 'no-such-dir', 'missing-session.json');
+	const result = await analyzeSessionUsage(deps, missing);
+	assert.equal(errors.length, 1, 'an unreadable session signals onAnalysisError');
+	assert.ok(result.taskClassification, 'callers still get a well-formed empty analysis');
+});

@@ -234,7 +234,8 @@ pnpm exec vsce package
 
 ## Available Scripts
 
-- `pnpm run lint` - Run ESLint to check code quality
+- `pnpm run lint` - Run ESLint and the warning ratchet (fails on any error, or when a rule's warning count in a file rises above `lint-baseline.json`)
+- `pnpm run lint:baseline:update` - Regenerate `vscode-extension/lint-baseline.json` after paying warnings down (run from `vscode-extension/`)
 - `pnpm run lint:css` - Run Stylelint to check CSS code quality
 - `pnpm run lint:json` - Validate all JSON files in the repository
 - `pnpm run check-types` - Run TypeScript type checking

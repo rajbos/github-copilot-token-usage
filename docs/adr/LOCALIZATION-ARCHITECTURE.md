@@ -208,7 +208,7 @@ Ranked by prose volume × visibility, with the blocker noted:
 6. `vscode-extension/src/backend/configurationFlow.ts` — ~22 privacy badges and
    consent-modal copy. Wrong-language consent text is the worst failure mode in
    this list.
-7. `vscode-extension/src/loadingHtml.ts` — 19, shared with the desktop app so it
+7. `src/loadingHtml.ts` — 19, shared with the desktop app so it
    can never import `vscode`. Must be done together with `generateLoadingSvg`
    in `extension.ts`, which duplicates the same strings.
 8. `src/darkFactorySignals.ts` + `src/darkFactoryReadiness.ts` — ~32 plus 93 in

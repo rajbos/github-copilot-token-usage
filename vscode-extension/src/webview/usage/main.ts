@@ -33,6 +33,7 @@ import dataTableStyles from '../shared/dataTable.css';
 import { renderDataTable, rerenderDataTable, setDataTableState, type DataTableColumn, type DataTableSortValue } from '../shared/dataTable';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
+import type { UsageAnalysisViewData } from '../../../../src/usageAnalysisViewBuilder';
 import { registerMessageHandler } from '../shared/messageHandler';
 import { getModelDisplayName, getModelLookupCandidates } from '../../../../src/webview/shared/modelUtils';
 import { getModelBillingProvider } from '../../../../src/chartDataBuilder';
@@ -258,7 +259,8 @@ interface CustomizationFileEntry {
 	icon?: string;
 	label?: string;
 	name?: string;
-	lastModified?: string;
+	/** Null when unknown, as the shared CustomizationFileEntry (src/types.ts) sends it. */
+	lastModified?: string | null;
 	isStale?: boolean;
 	category?: 'copilot' | 'non-copilot';
 }
@@ -362,6 +364,29 @@ function traceCurationOnce(key: string, stage: string, details?: Record<string, 
 
 type WorktreeBackgroundScanData = { scannedAt: string; totalBytes: number; worktreeCount: number; worktrees: unknown[] };
 type InitialUsageData = UsageAnalysisStats & { customizationMatrix?: WorkspaceCustomizationMatrix | null; missedPotential?: MissedPotentialWorkspace[]; worktreeScanRoots?: string[]; localization?: Record<string, string>; worktreeBackgroundScan?: WorktreeBackgroundScanData | null };
+
+/*
+ * Compile-time contract with the shared payload builder (src/usageAnalysisViewBuilder.ts), which
+ * the extension, the CLI and the desktop app all call. The view keeps local copies of the nested
+ * types, so the contract is checked field by field, in both directions — a field added on one
+ * side only is a compile error, not a silently blank section in some host (#2316):
+ *  - every field the builder emits is declared here;
+ *  - every field declared here is on the shared payload, or listed as a host extra below;
+ *  - every shared field's value, as the builder types it, is accepted by this view's type.
+ */
+/** Fields this view reads that hosts add on top of the shared payload (extension-only today). */
+type UsageHostExtraField = 'serverMemoriesAnalysis' | 'sessionColumnSettings' | 'copilotApiBalance' | 'accountBudgets' | 'monthBillingGroupCosts';
+type UsageFieldsMissingFromView = Exclude<keyof UsageAnalysisViewData, keyof UsageAnalysisStats>;
+type UsageFieldsNotFromBuilder = Exclude<keyof UsageAnalysisStats, keyof UsageAnalysisViewData | UsageHostExtraField>;
+type UsageFieldsWithIncompatibleTypes = {
+	[K in keyof UsageAnalysisViewData & keyof UsageAnalysisStats]: UsageAnalysisViewData[K] extends UsageAnalysisStats[K] ? never : K
+}[keyof UsageAnalysisViewData & keyof UsageAnalysisStats];
+type AssertNever<T extends never> = T;
+export type UsagePayloadContract = [
+	AssertNever<UsageFieldsMissingFromView>,
+	AssertNever<UsageFieldsNotFromBuilder>,
+	AssertNever<UsageFieldsWithIncompatibleTypes>,
+];
 const initialData = getWindowData<InitialUsageData>('__INITIAL_USAGE__');
 
 // Initialize localization for webview
@@ -459,7 +484,7 @@ type WorktreeScanStatus = {
 };
 
 // Worktree discovery tab state
-let worktreeRoots: string[] = initialData?.worktreeScanRoots ? [...initialData.worktreeScanRoots] : [];
+const worktreeRoots: string[] = initialData?.worktreeScanRoots ? [...initialData.worktreeScanRoots] : [];
 let worktreeResults: WorktreeResult[] = initialData?.worktreeBackgroundScan
 	? initialData.worktreeBackgroundScan.worktrees.map(sanitizeWorktreeResult)
 	: [];
@@ -503,6 +528,8 @@ type WorktreeCleanupDiagnostics = {
 /** Live state of a "Delete anyway…" retry on a cleanup-log row, keyed by worktree path. */
 type WorktreeRetryState = { status: "running" | "deleted" | "error"; reason?: string };
 const worktreeRetryState = new Map<string, WorktreeRetryState>();
+/** Bytes freed per deleted worktree path, captured from the scan row just before it leaves the list. */
+const worktreeDeletedBytes = new Map<string, number>();
 type WorktreeCleanupLogEntry = { path: string; branch: string; repoLabel: string; status: WorktreeCleanupOutcome; reason?: string; diagnostics?: WorktreeCleanupDiagnostics };
 let worktreeCleanupLog: WorktreeCleanupLogEntry[] = [];
 
@@ -1204,11 +1231,11 @@ const presetForcedColumns = new Set<SessionColumnId>();
 
 // --- Recent Sessions pill filters (Editor / Model / Model vendor / HydraFusion) ---
 /** Active editor pill filters. Empty set means "no filter" (show all editors). */
-let sessionFilterEditors: Set<string> = new Set();
+const sessionFilterEditors: Set<string> = new Set();
 /** Active model-vendor pill filters (e.g. "Anthropic", "OpenAI"). Empty set means "no filter". */
-let sessionFilterVendors: Set<string> = new Set();
+const sessionFilterVendors: Set<string> = new Set();
 /** Active model pill filters. Empty set means "no filter". */
-let sessionFilterModels: Set<string> = new Set();
+const sessionFilterModels: Set<string> = new Set();
 /** Quick toggle: when true, only show sessions that used a HydraFusion model. */
 let sessionFilterHydraFusionOnly = false;
 /** Quick toggle: when true, only show sessions that nearly filled their context window. */
@@ -2030,6 +2057,13 @@ function _handleWorktreeRowLinkClick(event: MouseEvent, target: HTMLElement): bo
 		if (p) { vscode.postMessage({ command: "openWorktreeInEditor", path: p }); }
 		return true;
 	}
+	const copyPromptBtn = target.closest(".worktree-copy-prompt-btn") as HTMLElement | null;
+	if (copyPromptBtn) {
+		event.preventDefault();
+		const prompt = buildWorktreeDiffPrompt(decodeURIComponent(copyPromptBtn.getAttribute("data-branch") || ""));
+		copyWorktreePrompt(copyPromptBtn, prompt);
+		return true;
+	}
 	const revealLink = target.closest(".worktree-reveal-link, .worktree-reveal-btn") as HTMLElement | null;
 	if (revealLink) {
 		event.preventDefault();
@@ -2189,6 +2223,8 @@ function handleWorktreeDeleted(message: any): void {
 	if (!targetPath) { return; }
 	const idx = worktreeResults.findIndex((w) => w.path === targetPath);
 	if (idx === -1) { return; }
+	const freed = knownBytes(worktreeResults[idx]);
+	if (freed > 0) { worktreeDeletedBytes.set(targetPath, freed); }
 	worktreeResults.splice(idx, 1);
 	updateWorktreeResults();
 }
@@ -2205,6 +2241,7 @@ function handleCleanupStarted(message: any): void {
 	worktreeCleanupStatus = { processed: 0, total: numField(message.total) };
 	worktreeCleanupLog = [];
 	worktreeRetryState.clear();
+	worktreeDeletedBytes.clear();
 	updateWorktreeResults();
 }
 
@@ -3321,7 +3358,7 @@ function usageTabStripInput(stats: UsageAnalysisStats): UsageTabStripInput {
 		activeTab,
 		newInsightCount: (stats.insights ?? []).filter(i => i.status === 'new').length,
 		correctionSessionCount: stats.correctionReport?.sessionsWithMoments ?? 0,
-		readinessButtonHtml: darkFactoryTab.button(activeTab),
+		readinessAvailable: darkFactoryTab.isAvailable(),
 	};
 }
 
@@ -4097,12 +4134,39 @@ function buildWorktreeCleanupDetailChips(d: WorktreeCleanupDiagnostics | undefin
 	return chips.length === 0 ? "" : `<div class="worktree-cleanup-chips">${chips.join("")}</div>`;
 }
 
+const worktreePromptResetTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
+
+/** Copies the prompt and flashes "Copied!"; always restores the stable localized label, never whatever is showing. */
+function copyWorktreePrompt(button: HTMLElement, prompt: string): void {
+	let write: Promise<void>;
+	try {
+		if (typeof navigator.clipboard?.writeText !== "function") { return; }
+		write = navigator.clipboard.writeText(prompt);
+	} catch {
+		return;
+	}
+	write.then(() => {
+		button.textContent = localize("usage.worktreeCleanup.copied");
+		clearTimeout(worktreePromptResetTimers.get(button));
+		worktreePromptResetTimers.set(button, setTimeout(() => {
+			worktreePromptResetTimers.delete(button);
+			button.textContent = localize("usage.worktreeCleanup.copyPrompt");
+		}, 2000));
+	}).catch(() => { /* clipboard unavailable: leave the label unchanged */ });
+}
+
+/** Starter prompt for a chat session opened in a worktree that could not be deleted, to understand what its diff holds. */
+function buildWorktreeDiffPrompt(branch: string): string {
+	return localizeFormat("usage.worktreeCleanup.starterPrompt", branch || "?");
+}
+
 /** Per-row remediation actions for a worktree the cleanup could not delete. */
 function buildWorktreeCleanupActions(e: WorktreeCleanupLogEntry): string {
 	const p = encodeURIComponent(e.path);
 	return `<div class="worktree-cleanup-log-actions">
       <button type="button" class="button secondary worktree-open-editor-btn" data-path="${p}" title="Open this worktree folder in a new VS Code window so you can commit, push, or clean it up">💻 Open in VS Code</button>
       <button type="button" class="button secondary worktree-reveal-btn" data-path="${p}" title="Show this folder in the OS file explorer">📂 Reveal folder</button>
+      <button type="button" class="button secondary worktree-copy-prompt-btn" data-branch="${encodeURIComponent(e.branch)}" title="${escapeHtml(localize("usage.worktreeCleanup.copyPromptTitle"))}">${escapeHtml(localize("usage.worktreeCleanup.copyPrompt"))}</button>
       <button type="button" class="button secondary worktree-delete-btn" data-path="${p}" data-branch="${encodeURIComponent(e.branch)}" data-repo="${encodeURIComponent(e.repoLabel)}" data-pushed="?" title="Try removing it again — you will be asked to confirm, and to force-delete if it still has uncommitted changes">🗑️ Delete anyway…</button>
     </div>`;
 }
@@ -4147,6 +4211,18 @@ function renderWorktreeCleanupLog(): string {
 	return `<div class="worktree-cleanup-log">${rows}</div>`;
 }
 
+/** Total bytes freed by the deleted worktrees of this run (bulk deletions and later "Delete anyway…" retries). */
+function getCleanupRecoveredBytes(): number {
+	let total = 0;
+	for (const e of worktreeCleanupLog) {
+		// Only rows this run actually deleted (or the user retried successfully) free space; a late
+		// delete from an earlier run or an unrelated manual delete must not inflate the total.
+		const deleted = e.status === "deleted" || worktreeRetryState.get(e.path)?.status === "deleted";
+		if (deleted) { total += worktreeDeletedBytes.get(e.path) ?? 0; }
+	}
+	return total;
+}
+
 function renderWorktreeCleanupStatus(): string {
 	if (worktreeCleanupInProgress) {
 		const { processed, total } = worktreeCleanupStatus;
@@ -4154,6 +4230,7 @@ function renderWorktreeCleanupStatus(): string {
 		return `<div class="info-box" style="margin-top: 12px;">
       <div class="info-box-title">🧹 Cleaning up pushed worktrees…</div>
       <div>${processed} / ${total} processed</div>
+      <div>${escapeHtml(localizeFormat("usage.worktreeCleanup.recovered", formatFileSize(getCleanupRecoveredBytes())))}</div>
       <div class="worktree-progress-bar"><div class="worktree-progress-fill" style="width: ${pct}%;"></div></div>
     </div>${renderWorktreeCleanupLog()}`;
 	}
@@ -4166,6 +4243,7 @@ function renderWorktreeCleanupStatus(): string {
 	return `<div class="info-box" style="margin-top: 12px;">
     <div class="info-box-title">🧹 Cleanup finished</div>
     <div>✅ ${deleted} deleted · ⏭️ ${skipped} skipped (uncommitted/unpushed) · ${errors > 0 ? `❌ ${errors} error${errors === 1 ? "" : "s"}` : "0 errors"}</div>
+    <div>💾 ${escapeHtml(localizeFormat("usage.worktreeCleanup.recovered", formatFileSize(getCleanupRecoveredBytes())))}</div>
   </div>${renderWorktreeCleanupLog()}`;
 }
 

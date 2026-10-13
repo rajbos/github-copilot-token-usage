@@ -11,7 +11,7 @@
     },
     "validate-editor-names": {
       "status": "exempt",
-      "reason": "Repo-only. Regex-parses checked-out TypeScript (cli/src/analysis.ts, src/workspaceHelpers.ts, vscode-extension/src/editorIcons.ts), prints to stdout; no network, no child processes, no writes, no home-directory data."
+      "reason": "Repo-only. Regex-parses checked-out TypeScript (cli/src/analysis.ts, src/workspaceHelpers.ts, src/editorIcons.ts), prints to stdout; no network, no child processes, no writes, no home-directory data."
     },
     "validate-model-pricing": {
       "status": "exempt",
@@ -23,7 +23,7 @@
     },
     "improve-tool-families": {
       "status": "exempt",
-      "reason": "Repo-only. Reads src/toolNames.json and vscode-extension/src/toolFamilies.ts, prints suggestions to stdout; no network, no child processes, no writes, no home-directory data. It eval()s the DEFAULT_TOOL_FAMILIES array literal from the checked-out source, so run it on a trusted checkout only, not on an unreviewed fork's tree."
+      "reason": "Repo-only. Reads src/toolNames.json and src/toolFamilies.ts, prints suggestions to stdout; no network, no child processes, no writes, no home-directory data. It eval()s the DEFAULT_TOOL_FAMILIES array literal from the checked-out source, so run it on a trusted checkout only, not on an unreviewed fork's tree."
     },
     "scan-hardcoded-strings": {
       "status": "exempt",

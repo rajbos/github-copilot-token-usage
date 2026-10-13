@@ -449,6 +449,14 @@ interface ResponseItemRaw {
 
 export interface UsageAnalysisDeps {
 	warn: (msg: string) => void;
+	/**
+	 * Called when {@link analyzeSessionUsage} could not analyze the session at all (the read,
+	 * parse or adapter call threw) and is returning an empty analysis in its place. Distinct
+	 * from `warn`, which also carries non-fatal notices (a sub-step that failed, an unexpected
+	 * format) whose analysis is still valid. Lets a caller avoid caching an empty result from a
+	 * transient failure.
+	 */
+	onAnalysisError?: (error: unknown) => void;
 	ecosystems: IEcosystemAdapter[];
 	tokenEstimators: Record<string, TokenEstimator>;
 	modelPricing: { [key: string]: ModelPricing };
@@ -2892,6 +2900,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 		}
 	} catch (error) {
 		deps.warn(`Error analyzing session usage from ${sessionFile}: ${error}`);
+		deps.onAnalysisError?.(error);
 	}
 	if (!analysis.taskClassification) { analysis.taskClassification = createEmptyTaskClassificationResult(); }
 

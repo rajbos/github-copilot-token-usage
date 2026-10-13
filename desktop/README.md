@@ -1,7 +1,7 @@
 # AI Engineering Fluency — Windows Desktop App
 
 A lightweight Electron tray app that surfaces the same dashboards as the VS Code
-extension (Details, Environmental Impact, Token Usage Chart, Usage Analysis,
+extension (Details, Environmental Impact, Token Usage Chart, Efficiency, Usage Analysis,
 Fluency Score, Scoring Guide, Diagnostics) outside of VS Code.
 
 ## Install

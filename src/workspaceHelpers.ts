@@ -2,7 +2,6 @@
  * Workspace resolution and utility helper functions.
  * Pure functions extracted from CopilotTokenTracker.
  */
-import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -541,7 +540,7 @@ export function getRepoDisplayName(repoUrl: string): string {
 	if (!repoUrl || repoUrl === 'Unknown') { return 'Unknown'; }
 
 	// Remove .git suffix if present
-	let url = repoUrl.replace(/\.git$/, '');
+	const url = repoUrl.replace(/\.git$/, '');
 
 	// Handle SSH URLs like git@github.com:owner/repo
 	if (url.includes('@') && url.includes(':')) {

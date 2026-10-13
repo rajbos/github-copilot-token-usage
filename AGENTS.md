@@ -111,6 +111,17 @@ Instead, verify changes using non-interactive tooling: compile/build scripts (`p
 
 This also governs `.github/github-app.yml`. Its `code .` script has **no `triggers` entry**, on purpose — that makes it an on-demand action a human clicks in the GitHub App's session UI, not something that fires automatically. **Never attach `triggers: [session.create]` (or any other trigger) to a script that launches an editor/IDE.** `automation.auto_issue_session: true` means sessions can be created unattended (e.g. an issue auto-assigned to Copilot) with nobody there to click anything — a triggered `code .` would pop open a real VS Code window during those unattended sessions too, which is the exact bug this section exists to prevent. Non-GUI setup steps (installing dependencies, compiling) are fine to keep on `session.create` since they have no visible side effect.
 
+## Shared `src/` Is Editor-Neutral
+
+The repo-root `src/` is consumed by the VS Code extension, the CLI and the desktop app, so it must not depend on any of them:
+
+- **No `vscode` imports in `src/`**, and no imports from `vscode-extension/`, `cli/` or `desktop/`. The root `eslint.config.mjs` enforces this with `no-restricted-imports` (an error under `pnpm run lint` in `vscode-extension/`).
+- Editor-host services (extension lookup, settings, app name, ...) are injected through `deps` objects, e.g. `SessionDiscoveryDeps` and `WindsurfHost`; the VS Code implementations live in `vscode-extension/src/srcHostAdapters.ts`.
+- Code the CLI or desktop app needs from the extension and that has no VS Code dependency belongs in `src/`.
+- Unit tests for shared modules live in `src/test/` and run without the VS Code shim (`pnpm run test:src`); they also run in the normal extension test run and CI via `vscode-extension/test/unit/sharedSrcTests.test.ts`. A test that needs the extension (its sources, the `vscode` shim, or repo files via `__dirname`) stays in `vscode-extension/test/unit/`.
+
+See [src/README.md](src/README.md).
+
 ## CLI Must Reuse Shared Functions
 
 The CLI (`cli/`) is a thin consumer of the shared TypeScript modules in the repo-root `src/` folder (the same modules the VS Code extension uses). **Never reimplement session parsing or cost attribution logic in the CLI — always call the shared functions from `src/`.**
@@ -122,6 +133,18 @@ The CLI (`cli/`) is a thin consumer of the shared TypeScript modules in the repo
 | Token counts (total, actual, thinking) | `estimateTokensFromJsonlSession()` | `tokenEstimation.ts` |
 | Per-model cost attribution (model usage) | `getModelUsageFromSession()` | `usageAnalysis.ts` |
 | Debug-log token override | `extractAllTokensFromDebugLog()` | `tokenEstimation.ts` |
+| Per-day stats from a session (non-extension hosts) | `addSessionToDailyStats()` + `addSessionEfficiencyToDailyStats()` | `statsHelpers.ts`, `modelEfficiency.ts` |
+| Chart webview payload | `buildChartData()` | `chartDataBuilder.ts` |
+| Efficiency webview payload | `buildEfficiencyViewData()` | `efficiencyViewBuilder.ts` |
+| Usage Analysis webview payload | `buildUsageAnalysisViewData()` (+ `buildWorkspaceCustomization()`, `buildCurationAnalysis()`, `evaluateUsageInsights()` for its inputs) | `usageAnalysisViewBuilder.ts`, `customizationMatrix.ts`, `toolCuration.ts`, `insightsEngine.ts` |
+
+Webview payloads follow the same rule: one function in `src/` builds a payload and
+every host (extension, CLI, desktop) calls it, differing only in how it gathers inputs
+and in host settings. The Chart, Efficiency and Usage Analysis payloads (table above)
+do this today; the Diagnostics payload is still partly assembled per host and is being
+moved over (#2418). Never add a host-side copy of a payload builder,
+and move a payload's assembly to `src/` when you change it — otherwise a field a view
+starts requiring reaches one host and not the others.
 
 **Critical rule**: `estimateTokensFromJsonlSession().modelUsage` must **not** be used as the primary source for model attribution. It returns `{}` for delta-format sessions (VS Code Chat JSONL), causing $0 cost for those sessions. Always call `getModelUsageFromSession()` separately for model attribution — it handles all formats through a single code path.
 
@@ -219,12 +242,16 @@ When you add or change a skill script, classify it in the same PR. A change that
 
 Inside the devcontainer (`.devcontainer/devcontainer.json`), terminal output capture can be unreliable — commands run but their output comes back empty or truncated (a remote filesystem limitation). Don't retry-loop, poll, redirect to temp files, or delegate to a subagent hoping for cleaner output; none of that converges. Instead:
 
-1. **Use the package scripts (pnpm)** (from `vscode-extension/`): `pnpm run compile`, `pnpm run validate` (type-check + lint + build), `pnpm run compile-tests`, `pnpm run test:node`, `pnpm run test:coverage`.
+1. **Use the package scripts (pnpm)** (from `vscode-extension/`): `pnpm run compile`, `pnpm run validate` (type-check + lint + build), `pnpm run compile-tests`, `pnpm run test:node`, `pnpm run test:coverage`, and `pnpm run test:src` (only the shared `src/test` suite; needs no VS Code shim).
 2. **Check compile errors with the project's type-check/validate script** or your tool's diagnostics, rather than running `tsc` by hand. (Copilot users: the `get_errors` tool.)
 3. **Run tests one file at a time**, e.g.
    ```bash
    cd vscode-extension
-   node --require ./out/vscode-extension/test/unit/vscode-shim-register.js --test out/vscode-extension/test/unit/sessionParser.test.js
+   node --require ./out/vscode-extension/test/unit/vscode-shim-register.js --test out/vscode-extension/test/unit/l10n.test.js
+   ```
+   Tests for shared `src/` modules live in `src/test/` and run without the shim:
+   ```bash
+   node --test out/src/test/sessionParser.test.js
    ```
 4. **Accept a single run.** If a command returns no output, don't re-run it.
 5. If you must capture output to a file, write it inside the workspace, not `/tmp/`, so your file-read tool can reach it. (Copilot users: `run_in_terminal` / `read_file`.)
@@ -254,7 +281,7 @@ When adding or changing runtime localization keys (entries in `vscode-extension/
 
 ## File-size ceiling (`max-lines`)
 
-`vscode-extension/eslint.config.mjs` enforces a `max-lines` ceiling (the threshold and severity live in that file) alongside the per-function complexity rules. Small functions alone don't stop a file from becoming unmanageable, so new code should not push any linted file past the ceiling — split instead. Run `cd vscode-extension && pnpm run lint` to see the current offenders; `vscode-extension/src/extension.ts` is by far the largest offender (other large files, such as the usage webview's `main.ts`, may also show up). Ratchet the threshold down as files shrink; don't raise it to accommodate growth.
+`vscode-extension/eslint.config.mjs` enforces a `max-lines` ceiling (the threshold and severity live in that file) alongside the per-function complexity rules. Small functions alone don't stop a file from becoming unmanageable, so new code should not push any linted file past the ceiling — split instead. Run `cd vscode-extension && pnpm run lint` to see the current offenders; `vscode-extension/src/extension.ts` is by far the largest offender (other large files, such as the usage webview's `main.ts`, may also show up). `max-lines` is an `error`, and a per-file override in that config pins `extension.ts` at its current size, so it cannot grow and no second file can cross the ceiling. Ratchet the threshold (and that pin) down as files shrink; don't raise either to accommodate growth.
 
 ### Where the `extension.ts` decomposition stands
 
