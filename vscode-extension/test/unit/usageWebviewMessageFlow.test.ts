@@ -276,6 +276,22 @@ function repoPrPayload(): Record<string, unknown> {
 	};
 }
 
+test('Multi-Model Usage renders in the Activity tab (Spend & models band), not in Tools & Integrations', async () => {
+	const harness = await bootWebview(buildStats());
+	const doc = harness.window.document;
+
+	const section = doc.getElementById('section-multi-model');
+	assert.ok(section, 'the Multi-Model Usage section must render');
+	assert.ok(section.closest('#tab-panel-activity'), 'it belongs to the Activity tab');
+	assert.equal(doc.querySelector('#tab-panel-tools #section-multi-model'), null, 'it must not render under Tools & Integrations');
+	assert.equal(doc.querySelectorAll('#section-multi-model').length, 1);
+
+	const html = doc.getElementById('tab-panel-activity').innerHTML;
+	assert.ok(html.indexOf('id="section-model-cost"') < html.indexOf('id="section-multi-model"'), 'sits after Model Cost');
+	assert.ok(html.indexOf('id="section-multi-model"') < html.indexOf('id="section-model-efficiency"'), 'sits before the Local Model Leaderboard');
+	assert.equal(doc.querySelectorAll('#section-multi-model .three-column > *').length, 3, 'one column per period');
+});
+
 test('announces readiness both at listener registration and after the layout renders', async () => {
 	const harness = await bootWebview(buildStats());
 	const ready = harness.posted.filter((m) => m.command === 'usageWebviewReady');
