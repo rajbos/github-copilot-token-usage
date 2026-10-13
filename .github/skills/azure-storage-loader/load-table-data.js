@@ -255,8 +255,9 @@ function sanitizeEntityString(value) {
 	return result === '' ? undefined : result;
 }
 
-// A non-negative integer count, or 0. Rejects strings, NaN, Infinity and
-// fractions, which JSON would otherwise serialize as text or null.
+// A count from an uploaded row: kept only when it is a non-negative safe
+// integer, otherwise 0. Strings, booleans, negatives, fractions, NaN and
+// Infinity are all rejected, so totals are computed from valid counts only.
 function toCount(value) {
 	return Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
