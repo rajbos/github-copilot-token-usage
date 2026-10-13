@@ -100,11 +100,13 @@ jobs:
         with:
           node-version: ${{ steps.node-version.outputs.version }}
           cache: ${{ steps.lockfiles.outputs.pnpm == 'true' && 'pnpm' || '' }}
-          # The lockfiles of the two packages installed below, not a `**` glob:
-          # the detect step above checked exactly these exist.
+          # The lockfiles of the packages this job installs, not a `**` glob.
+          # setup-node only fails when none of them resolve; the detect step
+          # above checked the first two exist, so the hash is never empty.
           cache-dependency-path: |
             vscode-extension/pnpm-lock.yaml
             cli/pnpm-lock.yaml
+            .github/skills/azure-storage-loader/pnpm-lock.yaml
 
       # Install with whichever lockfile the checkout has, so a pre-pnpm branch
       # under code review still gets its dependencies (via `npm ci`) instead of
