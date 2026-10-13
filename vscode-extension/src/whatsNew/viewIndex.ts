@@ -306,7 +306,7 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 			{ id: 'maturity.radar', title: 'Radar chart', description: 'Your stage per category on one chart, with the stage reference.', nav: { selector: '.radar-wrapper' } },
 			{ id: 'maturity.categories', title: 'Categories', description: 'Prompt engineering, context engineering, agentic, tool usage, customization and workflow integration, each with evidence and next steps.', keywords: ['next steps', 'tips'], nav: { selector: '.category-grid' } },
 			{ id: 'maturity.share', title: 'Share your score', description: 'Share to social media or export your score as an image or presentation.', keywords: ['export', 'png', 'pptx'], nav: { selector: '.share-section' } },
-				{ id: 'maturity.toolbox', title: 'Share your AI coding toolbox', description: 'A shareable card of the editors you use, with sessions, interactions and tokens for today, the last 30 days, this month or last month.', keywords: ['social', 'image', 'editors', 'share card'], nav: { selector: '#toolbox-section' } },
+				{ id: 'maturity.toolbox', title: 'Share your AI coding toolbox', description: 'A shareable card of the editors you use, with sessions, interactions and tokens for today, the last 30 days, this month or last month.', keywords: ['social', 'image', 'editors', 'share card'], nav: { selector: '.toolbox-section' } },
 		],
 	},
 	{

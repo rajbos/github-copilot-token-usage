@@ -15,6 +15,8 @@ import dataTableStyles from '../shared/dataTable.css';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
 import { applyWebviewLocale } from '../shared/webviewLocale';
+import { localize } from '../shared/localization';
+import { createViewStateManager } from '../shared/viewState';
 import { installSurfaceNavigation } from '../shared/surfaceNavigation';
 
 type UsageAnalysisPeriod = {
@@ -76,7 +78,9 @@ declare function acquireVsCodeApi<TState = unknown>(): {
 	getState: () => TState | undefined;
 };
 
-const vscode = acquireVsCodeApi();
+type MaturityViewState = { toolboxPeriod: ShareCardPeriodData['period'] };
+
+const vscode = acquireVsCodeApi<MaturityViewState>();
 installSurfaceNavigation(vscode, 'maturity');
 const initialData = getWindowData<MaturityData & { localization?: Record<string, string> }>('__INITIAL_MATURITY__');
 
@@ -446,7 +450,9 @@ function buildShareSectionHtml(): string {
 
 // ── "My AI Coding Toolbox" share card ──────────────────────────────────
 
-let toolboxPeriod: ShareCardPeriodData['period'] = 'last30';
+// Selected toolbox period survives the panel being hidden (retainContextWhenHidden is false).
+const viewState = createViewStateManager<MaturityViewState>(vscode, { toolboxPeriod: 'last30' });
+let toolboxPeriod: ShareCardPeriodData['period'] = viewState.restore().toolboxPeriod;
 
 function currentToolboxData(data: MaturityData): ShareCardPeriodData | undefined {
   return data.shareCard?.find(p => p.period === toolboxPeriod) ?? data.shareCard?.[0];
@@ -456,11 +462,11 @@ function buildToolboxSectionHtml(data: MaturityData): string {
   const current = currentToolboxData(data);
   const body = current
     ? buildToolboxCardHtml(current)
-    : '<div class="share-description">Usage totals are not available yet. Refresh once your session files have been analyzed.</div>';
+    : `<div class="share-description">${escapeHtml(localize('share.toolbox.unavailable'))}</div>`;
   return `
-  <div class="share-section" id="toolbox-section">
-    <div class="share-header"><span class="share-icon">📸</span><span class="share-title">Share Your AI Coding Toolbox</span></div>
-    <div class="share-description">A snapshot of the editors and assistants you use — share it, or copy the summary text.</div>
+  <div class="share-section toolbox-section">
+    <div class="share-header"><span class="share-icon">📸</span><span class="share-title">${escapeHtml(localize('share.toolbox.title'))}</span></div>
+    <div class="share-description">${escapeHtml(localize('share.toolbox.description'))}</div>
     <div id="toolbox-body">${body}</div>
   </div>`;
 }
@@ -472,7 +478,11 @@ function wireToolboxCard(data: MaturityData, current: ShareCardPeriodData): void
     label: '',
     selected: current.period,
     periods: (data.shareCard ?? []).map(p => p.period as Period),
-    onChange: (value) => { toolboxPeriod = value as ShareCardPeriodData['period']; renderToolboxBody(data); },
+    onChange: (value) => {
+      toolboxPeriod = value as ShareCardPeriodData['period'];
+      viewState.patch({ toolboxPeriod });
+      renderToolboxBody(data);
+    },
   }).wrapper);
   document.getElementById('btn-copy-toolbox-summary')?.addEventListener('click', () => {
     vscode.postMessage({ command: 'copyText', text: buildToolboxSummaryText(current) });

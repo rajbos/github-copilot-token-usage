@@ -1,19 +1,27 @@
+import { escapeHtml } from './formatUtils';
+import { localize } from './localization';
+
 export type SocialPlatform = 'linkedin' | 'bluesky' | 'mastodon';
+
+const PLATFORMS: ReadonlyArray<{ platform: SocialPlatform; icon: string }> = [
+	{ platform: 'linkedin', icon: '💼' },
+	{ platform: 'bluesky', icon: '🦋' },
+	{ platform: 'mastodon', icon: '🐘' },
+];
 
 /**
  * LinkedIn / Bluesky / Mastodon share buttons. Each button is `<idPrefix>-<platform>`, so one panel can
  * host several rows (the score and the toolbox card) without clashing ids.
  */
 export function socialShareButtonsHtml(idPrefix: string): string {
-	return `
-      <button id="${idPrefix}-linkedin" class="share-btn share-btn-linkedin"><span class="share-btn-icon">💼</span><span>Share on LinkedIn</span></button>
-      <button id="${idPrefix}-bluesky" class="share-btn share-btn-bluesky"><span class="share-btn-icon">🦋</span><span>Share on Bluesky</span></button>
-      <button id="${idPrefix}-mastodon" class="share-btn share-btn-mastodon"><span class="share-btn-icon">🐘</span><span>Share on Mastodon</span></button>`;
+	return PLATFORMS.map(({ platform, icon }) =>
+		`<button id="${idPrefix}-${platform}" class="share-btn share-btn-${platform}"><span class="share-btn-icon">${icon}</span><span>${escapeHtml(localize(`share.${platform}`))}</span></button>`
+	).join('\n      ');
 }
 
 /** Wires the buttons rendered by {@link socialShareButtonsHtml} for the same `idPrefix`. */
 export function wireSocialShareButtons(idPrefix: string, onShare: (platform: SocialPlatform) => void): void {
-	for (const platform of ['linkedin', 'bluesky', 'mastodon'] as const) {
+	for (const { platform } of PLATFORMS) {
 		document.getElementById(`${idPrefix}-${platform}`)?.addEventListener('click', () => { onShare(platform); });
 	}
 }

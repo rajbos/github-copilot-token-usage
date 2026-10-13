@@ -3,6 +3,7 @@ import * as assert from 'node:assert/strict';
 import { buildShareCardData } from '../../src/shareCardData';
 import { buildToolboxCardHtml, buildToolboxSummaryText } from '../../src/webview/maturity/toolboxCard';
 import type { DetailedStats, PeriodStats } from '../../../src/types';
+import { aggregatePeriodStats, type SessionAggregateInput, type UtcDateRanges } from '../../../src/statsHelpers';
 
 function period(sessions: number, tokens: number, editorUsage: PeriodStats['editorUsage']): PeriodStats {
 	return { tokens, sessions, editorUsage } as PeriodStats;
@@ -73,5 +74,43 @@ describe('toolbox card rendering', () => {
 	test('an empty period shows a notice instead of a blank card', () => {
 		const html = buildToolboxCardHtml({ period: 'today', sessions: 0, interactions: 0, tokens: 0, editors: [] });
 		assert.match(html, /No session activity in this period/);
+	});
+});
+
+describe('aggregate to card', () => {
+	test('a session spanning two days shows as one session with all of its interactions', () => {
+		const ranges = { todayUtcKey: '2025-03-15', monthUtcStartKey: '2025-03-01', lastMonthUtcStartKey: '2025-02-01', lastMonthUtcEndKey: '2025-02-28', last30DaysUtcStartKey: '2025-02-14', last30DaysStartMs: Date.UTC(2025, 1, 14), lastMonthStartMs: Date.UTC(2025, 1, 1) } as UtcDateRanges;
+		const input = {
+			editorType: 'vscode',
+			mtime: Date.UTC(2025, 2, 15, 10),
+			sessionData: {
+				tokens: 150, actualTokens: 0, thinkingTokens: 0, interactions: 5, modelUsage: {}, contextReferences: {}, mcpTools: { total: 0, byServer: {}, byTool: {} },
+				dailyRollups: {
+					'2025-03-14': { tokens: 100, actualTokens: 0, thinkingTokens: 0, interactions: 3, modelUsage: {} },
+					'2025-03-15': { tokens: 50, actualTokens: 0, thinkingTokens: 0, interactions: 2, modelUsage: {} },
+				},
+			},
+		} as unknown as SessionAggregateInput;
+		const agg = aggregatePeriodStats([input], ranges);
+		const card = buildShareCardData({ today: agg.todayStats, month: agg.monthStats, lastMonth: agg.lastMonthStats, last30Days: agg.last30DaysStats } as unknown as DetailedStats)!;
+		const last30 = card.find((d) => d.period === 'last30')!;
+		assert.deepEqual(last30.editors, [{ name: 'vscode', sessions: 1 }]);
+		assert.equal(last30.sessions, 1);
+		assert.equal(last30.interactions, 5);
+		assert.equal(card.find((d) => d.period === 'today')!.interactions, 2);
+	});
+});
+
+describe('toolbox summary phrasing', () => {
+	test('"today" reads without an article', () => {
+		const text = buildToolboxSummaryText({ period: 'today', sessions: 1, interactions: 2, tokens: 3, editors: [{ name: 'VS Code', sessions: 1 }] });
+		assert.match(text, /tokens today\. #AIEngineeringFluency$/);
+		assert.ok(!/in the today/.test(text));
+	});
+
+	test('an empty period does not print a dangling editor list', () => {
+		const text = buildToolboxSummaryText({ period: 'lastMonth', sessions: 0, interactions: 0, tokens: 0, editors: [] });
+		assert.match(text, /^My AI Coding Toolbox — 0 editors detected\. 0 sessions/);
+		assert.match(text, /in the previous month\./);
 	});
 });

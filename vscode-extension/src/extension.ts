@@ -11234,7 +11234,7 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 
 	private async maturityHandleCopyText(text: string): Promise<void> {
 		await vscode.env.clipboard.writeText(text);
-		void vscode.window.showInformationMessage('Summary copied to clipboard');
+		void vscode.window.showInformationMessage(l10n.t('share.summaryCopied'));
 	}
 
 	private async maturityHandleInstallHook(hookId: string): Promise<void> {
