@@ -362,6 +362,7 @@
   "diagnostics.cache.infoTitle",
   "diagnostics.cache.infoBody",
   "diagnostics.cache.management",
+  "diagnostics.cache.storedIncludes",
   "serverMemories.sectionTitle",
   "serverMemories.sectionSubtitle",
   "serverMemories.summary",

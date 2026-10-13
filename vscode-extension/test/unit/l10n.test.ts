@@ -2006,6 +2006,7 @@ test('l10n: Diagnostics Session Cache strings resolve in English and zh-cn and s
 		assert.equal(t('diagnostics.cache.tab'), 'Session Cache');
 		assert.equal(t('diagnostics.cache.infoTitle'), 'Session Cache Information');
 		assert.equal(t('diagnostics.cache.management'), 'Session Cache Management');
+		assert.ok(t('diagnostics.cache.storedIncludes').includes('on-disk snapshot'));
 		assert.ok(t('diagnostics.cache.infoBody').includes('not LLM prompt caching'), 'English body must disambiguate from prompt caching');
 		assert.ok(t('diagnostics.cache.infoBody').includes('on-disk snapshot'), 'English body must describe the on-disk snapshot, not globalState');
 

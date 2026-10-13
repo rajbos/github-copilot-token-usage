@@ -2694,7 +2694,7 @@ ${escapeHtml(localize('diagnostics.cache.infoBody'))}
 ${data.cacheInfo?.storagePath ? ` <a href="#" class="open-storage-link" data-path="${encodeURIComponent(data.cacheInfo.storagePath)}">Open storage location</a>` : ""}
 </div>
 <p style="color: #999; font-size: 12px; margin-top: 8px;">
-Cache is stored as an on-disk snapshot in the extension's global storage folder and includes:
+${escapeHtml(localize('diagnostics.cache.storedIncludes'))}
 <ul style="margin: 8px 0 0 20px;">
 <li>Token counts per session file</li>
 <li>Interaction counts</li>
