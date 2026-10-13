@@ -35,7 +35,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { collectPostedCommands, ts } = require('./validate-webview-contract.js');
+const { collectPostedCommands, unwrapExpression, ts } = require('./validate-webview-contract.js');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const DESKTOP_DIR = path.join(REPO_ROOT, 'desktop');
@@ -144,14 +144,6 @@ function readUnsupported() {
 }
 
 /** The identifier a simple `#id` / `.class` selector targets, as it would appear in source. */
-/** Removes wrapping parentheses, `as` casts and `!` assertions. */
-function unwrapExpression(node) {
-  let current = node;
-  while (ts.isParenthesizedExpression(current) || ts.isAsExpression(current) || ts.isNonNullExpression(current)) {
-    current = current.expression;
-  }
-  return current;
-}
 
 /** The `data-*` attribute name read by `x.getAttribute('data-…')` (also through `?? ''` / `|| ''`), if that is what `node` is. */
 function dataAttributeRead(node) {
@@ -333,6 +325,7 @@ function messageNameOf(objectLiteral, sf) {
   return null;
 }
 
+
 /** Literal message names in the object literals a helper returns (through ternaries), ignoring nested functions. */
 function returnedMessageNames(decl, sf) {
   const names = new Set();
@@ -458,6 +451,8 @@ function resolveSite(site, argument, texts, fnIndex) {
   }
   if (typeof name === 'string') {
     site.names.add(name);
+    // A literal name in an (optionally wrapped) object literal is what the
+    // shared literal collector counts: both unwrap with the same function.
     site.literal = arg === unwrapExpression(argument);
     return;
   }

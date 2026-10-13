@@ -158,6 +158,27 @@ test('desktop contract: resolves commands whose name is computed at runtime', ()
 	assert.deepEqual(unresolved.map(u => u.key.replace(/^.*#/, '')), ['runFromData:item.command']);
 });
 
+test('desktop contract: a wrapped literal is counted exactly once, by the shared literal collector', () => {
+	// The desktop walker leaves literal sites to the shared collector. Both must
+	// agree on what a literal is, or `({ command: 'x' })` falls between them.
+	const dir = makeTmpFixtureDir('desktop-wrapped-');
+	const file = path.join(dir, 'main.ts');
+	fs.writeFileSync(file, `
+		type Msg = { command: string };
+		declare const vscode: { postMessage(m: unknown): void };
+		vscode.postMessage(({ command: 'wrapped' }));
+		vscode.postMessage({ command: 'cast' } as Msg);
+		vscode.postMessage({ command: 'constValue' as const });
+	`);
+	const shared = requireFromHere(path.join(REPO_ROOT, 'scripts', 'validate-webview-contract.js')) as {
+		collectPostedCommands: (files: string[]) => Map<string, unknown[]>;
+	};
+	assert.deepEqual([...shared.collectPostedCommands([file]).keys()].sort(), ['cast', 'constValue', 'wrapped']);
+	const computed = desktopContract.collectComputedPostedCommands([file]);
+	assert.deepEqual([...computed.posted.keys()], [], 'literal sites are left to the shared collector');
+	assert.deepEqual(computed.unresolved, []);
+});
+
 test('desktop contract: follows message objects built by a helper and forwarded', () => {
 	// serverMemories.ts shape: a helper returns the message, its caller forwards it
 	// through a `postMessage` parameter, and the view passes a relay lambda in.

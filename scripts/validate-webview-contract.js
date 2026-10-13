@@ -95,6 +95,21 @@ function parseFile(file) {
   return ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
 }
 
+/** Strips parentheses, `as` / `<T>` casts, `!` and `satisfies`, which do not change the value posted. */
+function unwrapExpression(node) {
+  let current = node;
+  while (
+    ts.isParenthesizedExpression(current) ||
+    ts.isAsExpression(current) ||
+    ts.isNonNullExpression(current) ||
+    ts.isTypeAssertionExpression(current) ||
+    (ts.isSatisfiesExpression && ts.isSatisfiesExpression(current))
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
 function lineOf(sourceFile, node) {
   return sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
 }
@@ -113,7 +128,9 @@ function collectPostedCommands(files) {
 
     const visit = (node) => {
       if (ts.isCallExpression(node) && /(^|\.)postMessage$/.test(node.expression.getText(sourceFile))) {
-        for (const arg of node.arguments) {
+        for (const rawArg of node.arguments) {
+          // `({ … })`, `{ … } as Msg` and `{ … } satisfies Msg` post the same message.
+          const arg = unwrapExpression(rawArg);
           if (!ts.isObjectLiteralExpression(arg)) {
             continue;
           }
@@ -122,8 +139,9 @@ function collectPostedCommands(files) {
               continue;
             }
             const key = prop.name.getText(sourceFile).replace(/['"]/g, '');
-            if ((key === 'command' || key === 'type') && ts.isStringLiteralLike(prop.initializer)) {
-              const name = prop.initializer.text;
+            const value = unwrapExpression(prop.initializer);
+            if ((key === 'command' || key === 'type') && ts.isStringLiteralLike(value)) {
+              const name = value.text;
               if (!posted.has(name)) {
                 posted.set(name, []);
               }
@@ -380,5 +398,6 @@ module.exports = {
   collectHandledCommandsFromAst,
   widenHandledFromText,
   collectTsFiles,
+  unwrapExpression,
   ts,
 };
