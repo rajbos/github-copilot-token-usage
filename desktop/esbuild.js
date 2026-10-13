@@ -9,7 +9,7 @@ const watchMode = process.argv.includes('--watch');
 // Webview bundles owned by the VS Code extension that the desktop app reuses.
 const WEBVIEW_BUNDLES = [
   'details.js', 'environmental.js', 'chart.js', 'usage.js',
-  'diagnostics.js', 'maturity.js', 'fluency-level-viewer.js',
+  'diagnostics.js', 'maturity.js', 'fluency-level-viewer.js', 'efficiency.js',
 ];
 
 async function main() {

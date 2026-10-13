@@ -30,16 +30,17 @@ import type {
 	ToolCurationAnalysis,
 	RepeatedTaskReport,
 	MemoryFilesAnalysis,
-} from '../../src/types';
-import toolNamesData from '../../src/toolNames.json';
-import modelPricingData from '../../src/modelPricing.json';
-import { resolveGuidMcpToolName, resolveMcpFamilyToolName, lookupKnownToolName } from '../../src/utils/toolUtils';
-import { getLongContextInfo, type LongContextInfo } from '../../src/tokenEstimation';
-import { CONTEXT_NEAR_LIMIT_RATIO } from '../../src/types';
-import type { ModelPricing } from '../../src/types';
-// Type-only: `l10nCore` itself imports no `vscode`, but importing only the type
-// keeps even the bundle JSON out of this module's graph.
-import type { Translate } from './l10nCore';
+	UsageAnalysisStats,
+} from './types';
+import toolNamesData from './toolNames.json';
+import modelPricingData from './modelPricing.json';
+import { resolveGuidMcpToolName, resolveMcpFamilyToolName, lookupKnownToolName } from './utils/toolUtils';
+import { getLongContextInfo, type LongContextInfo } from './tokenEstimation';
+import { CONTEXT_NEAR_LIMIT_RATIO } from './types';
+import type { ModelPricing } from './types';
+// The translator type lives in types.ts (re-exported by the extension's l10nCore) so this
+// module stays free of the localization bundles: hosts inject a translator.
+import type { Translate } from './types';
 
 /**
  * Picks the `.one` or `.other` variant of a key for `count`.
@@ -1569,6 +1570,52 @@ export function evaluateInsights(
 			};
 		})
 		.filter(i => i.status !== 'dismissed');
+}
+
+/**
+ * The insight context for a set of usage-analysis stats. Every caller builds it here, so the
+ * panel's insight cards and the extension's toast evaluate the same inputs (they used to
+ * build separate contexts, and the toast's lacked sessions, curation and repeated tasks).
+ */
+export function buildInsightContext(stats: UsageAnalysisStats, translate: Translate): InsightContext {
+	return {
+		translate,
+		today: stats.today,
+		last30Days: stats.last30Days,
+		month: stats.month,
+		lastMonth: stats.lastMonth,
+		autoCompactionsLast7Days: stats.autoCompactionsLast7Days,
+		missedPotential: stats.missedPotential ?? [],
+		customizationMatrix: stats.customizationMatrix,
+		todaySessions: stats.todaySessions,
+		curationAnalysis: stats.curationAnalysis ?? null,
+		repeatedTasks: stats.repeatedTasks ?? null,
+		memoryFilesAnalysis: stats.memoryFilesAnalysis ?? null,
+	};
+}
+
+/**
+ * Host-held insight state. A host that persists nothing (the CLI, the desktop app) passes
+ * only `translate`: every applicable insight is then evaluated as `new` with the default cadence.
+ */
+export interface InsightEvaluationState {
+	translate: Translate;
+	stateBag?: InsightStateBag;
+	cadenceDays?: number;
+	lastNudgeAt?: string | null;
+}
+
+/** Default `aiEngineeringFluency.insights.cadenceDays`. */
+export const DEFAULT_INSIGHT_CADENCE_DAYS = 2;
+
+/** Evaluates the insights for usage-analysis stats against the host's insight state. */
+export function evaluateUsageInsights(stats: UsageAnalysisStats, state: InsightEvaluationState): EvaluatedInsight[] {
+	return evaluateInsights(
+		buildInsightContext(stats, state.translate),
+		state.stateBag ?? {},
+		state.cadenceDays ?? DEFAULT_INSIGHT_CADENCE_DAYS,
+		state.lastNudgeAt ?? null,
+	);
 }
 
 /**

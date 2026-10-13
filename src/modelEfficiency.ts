@@ -22,9 +22,9 @@
  * This module is intentionally pure (no VS Code API, no filesystem access) so it
  * can be unit-tested with mocked data and reused by the CLI and the webview.
  */
-import type { DailyModelEfficiency, DailyModelEfficiencyEntry, DailyTokenStats, ModelEfficiencyCounters, ModelEfficiencyUsage, ModelPricing, ModelUsage, SessionFileCache } from './types';
+import type { DailyModelEfficiency, DailyModelEfficiencyEntry, DailyTokenStats, ModelEfficiencyCounters, ModelEfficiencyUsage, ModelPricing, ModelUsage, SessionFileCache, SessionUsageAnalysis } from './types';
+import { activeSessionDays, addModelUsage, scaleModelUsage } from './statsHelpers';
 import { calculateEstimatedCost } from './tokenEstimation';
-import { addModelUsage } from './statsHelpers';
 import { isUnsafeObjectKey } from './utils/protoGuard';
 
 // ---------------------------------------------------------------------------
@@ -284,7 +284,8 @@ export function createEmptyDailyModelEfficiencyEntry(): DailyModelEfficiencyEntr
  */
 function ensureDailyEntry(target: DailyModelEfficiency, model: string): DailyModelEfficiencyEntry | null {
 	if (isUnsafeObjectKey(model)) { return null; }
-	if (!target[model]) { target[model] = createEmptyDailyModelEfficiencyEntry(); }
+	// Own-property check: a model id such as "toString" must not resolve to an inherited member.
+	if (!Object.hasOwn(target, model) || !target[model]) { target[model] = createEmptyDailyModelEfficiencyEntry(); }
 	return target[model];
 }
 
@@ -491,7 +492,12 @@ export function accumulateDailyModelCounters(target: DailyModelEfficiency, input
  * Maps a parsed session cache entry onto the attribution input shape, preferring
  * the session's own LOC totals and falling back to its edit-scope analysis.
  */
-export function buildSessionEfficiencyAttribution(sessionData: SessionFileCache): SessionEfficiencyAttribution {
+/** The session fields {@link buildSessionEfficiencyAttribution} reads; a `SessionFileCache` satisfies it. */
+export type SessionEfficiencySource = Pick<SessionFileCache, 'modelUsage' | 'linesAdded' | 'linesRemoved'> & {
+	usageAnalysis?: Partial<Pick<SessionUsageAnalysis, 'modelEfficiency' | 'sessionDuration' | 'editScope' | 'applyUsage'>>;
+};
+
+export function buildSessionEfficiencyAttribution(sessionData: SessionEfficiencySource): SessionEfficiencyAttribution {
 	const analysis = sessionData.usageAnalysis;
 	return {
 		// Routed sessions are re-keyed so the router's token share lands on the
@@ -634,7 +640,7 @@ export function computeLongTailModels(usage: ModelEfficiencyUsage): Set<string> 
 function getOrCreateEditorSlice(entry: DailyTokenStats, editor: string): DailyModelEfficiency {
 	if (!entry.modelEfficiency) { entry.modelEfficiency = {}; }
 	if (!entry.editorModelEfficiency) { entry.editorModelEfficiency = {}; }
-	if (!entry.editorModelEfficiency[editor]) { entry.editorModelEfficiency[editor] = {}; }
+	if (!Object.hasOwn(entry.editorModelEfficiency, editor) || !entry.editorModelEfficiency[editor]) { entry.editorModelEfficiency[editor] = {}; }
 	return entry.editorModelEfficiency[editor];
 }
 
@@ -668,4 +674,31 @@ export function accumulateDayAndEditorModelCounters(
 	const slice = getOrCreateEditorSlice(entry, editor);
 	accumulateDailyModelCounters(entry.modelEfficiency!, input);
 	accumulateDailyModelCounters(slice, input);
+}
+
+/**
+ * Folds one session's model-efficiency data into day-keyed stats, for hosts without a
+ * `SessionFileCache` (the CLI, and the desktop app through it). Mirrors the extension's
+ * daily walk: token/cost usage is split across the session's days by `dailyFractions`,
+ * and the session-level counters (turns, duration, LOC, applies) land on its last active
+ * day. Call it after `addSessionToDailyStats()` for the same session, which creates the
+ * day entries.
+ */
+export function addSessionEfficiencyToDailyStats(
+	dailyStatsMap: Map<string, DailyTokenStats>,
+	session: SessionEfficiencySource & { editorType: string; dailyFractions: Record<string, number> },
+	pricing: { [model: string]: ModelPricing },
+): void {
+	const modelEfficiency = session.usageAnalysis?.modelEfficiency;
+	if (!modelEfficiency && Object.keys(session.modelUsage).length === 0) { return; }
+	// Only this session's own active days: one created by another session must not receive
+	// this session's counters (see activeSessionDays).
+	const activeDays = activeSessionDays(session.dailyFractions).filter(([k]) => dailyStatsMap.has(k));
+	for (const [dayKey, fraction] of activeDays) {
+		accumulateDayAndEditorModelTokens(dailyStatsMap.get(dayKey)!, session.editorType, scaleModelUsage(session.modelUsage, fraction), pricing, modelEfficiency);
+	}
+	const lastDay = activeDays.at(-1)?.[0];
+	if (lastDay) {
+		accumulateDayAndEditorModelCounters(dailyStatsMap.get(lastDay)!, session.editorType, buildSessionEfficiencyAttribution(session));
+	}
 }

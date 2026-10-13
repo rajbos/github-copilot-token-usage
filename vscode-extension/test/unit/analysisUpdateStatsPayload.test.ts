@@ -18,6 +18,11 @@
  * A future change that reintroduces an ad-hoc payload object (or drops a field
  * from the shared builder) fails this test immediately, without needing to click
  * through the webview to notice a tab went empty.
+ *
+ * Since #2418 the fields themselves come from the shared `buildUsageAnalysisViewData()`
+ * (src/usageAnalysisViewBuilder.ts) that the CLI and desktop app also call; its key set is
+ * pinned in usageAnalysisViewBuilder.test.ts. Here we check the extension's two payload
+ * methods both spread it.
  */
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
@@ -25,6 +30,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as ts from 'typescript';
 import { extractBracesBlock } from './sourceStructureTestHelpers';
+import { USAGE_ANALYSIS_VIEW_KEYS } from '../../../src/usageAnalysisViewBuilder';
 
 // Compiled test output lives under out/vscode-extension/test/unit (tsconfig.tests.json's
 // rootDir is the repo root), so __dirname does not sit next to the real source tree —
@@ -58,12 +64,13 @@ function findAllBalancedCalls(source: string, marker: string): string[] {
 
 test('_buildAnalysisUpdateData still includes every field the Usage Analysis webview renders', () => {
 	const body = extractBracesBlock(EXTENSION_SRC, 'private _buildAnalysisUpdateData(');
+	assert.ok(body.includes('...this.buildUsageAnalysisViewData('), '_buildAnalysisUpdateData() must spread the shared Usage Analysis payload');
 	const requiredFields = [
-		'today:', 'last30Days:', 'month:', 'lastMonth:',
-		'insights:', 'correctionReport:', 'repeatedTasks:', 'curationAnalysis:', 'memoryFilesAnalysis:',
-	];
+		'today', 'last30Days', 'month', 'lastMonth',
+		'insights', 'correctionReport', 'repeatedTasks', 'curationAnalysis', 'memoryFilesAnalysis',
+	] as const;
 	for (const field of requiredFields) {
-		assert.ok(body.includes(field), `_buildAnalysisUpdateData() is missing '${field}' — the webview will blank the section that reads it`);
+		assert.ok(USAGE_ANALYSIS_VIEW_KEYS.includes(field), `the shared payload is missing '${field}' — the webview will blank the section that reads it`);
 	}
 });
 
@@ -123,6 +130,9 @@ function payloadKeys(source: string, methodName: string): Set<string> {
 	for (const property of payload.properties) {
 		if ((ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property)) && property.name) {
 			keys.add(property.name.getText(sourceFile).replace(/^['"]|['"]$/g, ''));
+		} else if (ts.isSpreadAssignment(property)) {
+			// A spread contributes everything its source returns; key it by the call it spreads.
+			keys.add(`...${property.expression.getText(sourceFile).replace(/\(.*$/s, '(')}`);
 		}
 	}
 	return keys;
@@ -141,7 +151,7 @@ test('payloadKeys only collects direct properties of the returned payload', () =
 		};
 	}
 }`;
-	assert.deepEqual([...payloadKeys(fixture, 'build')].sort(), ['nested', 'shorthand', 'text', 'topLevel']);
+	assert.deepEqual([...payloadKeys(fixture, 'build')].sort(), ['...spread', 'nested', 'shorthand', 'text', 'topLevel']);
 });
 
 test('the initial Usage Analysis payload carries every field the updateStats payload does', () => {
@@ -150,7 +160,7 @@ test('the initial Usage Analysis payload carries every field the updateStats pay
 	// is how Skill Suggestions went missing on a cold open with cached stats).
 	const updateKeys = payloadKeys(EXTENSION_SRC, '_buildAnalysisUpdateData');
 	const initialKeys = payloadKeys(EXTENSION_SRC, '_buildUsageAnalysisInitialData');
-	assert.ok(updateKeys.has('repeatedTasks') && updateKeys.size >= 15, `key extraction looks broken: ${[...updateKeys].join(', ')}`);
+	assert.ok(updateKeys.has('...this.buildUsageAnalysisViewData('), `key extraction looks broken: ${[...updateKeys].join(', ')}`);
 	const missing = [...updateKeys].filter(key => !initialKeys.has(key));
 	assert.deepEqual(missing, [], `_buildUsageAnalysisInitialData() is missing fields that updateStats sends: ${missing.join(', ')}`);
 });

@@ -8,6 +8,8 @@ classifySessionTask,
 buildClassificationInputFromUsageAnalysis,
 buildClassificationInputFromChatTurns,
 countDelegationToolCalls,
+resolveSessionTaskAttribution,
+createEmptyTaskClassificationResult,
 } from '../taskClassification';
 import type { ChatTurn, ContextReferenceUsage, SessionUsageAnalysis } from '../types';
 
@@ -231,4 +233,24 @@ test('countDelegationToolCalls: matches Claude Agent tool, MCP spawn tools, and 
 
 test('countDelegationToolCalls: does not match tool names merely containing "task" or "agent"', () => {
 	assert.equal(countDelegationToolCalls({ task_create: 1, todo_write: 1, manage_agents_config: 1 }), 0);
+});
+
+test('resolveSessionTaskAttribution uses a classification that covered turns', () => {
+	const classification = classifySessionTurns([
+		{ messageText: 'run tests', toolNames: ['bash'], shellCommands: ['npm test'] },
+	]);
+	assert.ok(classification.turnCount > 0);
+	const result = resolveSessionTaskAttribution({ toolCalls: { total: 0, byTool: {} }, taskClassification: classification });
+	assert.equal(result.taskCategory, classification.primaryCategory);
+	assert.deepEqual(result.taskCategoryShares, classification.categoryShares);
+});
+
+test('resolveSessionTaskAttribution falls back to the tool heuristic for an empty classification', () => {
+	// analyzeSessionUsage() and the adapters always set taskClassification, to the empty
+	// "Conversation" placeholder when nothing was classified; that must not mask tool calls.
+	const toolCalls = { total: 1, byTool: { edit: 1 } };
+	const result = resolveSessionTaskAttribution({ toolCalls, taskClassification: createEmptyTaskClassificationResult() });
+	assert.equal(result.taskCategory, classifySessionTask(buildClassificationInputFromUsageAnalysis({ toolCalls })));
+	assert.notEqual(result.taskCategory, 'Conversation', 'the placeholder category must not win over the tools');
+	assert.equal('taskCategoryShares' in result, false, 'the placeholder shares must not be carried over');
 });

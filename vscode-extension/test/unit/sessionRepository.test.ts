@@ -6,11 +6,17 @@ import * as path from 'node:path';
 
 import {
 	collectSessionContentReferences,
+	createSessionAttributesCache,
 	extractRepositoryFromSessionContent,
 	extractWorkspaceRepository,
+	repositoryFromEcosystemMeta,
 	requestContentReferences,
+	resolveSessionAttributes,
+	scanSessionContent,
 	toolArgumentPathReferences,
 } from '../../../src/sessionRepository';
+import type { IEcosystemAdapter } from '../../../src/ecosystemAdapter';
+import { makeWorkspaceFixtureDir } from './tmpFixtureDirs';
 
 const ref = (fsPath: string) => ({ kind: 'reference', reference: { fsPath } });
 
@@ -149,4 +155,107 @@ test('extractWorkspaceRepository: a linked worktree workspace resolves through i
 	} finally {
 		fs.rmSync(root, { recursive: true, force: true });
 	}
+});
+
+// ── #2316: adapter metadata, titles and the CLI's one-pass resolver ─────────────────────────
+
+const REMOTE = 'https://github.com/octo/widgets.git';
+
+/** A fake repository with an origin remote and one source file; returns the file's path. */
+function makeRepoWithFile(): string {
+	const root = makeWorkspaceFixtureDir('session-attrs-');
+	fs.mkdirSync(path.join(root, '.git'), { recursive: true });
+	fs.writeFileSync(path.join(root, '.git', 'config'), `[remote "origin"]\n\turl = ${REMOTE}\n`);
+	fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+	const file = path.join(root, 'src', 'index.ts');
+	fs.writeFileSync(file, 'export {};\n');
+	return file;
+}
+
+test('repositoryFromEcosystemMeta keeps a recorded repository even without a workspace', () => {
+	assert.equal(repositoryFromEcosystemMeta({ repository: 'octo/widgets', workspacePath: '/src/widgets' }), 'octo/widgets');
+	assert.equal(repositoryFromEcosystemMeta({ repository: 'octo/widgets' }), 'octo/widgets', 'a recorded repository needs no workspace');
+	assert.equal(repositoryFromEcosystemMeta({}), undefined, 'neither field means no repository');
+	assert.ok(repositoryFromEcosystemMeta({ workspacePath: '/src/widgets' }), 'a workspace path yields a derived name');
+});
+
+test('scanSessionContent returns the custom title of JSON and delta sessions with their references', async () => {
+	assert.deepEqual(await scanSessionContent(JSON.stringify({ customTitle: 'Debug the crash', requests: [{ contentReferences: [ref('/r/a.ts')] }] })),
+		{ refs: [ref('/r/a.ts')], title: 'Debug the crash' });
+	const delta = [
+		JSON.stringify({ kind: 0, v: { customTitle: 'Plan the rewrite', requests: [] } }),
+		JSON.stringify({ kind: 2, k: ['requests'], v: { requestId: 'r1', contentReferences: [ref('/r/c.ts')] } }),
+	].join('\n');
+	assert.deepEqual(await scanSessionContent(delta), { refs: [ref('/r/c.ts')], title: 'Plan the rewrite' });
+	assert.deepEqual(await scanSessionContent(JSON.stringify({ requests: [] })), { refs: [] }, 'no title when none is recorded');
+});
+
+test('resolveSessionAttributes: referenced files decide for a session whose workspace is unknown', async () => {
+	const file = makeRepoWithFile();
+	const content = JSON.stringify({ customTitle: 'Fix the widget', requests: [{ contentReferences: [ref(file)] }] });
+	assert.deepEqual(await resolveSessionAttributes([], path.join(path.dirname(file), 'session.json'), content), { repository: REMOTE, title: 'Fix the widget' });
+});
+
+test('resolveSessionAttributes: an adapter session uses the recorded remote and title from one getMeta()', async () => {
+	let calls = 0;
+	const eco = {
+		handles: (f: string) => f.endsWith('.db#1'),
+		getMeta: async () => { calls++; return { title: 'Plan the release', firstInteraction: null, lastInteraction: null, repository: 'octo/widgets' }; },
+	} as unknown as IEcosystemAdapter;
+	assert.deepEqual(await resolveSessionAttributes([eco], 'store.db#1'), { repository: 'octo/widgets', title: 'Plan the release' });
+	assert.equal(calls, 1);
+});
+
+test('resolveSessionAttributes: none found is an empty string; an unreadable session is undefined (not cacheable)', async () => {
+	assert.deepEqual(await resolveSessionAttributes([], path.join(__dirname, 'session.json'), JSON.stringify({ requests: [{}] })), { repository: '' });
+	assert.equal(await resolveSessionAttributes([], path.join(__dirname, 'no-such-dir', 'missing.json')), undefined);
+});
+
+test('scanSessionContent titles a Copilot CLI log like the extension: rename_session, else the first user message', async () => {
+	const longMessage = 'Investigate why the nightly build fails on Windows runners when the cache is cold and restore it';
+	const events = (extra: object[]) => [
+		{ type: 'user.message', data: { content: longMessage } },
+		{ type: 'tool.execution_start', data: { toolName: 'view', arguments: { path: '/r/a.ts' } } },
+		...extra,
+	].map(e => JSON.stringify(e)).join('\n');
+	assert.deepEqual(await scanSessionContent(events([])), { refs: [ref('/r/a.ts')], title: `${longMessage.slice(0, 60)}…` });
+	const renamed = await scanSessionContent(events([
+		{ type: 'tool.execution_start', data: { toolName: 'rename_session', arguments: { title: 'First name' } } },
+		{ type: 'tool.execution_start', data: { toolName: 'rename_session', arguments: { title: 'Fix nightly build' } } },
+	]));
+	assert.equal(renamed.title, 'Fix nightly build', 'the last rename wins over the first message');
+});
+
+test('resolveSessionAttributes: a discovered-but-unhandled session uses the adapter\'s workspace (e.g. Copilot CLI events.jsonl)', async () => {
+	const file = makeRepoWithFile();
+	const repoRoot = path.dirname(path.dirname(file));
+	const eventsFile = path.join(repoRoot, 'session-state', 'abc', 'events.jsonl');
+	const eco = {
+		handles: () => false,
+		getWorkspacePathForDiscoveredPath: async (f: string) => (f === eventsFile ? repoRoot : undefined),
+	} as unknown as IEcosystemAdapter;
+	// No referenced files at all: only the discovered workspace can name the repository.
+	const content = JSON.stringify({ type: 'user.message', data: { content: 'hello' } });
+	const attrs = await resolveSessionAttributes([eco], eventsFile, content);
+	assert.equal(attrs?.repository, REMOTE);
+	assert.equal(attrs?.title, 'hello');
+});
+
+test('resolveSessionAttributes: sessions of one walk share one repository lookup per workspace', async () => {
+	// Thousands of historical sessions usually come from a handful of workspaces; each folder's
+	// .git ancestors must be scanned once per walk, not once per session.
+	const file = makeRepoWithFile();
+	const workspace = path.dirname(path.dirname(file));
+	const eco = {
+		handles: (f: string) => f.endsWith('.db#a') || f.endsWith('.db#b'),
+		getMeta: async () => ({ title: undefined, firstInteraction: null, lastInteraction: null, workspacePath: workspace }),
+	} as unknown as IEcosystemAdapter;
+	const cache = createSessionAttributesCache();
+	const [a, b] = await Promise.all([
+		resolveSessionAttributes([eco], 'store.db#a', undefined, cache),
+		resolveSessionAttributes([eco], 'store.db#b', undefined, cache),
+	]);
+	assert.equal(a?.repository, REMOTE);
+	assert.equal(b?.repository, REMOTE);
+	assert.deepEqual([...cache.folderRemotes.keys()], [workspace], 'one shared lookup for the workspace');
 });

@@ -33,6 +33,7 @@ import dataTableStyles from '../shared/dataTable.css';
 import { renderDataTable, rerenderDataTable, setDataTableState, type DataTableColumn, type DataTableSortValue } from '../shared/dataTable';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
+import type { UsageAnalysisViewData } from '../../../../src/usageAnalysisViewBuilder';
 import { registerMessageHandler } from '../shared/messageHandler';
 import { getModelDisplayName, getModelLookupCandidates } from '../../../../src/webview/shared/modelUtils';
 import { getModelBillingProvider } from '../../../../src/chartDataBuilder';
@@ -258,7 +259,8 @@ interface CustomizationFileEntry {
 	icon?: string;
 	label?: string;
 	name?: string;
-	lastModified?: string;
+	/** Null when unknown, as the shared CustomizationFileEntry (src/types.ts) sends it. */
+	lastModified?: string | null;
 	isStale?: boolean;
 	category?: 'copilot' | 'non-copilot';
 }
@@ -362,6 +364,29 @@ function traceCurationOnce(key: string, stage: string, details?: Record<string, 
 
 type WorktreeBackgroundScanData = { scannedAt: string; totalBytes: number; worktreeCount: number; worktrees: unknown[] };
 type InitialUsageData = UsageAnalysisStats & { customizationMatrix?: WorkspaceCustomizationMatrix | null; missedPotential?: MissedPotentialWorkspace[]; worktreeScanRoots?: string[]; localization?: Record<string, string>; worktreeBackgroundScan?: WorktreeBackgroundScanData | null };
+
+/*
+ * Compile-time contract with the shared payload builder (src/usageAnalysisViewBuilder.ts), which
+ * the extension, the CLI and the desktop app all call. The view keeps local copies of the nested
+ * types, so the contract is checked field by field, in both directions — a field added on one
+ * side only is a compile error, not a silently blank section in some host (#2316):
+ *  - every field the builder emits is declared here;
+ *  - every field declared here is on the shared payload, or listed as a host extra below;
+ *  - every shared field's value, as the builder types it, is accepted by this view's type.
+ */
+/** Fields this view reads that hosts add on top of the shared payload (extension-only today). */
+type UsageHostExtraField = 'serverMemoriesAnalysis' | 'sessionColumnSettings' | 'copilotApiBalance' | 'accountBudgets' | 'monthBillingGroupCosts';
+type UsageFieldsMissingFromView = Exclude<keyof UsageAnalysisViewData, keyof UsageAnalysisStats>;
+type UsageFieldsNotFromBuilder = Exclude<keyof UsageAnalysisStats, keyof UsageAnalysisViewData | UsageHostExtraField>;
+type UsageFieldsWithIncompatibleTypes = {
+	[K in keyof UsageAnalysisViewData & keyof UsageAnalysisStats]: UsageAnalysisViewData[K] extends UsageAnalysisStats[K] ? never : K
+}[keyof UsageAnalysisViewData & keyof UsageAnalysisStats];
+type AssertNever<T extends never> = T;
+export type UsagePayloadContract = [
+	AssertNever<UsageFieldsMissingFromView>,
+	AssertNever<UsageFieldsNotFromBuilder>,
+	AssertNever<UsageFieldsWithIncompatibleTypes>,
+];
 const initialData = getWindowData<InitialUsageData>('__INITIAL_USAGE__');
 
 // Initialize localization for webview

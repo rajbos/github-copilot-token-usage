@@ -17,7 +17,7 @@ function buildDayPeriod(days: number): ChartPeriodData {
 		keys.push(dayKey(new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - i)));
 	}
 	const values = keys.map((_, i) => i + 1);
-	const dataset = () => [{ label: 'x', data: [...values] }];
+	const dataset = () => [{ label: 'x', data: [...values], backgroundColor: '#000', borderColor: '#000', borderWidth: 1 }];
 	return {
 		labels: [...keys],
 		periodKeys: keys,
