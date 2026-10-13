@@ -30,6 +30,10 @@ const desktopContract = requireFromHere(path.join(REPO_ROOT, 'scripts', 'validat
 	collectViewFiles: (entry: string) => string[];
 	collectIpcHandledCommands: (file: string) => Set<string>;
 	collectComputedPostedCommands: (files: string[]) => { posted: Map<string, unknown[]>; unresolved: { key: string }[] };
+	parseViewFiles: (files: string[]) => unknown[];
+	indexFunctions: (parsed: unknown[]) => unknown;
+	collectPostSites: (parsed: unknown[], index: unknown) => { node: unknown; pf: { sf: unknown }; names: Set<string> }[];
+	controlsForSite: (node: unknown, sf: unknown, parsed: unknown[]) => Set<string> | undefined;
 	selectorOverreach: (token: string, postedBy: Set<string>, viewOwnTexts: Map<string, string>) => string[];
 	analyse: () => { views: string[]; findings: Finding[] };
 };
@@ -152,6 +156,84 @@ test('desktop contract: resolves commands whose name is computed at runtime', ()
 	// searchMcp is on another class, which the .hook-reminder-btn handler never sees.
 	assert.deepEqual([...posted.keys()].sort(), ['exportPdf', 'exportPptx', 'installHook', 'uninstallHook']);
 	assert.deepEqual(unresolved.map(u => u.key.replace(/^.*#/, '')), ['runFromData:item.command']);
+});
+
+test('desktop contract: follows message objects built by a helper and forwarded', () => {
+	// serverMemories.ts shape: a helper returns the message, its caller forwards it
+	// through a `postMessage` parameter, and the view passes a relay lambda in.
+	const dir = makeTmpFixtureDir('desktop-forwarded-');
+	const helper = path.join(dir, 'helper.ts');
+	const main = path.join(dir, 'main.ts');
+	fs.writeFileSync(helper, `
+		export function messageForClick(ok: boolean) {
+			return ok ? { command: 'draftPromotion', subject: 's' } : { command: 'openCitation', path: 'p' };
+		}
+		export function wireButtons(postMessage: (m: unknown) => void): void {
+			document.addEventListener('click', () => {
+				const message = messageForClick(true);
+				if (message) { postMessage(message); }
+			});
+		}
+		export function wireOther(send: (m: unknown) => void): void { send({ command: 'neverSeen' }); }
+	`);
+	fs.writeFileSync(main, `
+		import { wireButtons, wireOther } from './helper';
+		declare const vscode: { postMessage(m: unknown): void };
+		wireButtons(message => vscode.postMessage(message));
+		wireOther(message => vscode.postMessage(message));
+	`);
+	const { posted, unresolved } = desktopContract.collectComputedPostedCommands([helper, main]);
+	assert.deepEqual([...posted.keys()].sort(), ['draftPromotion', 'openCitation']);
+	// The second relay hands messages to a parameter called `send`, whose calls the
+	// scan does not visit, so it must stay unresolved instead of passing silently.
+	assert.deepEqual(unresolved.map(u => u.key.replace(/^.*#/, '')), ['<module>>wireOther:message']);
+});
+
+test('desktop contract: finds the control behind each post of a hidden command', () => {
+	const dir = makeTmpFixtureDir('desktop-controls-');
+	const file = path.join(dir, 'main.ts');
+	fs.writeFileSync(file, `
+		declare const vscode: { postMessage(m: unknown): void };
+		const LINKS = '.open-link, .report-link';
+		function wire(): void {
+			const efficiency = document.getElementById('btn-efficiency');
+			efficiency?.addEventListener('click', () => vscode.postMessage({ command: 'showEfficiency' }));
+			// A second button posting the same, already-hidden command.
+			document.getElementById('btn-efficiency-2')?.addEventListener('click', () => vscode.postMessage({ command: 'showEfficiency' }));
+			document.querySelectorAll('.hook-btn').forEach(btn => btn.addEventListener('click', () => vscode.postMessage({ command: 'installHook' })));
+			for (const { id } of [{ id: 'btn-share-a' }, { id: 'btn-share-b' }]) {
+				document.getElementById(id)?.addEventListener('click', () => vscode.postMessage({ command: 'share' }));
+			}
+			document.addEventListener('click', (e) => {
+				const link = (e.target as Element).closest(LINKS);
+				if (!link) { return; }
+				if (link.classList.contains('open-link')) {
+					vscode.postMessage({ command: 'open' });
+				} else {
+					vscode.postMessage({ command: 'report' });
+				}
+				const target = e.target as HTMLElement;
+				if (target.id === 'btn-clear' || target.id === 'btn-clear-tab') { clearCache(); }
+			});
+		}
+		function clearCache(): void { vscode.postMessage({ command: 'clearCache' }); }
+		function nobodyCallsThis(): void { vscode.postMessage({ command: 'orphan' }); }
+	`);
+	const parsed = desktopContract.parseViewFiles([file]);
+	const controls = new Map<string, string[]>();
+	for (const site of desktopContract.collectPostSites(parsed, desktopContract.indexFunctions(parsed))) {
+		const found = desktopContract.controlsForSite(site.node, site.pf.sf, parsed);
+		for (const name of site.names) {
+			controls.set(name, [...(controls.get(name) ?? []), ...(found ? [...found] : ['?'])]);
+		}
+	}
+	assert.deepEqual(controls.get('showEfficiency'), ['#btn-efficiency', '#btn-efficiency-2']);
+	assert.deepEqual(controls.get('installHook'), ['.hook-btn']);
+	assert.deepEqual(controls.get('share'), ['#btn-share-a', '#btn-share-b']);
+	assert.deepEqual(controls.get('open'), ['.open-link']);
+	assert.deepEqual(controls.get('report'), ['.report-link']);
+	assert.deepEqual(controls.get('clearCache'), ['#btn-clear', '#btn-clear-tab']);
+	assert.deepEqual(controls.get('orphan'), ['?']);
 });
 
 test('desktop-build.yml: push paths match the PR desktop-relevant filter', () => {

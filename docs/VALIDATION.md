@@ -341,7 +341,17 @@ or from the repo root, `./build.ps1 -Project desktop -Target test`.
   view's markup (scoped to the class the click handler is attached through), and
   a parameter typed as a union of string literals resolves to those literals. A
   computed name that resolves to neither fails unless it is listed under
-  `unresolvedComputedCommands` with a reason. Stale entries fail too: a command that is now handled or no longer
+  `unresolvedComputedCommands` with a reason. Message objects built by a helper
+  and forwarded (`postMessage(msg)` with `msg` returned by a function in the
+  view) are traced to the helper's returned literals, and a relay lambda passed
+  to a helper whose parameter is named `postMessage` is followed into it.
+  `hidden` is checked per control, not per command: for every place a hidden
+  command is posted, the check works out which control the click handler is
+  attached to (`getElementById` / `querySelector(All)` / an `if` on `.id` or
+  `classList`, following helpers to their callers) and fails if that control is
+  not in the entry's `hiddenBy`, so a new button posting an already-hidden
+  command cannot ship visible and dead. A site whose control cannot be
+  determined fails unless listed under the entry's `unresolvedControlSites`. Stale entries fail too: a command that is now handled or no longer
   posted, or a hidden selector whose id/class is gone from the views. A hidden
   selector must also be specific to its command: one whose id/class appears in
   another view that does not post that command fails, because the desktop CSS

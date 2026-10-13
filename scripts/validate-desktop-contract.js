@@ -132,6 +132,13 @@ function readUnsupported() {
       throw new ConfigError(`${where}: "hiddenBy" selectors are required for status 'hidden' and not allowed otherwise.`);
     }
     entry.hiddenBy = entry.hiddenBy || [];
+    if (entry.unresolvedControlSites !== undefined) {
+      const sites = entry.unresolvedControlSites;
+      if (entry.status !== 'hidden' || typeof sites !== 'object' || Array.isArray(sites) || Object.values(sites).some((r) => typeof r !== 'string' || !r.trim())) {
+        throw new ConfigError(`${where}: "unresolvedControlSites" is only for status 'hidden' and maps 'file#function' to a non-empty reason.`);
+      }
+    }
+    entry.unresolvedControlSites = entry.unresolvedControlSites || {};
   }
   return commands;
 }
@@ -168,6 +175,10 @@ function dataAttributeRead(node) {
 /** The initializer of the nearest `const|let name = …` visible from `node`, walking outwards through enclosing blocks. */
 function findLocalInitializer(node, name) {
   for (let scope = node.parent; scope; scope = scope.parent) {
+    // A parameter of that name shadows anything declared further out.
+    if (ts.isFunctionLike(scope) && scope.parameters.some((p) => ts.isIdentifier(p.name) && p.name.text === name)) {
+      return undefined;
+    }
     const statements = ts.isBlock(scope) || ts.isSourceFile(scope) ? scope.statements : [];
     for (const statement of statements) {
       if (!ts.isVariableStatement(statement)) {
@@ -208,6 +219,19 @@ function enclosingFunctionName(node) {
     }
   }
   return '<module>';
+}
+
+/** `>callee` when `node` sits in a callback passed to a call/new, so two module-level relays get different keys. */
+function relayTarget(node) {
+  for (let current = node.parent; current; current = current.parent) {
+    if ((ts.isCallExpression(current) || ts.isNewExpression(current)) && current !== node && ts.isIdentifier(current.expression)) {
+      return `>${current.expression.text}`;
+    }
+    if (ts.isFunctionDeclaration(current) || ts.isSourceFile(current)) {
+      return '';
+    }
+  }
+  return '';
 }
 
 /** The `.class` of the nearest enclosing `document.querySelector(All)('.class')…` the handler is attached through, if any. */
@@ -252,68 +276,434 @@ function attributeValuesInMarkup(texts, attribute, className) {
   return values;
 }
 
-/**
- * Commands a view posts under a name computed at runtime, which the literal
- * scan in validate-webview-contract.js skips. A `{ command: x }` whose `x` is
- * read from a `data-*` attribute is resolved from the view's markup (scoped to
- * the class the click handler is attached through); one that is a parameter
- * typed as a union of string literals resolves to those literals. Anything
- * else is returned in `unresolved`, so it cannot pass silently.
- *
- * @returns {{ posted: Map<string, {file: string, line: number}[]>, unresolved: {key: string, file: string, line: number}[] }}
- */
-function collectComputedPostedCommands(files) {
-  const posted = new Map();
-  const unresolved = [];
-  const texts = files.map((f) => fs.readFileSync(f, 'utf8'));
+/** Parses each view file once: path, repo-relative path, text and AST. */
+function parseViewFiles(files) {
+  return files.map((file) => {
+    const text = fs.readFileSync(file, 'utf8');
+    return {
+      file,
+      rel: path.relative(REPO_ROOT, file).split(path.sep).join('/'),
+      text,
+      sf: ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true),
+    };
+  });
+}
 
-  files.forEach((file, index) => {
-    const sourceFile = ts.createSourceFile(file, texts[index], ts.ScriptTarget.Latest, true);
-    const relativeFile = path.relative(REPO_ROOT, file).split(path.sep).join('/');
+/**
+ * Named function declarations across the view files, for following helpers and
+ * their call sites; a class is indexed under its name with its constructor as
+ * `decl`, so `new X(callback)` can be matched to the constructor's parameters.
+ */
+function indexFunctions(parsed) {
+  const index = new Map();
+  const add = (name, decl, pf) => {
+    if (!index.has(name)) {
+      index.set(name, []);
+    }
+    index.get(name).push({ decl, pf });
+  };
+  for (const pf of parsed) {
     const visit = (node) => {
-      if (ts.isCallExpression(node) && /(^|\.)postMessage$/.test(node.expression.getText(sourceFile))) {
-        for (const arg of node.arguments) {
-          if (!ts.isObjectLiteralExpression(arg)) {
-            continue;
-          }
-          for (const prop of arg.properties) {
-            const key = prop.name && prop.name.getText(sourceFile).replace(/['"]/g, '');
-            if (key !== 'command' && key !== 'type') {
-              continue;
-            }
-            const value = ts.isShorthandPropertyAssignment(prop) ? prop.name : ts.isPropertyAssignment(prop) ? unwrapExpression(prop.initializer) : undefined;
-            if (!value || ts.isStringLiteralLike(value)) {
-              continue; // literal names are the shared collector's job
-            }
-            const line = sourceFile.getLineAndCharacterOfPosition(prop.getStart(sourceFile)).line + 1;
-            const initializer = ts.isIdentifier(value) ? findLocalInitializer(node, value.text) : value;
-            const attribute = initializer ? dataAttributeRead(initializer) : undefined;
-            const names = attribute
-              ? attributeValuesInMarkup(texts, attribute, enclosingClassSelector(node))
-              : (!initializer && ts.isIdentifier(value) && literalUnionParameter(node, value.text)) || new Set();
-            if (names.size === 0) {
-              unresolved.push({
-                key: `${relativeFile}#${enclosingFunctionName(node)}:${value.getText(sourceFile)}`,
-                file: relativeFile,
-                line,
-              });
-              continue;
-            }
-            for (const name of names) {
-              if (!posted.has(name)) {
-                posted.set(name, []);
-              }
-              posted.get(name).push({ file: relativeFile, line });
-            }
-          }
+      if (ts.isFunctionDeclaration(node) && node.name && node.body) {
+        add(node.name.text, node, pf);
+      }
+      if (ts.isClassDeclaration(node) && node.name) {
+        const ctor = node.members.find((m) => ts.isConstructorDeclaration(m));
+        if (ctor) {
+          add(node.name.text, ctor, pf);
         }
       }
       ts.forEachChild(node, visit);
     };
-    visit(sourceFile);
-  });
+    visit(pf.sf);
+  }
+  return index;
+}
 
+/** The literal `command`/`type` of an object literal, `null` when it has none, or the non-literal value node. */
+function messageNameOf(objectLiteral, sf) {
+  for (const prop of objectLiteral.properties) {
+    const key = prop.name && prop.name.getText(sf).replace(/['"]/g, '');
+    if (key !== 'command' && key !== 'type') {
+      continue;
+    }
+    const value = ts.isShorthandPropertyAssignment(prop) ? prop.name : ts.isPropertyAssignment(prop) ? unwrapExpression(prop.initializer) : undefined;
+    return value && ts.isStringLiteralLike(value) ? value.text : value;
+  }
+  return null;
+}
+
+/** Literal message names in the object literals a helper returns (through ternaries), ignoring nested functions. */
+function returnedMessageNames(decl, sf) {
+  const names = new Set();
+  const collect = (expr) => {
+    const e = unwrapExpression(expr);
+    if (ts.isConditionalExpression(e)) {
+      collect(e.whenTrue);
+      collect(e.whenFalse);
+    } else if (ts.isObjectLiteralExpression(e)) {
+      const name = messageNameOf(e, sf);
+      if (typeof name === 'string') {
+        names.add(name);
+      }
+    }
+  };
+  const visit = (node) => {
+    if (node !== decl && ts.isFunctionLike(node)) {
+      return;
+    }
+    if (ts.isReturnStatement(node) && node.expression) {
+      collect(node.expression);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(decl);
+  return names;
+}
+
+/**
+ * Every message a view can post, one entry per `postMessage(…)` call:
+ * - `{ command: 'x' }` literals;
+ * - `{ command: x }` with `x` read from a `data-*` attribute (resolved from the
+ *   view's markup, scoped to the class the click handler is attached through)
+ *   or a parameter typed as a union of string literals;
+ * - a message object built elsewhere and forwarded — `postMessage(msg)` where
+ *   `msg` is a local object literal or the result of a helper in the view's
+ *   files, whose returned object literals give the names.
+ * A site whose names cannot be resolved gets an `unresolvedKey` instead, so it
+ * cannot pass silently.
+ */
+function collectPostSites(parsed, fnIndex) {
+  const texts = parsed.map((pf) => pf.text);
+  const sites = [];
+  for (const pf of parsed) {
+    const visit = (node) => {
+      if (ts.isCallExpression(node) && /(^|\.)postMessage$/.test(node.expression.getText(pf.sf)) && node.arguments.length > 0) {
+        const site = { node, pf, file: pf.rel, line: pf.sf.getLineAndCharacterOfPosition(node.getStart(pf.sf)).line + 1, names: new Set(), literal: false };
+        resolveSite(site, node.arguments[0], texts, fnIndex);
+        if (site.names.size > 0 || site.unresolvedKey) {
+          sites.push(site);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(pf.sf);
+  }
+  return sites;
+}
+
+/**
+ * True for a relay such as `wireX((message) => vscode.postMessage(message))`:
+ * `name` is a parameter of a callback that is either
+ * - passed straight to a helper function or class constructor in the view's
+ *   files whose matching parameter is itself named `postMessage`, or
+ * - the value of an object property named `postMessage`.
+ * Either way every message it relays is sent as a `postMessage(…)` /
+ * `x.postMessage(…)` call this scan already visits where it is made. Any other
+ * forwarded parameter stays unresolved.
+ */
+function isRelayToScannedHelper(node, name, fnIndex) {
+  let fn = node.parent;
+  while (fn && !ts.isFunctionLike(fn)) {
+    fn = fn.parent;
+  }
+  if (!fn || !(ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) {
+    return false;
+  }
+  if (!fn.parameters.some((p) => ts.isIdentifier(p.name) && p.name.text === name)) {
+    return false;
+  }
+  const call = fn.parent;
+  if (call && ts.isPropertyAssignment(call) && call.initializer === fn) {
+    return /(^|[a-z])postMessage$/i.test(call.name.getText());
+  }
+  if (!call || !(ts.isCallExpression(call) || ts.isNewExpression(call)) || !ts.isIdentifier(call.expression) || !fnIndex.has(call.expression.text)) {
+    return false;
+  }
+  const position = (call.arguments || []).indexOf(fn);
+  return fnIndex.get(call.expression.text).every(({ decl }) => {
+    const param = decl.parameters[position];
+    return Boolean(param && ts.isIdentifier(param.name) && /(^|[a-z])postMessage$/i.test(param.name.text));
+  });
+}
+
+function resolveSite(site, argument, texts, fnIndex) {
+  const { node, pf } = site;
+  const unresolved = (expr) => {
+    site.unresolvedKey = `${pf.rel}#${enclosingFunctionName(node)}${relayTarget(node)}:${expr.getText(pf.sf)}`;
+  };
+  let arg = unwrapExpression(argument);
+  if (ts.isIdentifier(arg)) {
+    const init = findLocalInitializer(node, arg.text);
+    if (!init) {
+      return isRelayToScannedHelper(node, arg.text, fnIndex) ? undefined : unresolved(arg);
+    }
+    arg = unwrapExpression(init);
+  }
+  if (ts.isCallExpression(arg) && ts.isIdentifier(arg.expression) && fnIndex.has(arg.expression.text)) {
+    for (const { decl, pf: declPf } of fnIndex.get(arg.expression.text)) {
+      returnedMessageNames(decl, declPf.sf).forEach((n) => site.names.add(n));
+    }
+    if (site.names.size === 0) {
+      unresolved(arg);
+    }
+    return;
+  }
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return unresolved(arg);
+  }
+  const name = messageNameOf(arg, pf.sf);
+  if (name === null) {
+    return; // not a command message (e.g. a window.postMessage payload of another shape)
+  }
+  if (typeof name === 'string') {
+    site.names.add(name);
+    site.literal = arg === unwrapExpression(argument);
+    return;
+  }
+  const initializer = ts.isIdentifier(name) ? findLocalInitializer(node, name.text) : name;
+  const attribute = initializer ? dataAttributeRead(initializer) : undefined;
+  const names = attribute
+    ? attributeValuesInMarkup(texts, attribute, enclosingClassSelector(node))
+    : (!initializer && ts.isIdentifier(name) && literalUnionParameter(node, name.text)) || new Set();
+  if (names.size === 0) {
+    return unresolved(name);
+  }
+  names.forEach((n) => site.names.add(n));
+}
+
+/**
+ * Commands a view posts that the literal scan in validate-webview-contract.js
+ * cannot see: computed names and forwarded message objects (see collectPostSites).
+ *
+ * @returns {{ posted: Map<string, {file: string, line: number}[]>, unresolved: {key: string, file: string, line: number}[] }}
+ */
+function collectComputedPostedCommands(files) {
+  const parsed = parseViewFiles(files);
+  const posted = new Map();
+  const unresolved = [];
+  for (const site of collectPostSites(parsed, indexFunctions(parsed))) {
+    if (site.unresolvedKey) {
+      unresolved.push({ key: site.unresolvedKey, file: site.file, line: site.line });
+      continue;
+    }
+    if (site.literal) {
+      continue; // the shared literal collector reports these
+    }
+    for (const name of site.names) {
+      if (!posted.has(name)) {
+        posted.set(name, []);
+      }
+      posted.get(name).push({ file: site.file, line: site.line });
+    }
+  }
   return { posted, unresolved };
+}
+
+/** `#id` / `.class` for a getElementById / querySelector(All) call with a simple selector argument. */
+function selectorFromLookup(expr) {
+  const e = unwrapExpression(expr);
+  if (!ts.isCallExpression(e) || !ts.isPropertyAccessExpression(e.expression) || e.arguments.length !== 1 || !ts.isStringLiteralLike(e.arguments[0])) {
+    return undefined;
+  }
+  const method = e.expression.name.text;
+  const arg = e.arguments[0].text.trim();
+  if (method === 'getElementById' && /^[\w-]+$/.test(arg)) {
+    return `#${arg}`;
+  }
+  if (/^(querySelector(All)?|closest)$/.test(method) && /^[#.][\w-]+$/.test(arg)) {
+    return arg;
+  }
+  return undefined;
+}
+
+/** Selectors named in a condition: `x.id === 'a'`, `classList.contains('b')`, `.closest('.c')`. */
+function selectorsInCondition(condition, sf) {
+  const found = new Set();
+  const visit = (node) => {
+    if (ts.isBinaryExpression(node) && [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.EqualsEqualsToken].includes(node.operatorToken.kind)) {
+      if (/\.id$/.test(node.left.getText(sf)) && ts.isStringLiteralLike(node.right)) {
+        found.add(`#${node.right.text}`);
+      }
+    }
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.arguments.length === 1 && ts.isStringLiteralLike(node.arguments[0])) {
+      const method = node.expression.name.text;
+      const arg = node.arguments[0].text.trim();
+      if (method === 'contains' && /classList$/.test(node.expression.expression.getText(sf)) && /^[\w-]+$/.test(arg)) {
+        found.add(`.${arg}`);
+      }
+    }
+    const lookup = selectorFromLookup(node);
+    if (lookup) {
+      found.add(lookup);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(condition);
+  return found;
+}
+
+/**
+ * `#id`s for `getElementById(id)` where `id` is destructured in an enclosing
+ * `for (const { id } of list)` and `list` is a local array of object literals
+ * with literal `id` values.
+ */
+function idsFromForOfLookup(expr) {
+  const e = unwrapExpression(expr);
+  if (!ts.isCallExpression(e) || !ts.isPropertyAccessExpression(e.expression) || e.expression.name.text !== 'getElementById' || e.arguments.length !== 1 || !ts.isIdentifier(e.arguments[0])) {
+    return undefined;
+  }
+  const name = e.arguments[0].text;
+  for (let current = e.parent; current; current = current.parent) {
+    if (!ts.isForOfStatement(current) || !ts.isVariableDeclarationList(current.initializer)) {
+      continue;
+    }
+    const binding = current.initializer.declarations[0]?.name;
+    const element = binding && ts.isObjectBindingPattern(binding)
+      ? binding.elements.find((el) => ts.isIdentifier(el.name) && el.name.text === name)
+      : undefined;
+    if (!element) {
+      continue;
+    }
+    const property = element.propertyName ? element.propertyName.getText() : name;
+    const list = ts.isIdentifier(current.expression) ? findLocalInitializer(current, current.expression.text) : current.expression;
+    if (!list || !ts.isArrayLiteralExpression(unwrapExpression(list))) {
+      return undefined;
+    }
+    const ids = new Set();
+    for (const item of unwrapExpression(list).elements) {
+      const prop = ts.isObjectLiteralExpression(item)
+        ? item.properties.find((pr) => ts.isPropertyAssignment(pr) && pr.name.getText().replace(/['"]/g, '') === property)
+        : undefined;
+      if (!prop || !ts.isStringLiteralLike(prop.initializer)) {
+        return undefined;
+      }
+      ids.add(`#${prop.initializer.text}`);
+    }
+    return ids.size > 0 ? ids : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * For the last `else` of an if-chain over `x.classList.contains(…)`, where `x`
+ * came from `.closest(LIST)`: the selectors of LIST the chain did not test.
+ */
+function remainingFromClosestChain(ifStatement, excluded, subject) {
+  if (!subject) {
+    return undefined;
+  }
+  const init = findLocalInitializer(ifStatement, subject);
+  let listArg;
+  const findClosest = (n) => {
+    if (!listArg && ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === 'closest' && n.arguments.length === 1) {
+      listArg = n.arguments[0];
+    }
+    ts.forEachChild(n, findClosest);
+  };
+  if (init) {
+    findClosest(init);
+  }
+  if (listArg && ts.isIdentifier(listArg)) {
+    listArg = findLocalInitializer(ifStatement, listArg.text);
+  }
+  if (!listArg || !ts.isStringLiteralLike(unwrapExpression(listArg))) {
+    return undefined;
+  }
+  const parts = unwrapExpression(listArg).text.split(',').map((x) => x.trim());
+  if (!parts.every((x) => /^[#.][\w-]+$/.test(x))) {
+    return undefined;
+  }
+  const remaining = new Set(parts.filter((x) => !excluded.has(x)));
+  return remaining.size > 0 ? remaining : undefined;
+}
+
+/**
+ * The control(s) whose click leads to the post at `node`: the element an
+ * enclosing `addEventListener` is attached to, the class an enclosing
+ * `querySelectorAll(…).forEach` iterates, or the ids/classes an enclosing `if`
+ * tests. A post inside a named helper is traced to the helper's call sites.
+ * Returns `undefined` when the control cannot be determined.
+ */
+function controlsForSite(node, sf, parsed, depth = 0) {
+  const elseExcluded = new Set();
+  let elseSubject;
+  for (let child = node, current = node.parent; current; child = current, current = current.parent) {
+    if (ts.isIfStatement(current) && child === current.elseStatement) {
+      selectorsInCondition(current.expression, sf).forEach((x) => elseExcluded.add(x));
+      const receiver = current.expression.getText(sf).match(/^\(?\s*([A-Za-z_$][\w$]*)\.classList\.contains\(/);
+      elseSubject = elseSubject ?? receiver?.[1];
+      const continuesChain = ts.isIfStatement(current.parent) && current.parent.elseStatement === current;
+      if (!continuesChain) {
+        const remaining = remainingFromClosestChain(current, elseExcluded, elseSubject);
+        if (remaining) {
+          return remaining;
+        }
+      }
+    }
+    if (ts.isCallExpression(current) && ts.isPropertyAccessExpression(current.expression) && current.expression.name.text === 'addEventListener') {
+      let target = unwrapExpression(current.expression.expression);
+      if (ts.isIdentifier(target)) {
+        const init = findLocalInitializer(current, target.text);
+        if (init) {
+          target = init;
+        }
+      }
+      const selector = selectorFromLookup(target);
+      if (selector) {
+        return new Set([selector]);
+      }
+      const ids = idsFromForOfLookup(target);
+      if (ids) {
+        return ids;
+      }
+    }
+    if (ts.isCallExpression(current) && ts.isPropertyAccessExpression(current.expression) && current.expression.name.text === 'forEach') {
+      const selector = selectorFromLookup(current.expression.expression);
+      if (selector) {
+        return new Set([selector]);
+      }
+    }
+    if (ts.isIfStatement(current) && child === current.thenStatement) {
+      let condition = current.expression;
+      if (ts.isIdentifier(unwrapExpression(condition))) {
+        condition = findLocalInitializer(current, unwrapExpression(condition).text) ?? condition;
+      }
+      const selectors = selectorsInCondition(condition, sf);
+      if (selectors.size > 0) {
+        return selectors;
+      }
+    }
+    if (ts.isFunctionDeclaration(current) && current.name) {
+      if (depth >= 3 || !parsed) {
+        return undefined;
+      }
+      const name = current.name.text;
+      const callers = [];
+      for (const pf of parsed) {
+        const visit = (n) => {
+          if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === name) {
+            callers.push({ n, sf: pf.sf });
+          }
+          ts.forEachChild(n, visit);
+        };
+        visit(pf.sf);
+      }
+      if (callers.length === 0) {
+        return undefined;
+      }
+      const all = new Set();
+      for (const caller of callers) {
+        const controls = controlsForSite(caller.n, caller.sf, parsed, depth + 1);
+        if (!controls) {
+          return undefined;
+        }
+        controls.forEach((c) => all.add(c));
+      }
+      return all;
+    }
+  }
+  return undefined;
 }
 
 /** Views whose bundled sources mention `token` as a whole word (id or class name). */
@@ -427,6 +817,8 @@ function analyse() {
   const viewOwnTexts = new Map();
   /** postMessage sites whose command name could not be resolved statically */
   const unresolvedSites = [];
+  /** every site posting a 'hidden' command, with the control(s) its click handler is attached to */
+  const controlSites = [];
   for (const view of views) {
     const entry = path.join(EXT_WEBVIEW_DIR, view, 'main.ts');
     if (!fs.existsSync(entry)) {
@@ -437,6 +829,17 @@ function analyse() {
     const viewDir = path.join(EXT_WEBVIEW_DIR, view) + path.sep;
     viewOwnTexts.set(view, files.filter((f) => f.startsWith(viewDir)).map((f) => fs.readFileSync(f, 'utf8')).join('\n'));
     const computed = collectComputedPostedCommands(files);
+    const parsedFiles = parseViewFiles(files);
+    for (const site of collectPostSites(parsedFiles, indexFunctions(parsedFiles))) {
+      const hiddenNames = [...site.names].filter((n) => unsupported[n]?.status === 'hidden');
+      if (hiddenNames.length === 0) {
+        continue;
+      }
+      const controls = controlsForSite(site.node, site.pf.sf, parsedFiles);
+      for (const command of hiddenNames) {
+        controlSites.push({ command, file: site.file, line: site.line, key: `${site.file}#${enclosingFunctionName(site.node)}`, controls });
+      }
+    }
     for (const site of computed.unresolved) {
       if (!unresolvedSites.some((s) => s.key === site.key)) {
         unresolvedSites.push(site);
@@ -457,6 +860,51 @@ function analyse() {
   }
 
   const findings = [];
+
+  // A 'hidden' command is only hidden if every control that posts it is: a new
+  // button posting an already-hidden command must not ship as a dead control.
+  const acknowledgedControlSites = new Set();
+  for (const site of controlSites) {
+    const entry = unsupported[site.command];
+    if (!site.controls) {
+      if (Object.prototype.hasOwnProperty.call(entry.unresolvedControlSites, site.key)) {
+        acknowledgedControlSites.add(`${site.command} ${site.key}`);
+        continue;
+      }
+      findings.push({
+        kind: 'coverage',
+        command: site.command,
+        locations: [{ file: site.file, line: site.line }],
+        detail:
+          'is hidden, but the check cannot tell which control posts it here, so it cannot confirm that control is hidden. ' +
+          'Attach the handler through getElementById / querySelector(All) with a literal #id or .class, or list ' +
+          `'${site.key}' under this command's "unresolvedControlSites" with a reason.`,
+      });
+      continue;
+    }
+    const uncovered = [...site.controls].filter((c) => !entry.hiddenBy.includes(c));
+    if (uncovered.length > 0) {
+      findings.push({
+        kind: 'coverage',
+        command: site.command,
+        locations: [{ file: site.file, line: site.line }],
+        detail:
+          `is hidden, but it is also posted by ${uncovered.join(', ')}, which its "hiddenBy" does not hide — that control would ` +
+          'ship visible and dead. Add it to "hiddenBy", or handle the command.',
+      });
+    }
+  }
+  for (const [command, entry] of Object.entries(unsupported)) {
+    for (const key of Object.keys(entry.unresolvedControlSites)) {
+      if (!acknowledgedControlSites.has(`${command} ${key}`)) {
+        findings.push({
+          kind: 'stale',
+          command,
+          detail: `lists '${key}' under "unresolvedControlSites", but no unresolvable site there posts it any more — remove it`,
+        });
+      }
+    }
+  }
 
   const declaredUnresolved = readUnresolvedComputedCommands();
   for (const site of unresolvedSites) {
@@ -611,4 +1059,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { readDesktopViews, collectViewFiles, collectIpcHandledCommands, collectComputedPostedCommands, selectorOverreach, analyse };
+module.exports = { readDesktopViews, collectViewFiles, collectIpcHandledCommands, collectComputedPostedCommands, selectorOverreach, parseViewFiles, indexFunctions, collectPostSites, controlsForSite, analyse };
