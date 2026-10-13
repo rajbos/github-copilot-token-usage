@@ -131,8 +131,8 @@ importers:
         specifier: 1.2.0
         version: 1.2.0(@types/node@26.6.5)
       strip-json-comments:
-        specifier: ^2.0.1
-        version: 2.0.1
+        specifier: ^5.0.3
+        version: 5.0.3
       stylelint:
         specifier: ^17.16.0
         version: 17.16.0(typescript@5.9.3)
@@ -3564,6 +3564,10 @@ packages:
   strip-json-comments@2.0.1:
     resolution: {integrity: sha512-4gB8na07fecVVkOI6Rs4e7T6NOTki5EmL7TUduTs6bu3EdnSycntVJ4re8kgZA+wx9IueI2Y11bfbgwtzuE0KQ==}
     engines: {node: '>=0.10.0'}
+
+  strip-json-comments@5.0.3:
+    resolution: {integrity: sha512-1tB5mhVo7U+ETBKNf92xT4hrQa3pm0MZ0PQvuDnWgAAGHDsfp4lPSpiS6psrSiet87wyGPh9ft6wmhOMQ0hDiw==}
+    engines: {node: '>=14.16'}
 
   strnum@2.2.3:
     resolution: {integrity: sha512-oKx6RUCuHfT3oyVjtnrmn19H1SiCqgJSg+54XqURKp5aCMbrXrhLjRN9TjuwMjiYstZ0MzDrHqkGZ5dFTKd+zg==}
@@ -7723,7 +7727,10 @@ snapshots:
 
   strip-final-newline@4.0.0: {}
 
-  strip-json-comments@2.0.1: {}
+  strip-json-comments@2.0.1:
+    optional: true
+
+  strip-json-comments@5.0.3: {}
 
   strnum@2.2.3: {}
 
