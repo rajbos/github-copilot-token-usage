@@ -57,7 +57,7 @@ prose. It never picks a file, a duration or a coordinate.
    Already present on this machine, with NVENC.
 2. **The webview bundles**, which the screenshots are rendered from:
    ```bash
-   cd ../vscode-extension && npm install && npm run compile
+   cd ../vscode-extension && pnpm install --frozen-lockfile && pnpm run compile
    ```
 3. **This package**:
    ```bash

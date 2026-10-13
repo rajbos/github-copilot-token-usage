@@ -46,7 +46,7 @@ The script will:
 2. **404 on code.visualstudio.com**: The VS Code docs may have been reorganised. Search [VS Code docs](https://code.visualstudio.com/docs) for the relevant topic and update the link.
 3. **Timeout**: May be a transient network issue. Re-run the script to confirm before changing anything.
 4. After fixing, re-run `node .github/skills/check-urls/check-urls.js` to confirm all URLs resolve.
-5. Run `npm --prefix vscode-extension run validate` to confirm type-checking, linting, and the build still pass.
+5. Run `pnpm --prefix vscode-extension run validate` to confirm type-checking, linting, and the build still pass.
 
 ## Files in This Directory
 

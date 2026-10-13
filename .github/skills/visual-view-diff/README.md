@@ -36,7 +36,7 @@ with `gh pr comment --attach` via `.github/workflows/scripts/visual-diff-comment
 
 ```bash
 # Build the bundles first
-cd vscode-extension && npm install && node esbuild.js && cd ..
+cd vscode-extension && pnpm install && node esbuild.js && cd ..
 
 # Compare the working tree against the merge base with origin/main
 node .github/skills/visual-view-diff/visual-diff.js
@@ -65,7 +65,7 @@ Ask Copilot something like:
 ## Notes
 
 - Does **not** launch VS Code or the Extension Development Host, per the
-  "Never Launch a Real Editor/IDE Instance" rule in `.github/copilot-instructions.md`.
+  "Never Launch a Real Editor/IDE Instance" rule in `AGENTS.md`.
 - Fixtures use fixed timestamps and synthetic values so unchanged code always
   produces identical screenshots.
 - The Team Dashboard fixture supplies synthetic Azure rollups and a Team Server

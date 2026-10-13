@@ -1,17 +1,17 @@
 ---
 name: load-cache-data
-description: Load and display the last 10 cache entries as raw JSON output. DO NOT create extra files or pretty-print the data - output raw JSON only. Use when you need to understand cached session statistics, debug cache behavior, or work with actual cached data.
+description: Load the last 10 cache entries as JSON with session titles, prompt excerpts, paths, and repository URLs omitted by default. Use --include-sensitive only when full entries are explicitly needed.
 ---
 
 # Load Cache Data Skill
 
-Use `--json` for output; don't pretty-print or write extra files — this data feeds analysis, not display.
+Use `--json` for output; don't pretty-print or write extra files. The default output omits session titles, prompt excerpts, workspace paths, repository URLs, and cache file paths. Never use `--include-sensitive` unless the task explicitly requires those fields.
 
 This skill helps you access and inspect the AI Engineering Fluency's local session file cache. The cache stores pre-computed statistics for session files to avoid re-processing unchanged files.
 
 ## Overview
 
-The extension maintains a local cache of session file statistics in VS Code's `globalState`. This cache contains:
+The extension keeps a cache of session file statistics in memory and persists it to a snapshot file in its globalStorage directory (`cache_prod.snapshot.json`, or `cache_dev.snapshot.json` in the Extension Development Host). This cache contains:
 - Token counts (total and per-model)
 - Interaction counts
 - Model usage breakdowns
@@ -29,7 +29,7 @@ Use this skill when you need to:
 
 ## Cache Structure
 
-The cache is stored in VS Code's global state under the key `'sessionFileCache'`. Each cache entry is keyed by the absolute file path and contains:
+The snapshot file is an envelope (`{ schemaVersion, cacheVersion, cacheId, generatedAt, entryCount, entries }`) whose `entries` map is keyed by the absolute session file path. Each entry contains (abridged; see `SessionFileCache` in `src/types.ts`):
 
 ```typescript
 interface SessionFileCache {
@@ -58,10 +58,10 @@ interface SessionUsageAnalysis {
 
 ## Location
 
-**Cache Storage**: `VS Code globalState → 'sessionFileCache'`
-- Accessed via: `context.globalState.get<Record<string, SessionFileCache>>('sessionFileCache')`
-- Persisted automatically by VS Code
-- Lives in VS Code's internal database (`state.vscdb`)
+**Cache Storage**: `<globalStorageUri>/cache_<prod|dev>.snapshot.json`
+- In memory: `CacheManager.cache` (a `Map<string, SessionFileCache>`)
+- On disk: written by `CacheManager.trySaveCacheToStorage()`, loaded by `CacheManager.loadCacheFromStorage()`
+- Not stored in VS Code's `globalState`: on activation the extension removes any leftover cache keys from it (a one-time migration)
 
 **Implementation**: `src/extension.ts` (see `CacheManager` in `src/cacheManager.ts` below for the actual persistence logic)
 
@@ -69,12 +69,11 @@ interface SessionUsageAnalysis {
 
 ### From Within the Extension
 
-The cache can be accessed through the extension's context at runtime:
+Inside the extension the cache is the in-memory map held by `CacheManager`:
 
 ```typescript
-// Load cache from global state
-const cacheData = context.globalState.get<Record<string, SessionFileCache>>('sessionFileCache');
-const cacheEntries = Object.entries(cacheData || {});
+// CacheManager.cache is a Map<string, SessionFileCache>
+const cacheEntries = Array.from(cacheManager.cache.entries());
 
 // Get last 10 entries (sorted by modification time)
 const last10 = cacheEntries
@@ -82,9 +81,8 @@ const last10 = cacheEntries
   .slice(0, 10);
 
 // Display cache entries
-for (const [filePath, cacheEntry] of last10) {
+for (const [, cacheEntry] of last10) {
   console.log({
-    file: filePath,
     tokens: cacheEntry.tokens,
     interactions: cacheEntry.interactions,
     modelUsage: cacheEntry.modelUsage,
@@ -107,40 +105,40 @@ node .github/skills/load-cache-data/load-cache-data.js --json
 # Show last N entries as JSON (default is 10)
 node .github/skills/load-cache-data/load-cache-data.js --last 5 --json
 
+# Include full entries only when explicitly needed
+node .github/skills/load-cache-data/load-cache-data.js --include-sensitive --json
+
 # Show help
 node .github/skills/load-cache-data/load-cache-data.js --help
 ```
 
-**Note**: The script supports human-readable output without `--json`, but for LLM skills, always use `--json` to get structured data.
+`--last` is capped at 100 entries. The script searches only VS Code globalStorage; it does not trust files in temporary or current-working directories. Default entry keys are anonymous (`session-1`, etc.), unrecognized fields are omitted, and maps keyed by file paths or names are dropped: `usageAnalysis.contextReferences.byPath`, plus `languageUsage` and `usageAnalysis.editScope.languageUsage` (keyed by file extension, or by the whole basename for extensionless files such as `Dockerfile`). `usageAnalysis.toolCalls`, `mcpTools` and `skillCalls` keep only their totals, because their per-tool, per-server and per-skill maps are keyed by names taken from the session. Correction moments keep only their type, turn number, timestamp, flags and pattern label; the excerpt, failing tool name and file path are dropped. `usageAnalysis.modelSwitching.selectedModelExtensions` (the model-provider extension ids) is dropped; the model ids are kept. `usageAnalysis.contextReferences.byKind` keeps known VS Code reference kinds and counts any other session-supplied kind as `other`. Even with `--include-sensitive`, credentials in a repository URL (`https://user:token@host/...`) are stripped.
 
 **What it does:**
-- Searches for cache export files in known locations
+- Searches for the extension's cache snapshot in known locations
 - Reads actual cache data if a file exists
-- Displays cache entries sorted by most recent modification
+- Displays cache entries sorted by most recent modification, with identifying fields omitted by default
 - Shows detailed token counts, model usage, and usage analysis
 
 **Cache File Locations:**
 
-The script searches for cache export files in these locations:
+The script reads the first of these files it finds:
 
-1. **VS Code globalStorage**: `%APPDATA%\Code\User\globalStorage\rajbos.copilot-token-tracker\cache.json` (Windows)
-   - Also checks other VS Code variants (Insiders, Cursor, VSCodium, etc.)
-2. **Temp directory**: `%TEMP%\copilot-token-tracker-cache.json`
-3. **Current directory**: `./cache-export.json`
+1. **VS Code globalStorage**: `<VS Code user data>\User\globalStorage\<extension id>\`, looking for `cache_prod.snapshot.json`, then `cache_dev.snapshot.json` (the shared snapshot `CacheManager` writes; the entries are unwrapped from its envelope), then a legacy flat `session-cache.json` export. The extension id is `robbos.ai-engineering-fluency` (current) or `robbos.copilot-token-tracker` (pre-rename)
+   - The Windows, macOS, and Linux locations are derived from the VS Code user-data directory.
+   - Also checks other VS Code variants (Insiders, Cursor, VSCodium, etc.).
 
-**Creating Cache Export Files:**
+**Where the data comes from:**
 
-Since the extension stores cache in VS Code's globalState (internal SQLite database), the cache data must be explicitly exported to one of the above locations for this script to access it. This can be done:
-
-1. **Via Extension**: The extension can be enhanced to export cache on demand
-2. **Via Tests**: Test code can write cache data to disk for inspection
-3. **Manually**: Copy cache data from extension's globalState and save to one of the expected locations
+The snapshot file is the cache's only persistent store: `CacheManager` loads it at startup and rewrites it on save (it is also how windows share parsed results). So a normal installation has a readable cache once the extension has run. A legacy `session-cache.json` (a bare `{ [sessionFile]: entry }` map) is still read as a fallback, for exports written by tests or by hand.
 
 **Exit Codes:**
 - `0`: Cache file found and displayed successfully
 - `1`: No cache file found
+- `2`: Invalid `--last` value
+- `3`: The first cache file found is malformed (invalid JSON, or a snapshot without a usable `{ schemaVersion, entries }` envelope). The script reports this instead of falling back to the legacy export.
 
-**Note**: If no cache file is found, the script will display the searched locations and instructions for exporting cache data.
+**Note**: If no cache file is found, the script reports that no cache file was found without printing local filesystem paths.
 
 ## Cache Management Methods
 
@@ -221,8 +219,7 @@ for (const filePath of filesToCheck) {
 ### Example 1: Inspecting Recent Sessions
 ```typescript
 // Get cache data
-const cache = context.globalState.get('sessionFileCache');
-const entries = Object.entries(cache || {});
+const entries = Array.from(cacheManager.cache.entries());
 
 // Sort by most recent
 entries.sort((a, b) => (b[1].mtime || 0) - (a[1].mtime || 0));
@@ -238,10 +235,9 @@ entries.slice(0, 10).forEach(([path, data], i) => {
 
 ### Example 2: Analyzing Model Usage in Cache
 ```typescript
-const cache = context.globalState.get('sessionFileCache');
 const modelTotals = {};
 
-for (const [path, data] of Object.entries(cache || {})) {
+for (const [path, data] of cacheManager.cache) {
   for (const [model, usage] of Object.entries(data.modelUsage)) {
     if (!modelTotals[model]) {
       modelTotals[model] = { input: 0, output: 0 };
@@ -259,8 +255,7 @@ for (const [model, totals] of Object.entries(modelTotals)) {
 
 ### Example 3: Cache Statistics
 ```typescript
-const cache = context.globalState.get('sessionFileCache');
-const entries = Object.entries(cache || {});
+const entries = Array.from(cacheManager.cache.entries());
 
 const stats = {
   totalEntries: entries.length,
@@ -310,7 +305,7 @@ The cache is tightly integrated with the extension's token tracking:
 **Symptoms**: Extension shows no cached data or logs "No cached session files found"
 **Solutions**:
 1. Check that session files exist via `getCopilotSessionFiles()`
-2. Verify global state is accessible
+2. Check that the extension's globalStorage directory holds `cache_prod.snapshot.json` (or `cache_dev.snapshot.json`)
 3. Look for errors in Output channel (AI Engineering Fluency)
 
 ### Cache Out of Sync
@@ -350,7 +345,7 @@ The cache is tightly integrated with the extension's token tracking:
 
 ## Notes
 
-- Cache is stored in VS Code's internal SQLite database (`state.vscdb`)
+- Cache is persisted to `cache_<prod|dev>.snapshot.json` in the extension's globalStorage directory, not to VS Code's `globalState`
 - Cache entries are validated by file modification time
 - Maximum of 1000 entries maintained (FIFO eviction)
 - Cache persists between VS Code sessions

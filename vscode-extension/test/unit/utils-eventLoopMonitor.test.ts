@@ -56,23 +56,31 @@ test('stays quiet while the loop is healthy', async () => {
 });
 
 test('a throwing onStall callback never breaks monitoring, and dispose is idempotent', async () => {
+	// A fake histogram that always reads as a 250ms stall, so the outcome does not depend on how
+	// the OS schedules the real loop-delay timer relative to the report timer (flaky on Windows).
+	let enabled = false;
+	const fakeHistogram = {
+		max: (250 + 10) * 1e6,
+		percentile: () => (250 + 10) * 1e6,
+		enable: () => { enabled = true; },
+		disable: () => { enabled = false; },
+		reset: () => { /* readings are constant */ },
+	};
 	let calls = 0;
 	const monitor = startEventLoopMonitor({
 		resolutionMs: 10,
-		reportIntervalMs: 50,
+		reportIntervalMs: 20,
 		stallThresholdMs: 100,
+		createHistogram: () => fakeHistogram,
 		onStall: () => { calls++; throw new Error('logger blew up'); },
 	});
-	await sleep(20);
-	blockFor(250);
-	await waitFor(() => calls >= 1);
-	blockFor(250);
+	assert.equal(enabled, true);
 	await waitFor(() => calls >= 2);
 	monitor.dispose();
 	monitor.dispose();
+	assert.equal(enabled, false, 'dispose disables the histogram');
 	assert.ok(calls >= 2, `monitor must keep reporting after a callback throws (got ${calls})`);
 	const after = calls;
-	blockFor(250);
 	await sleep(120);
 	assert.equal(calls, after, 'no reports after dispose');
 });

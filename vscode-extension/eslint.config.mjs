@@ -58,11 +58,10 @@ export default [{
         "max-lines-per-function": ["warn", 80],
 
         // File-size ceiling. The per-function rules above are satisfied almost everywhere
-        // (extension.ts's ~169 methods all individually pass max-lines-per-function), yet the
-        // file itself reached 12k+ lines — proof that "every function is small" doesn't stop a
-        // file from becoming unmanageable. 6000 is set just above today's second-largest linted
-        // file (webview/usage/main.ts, ~5900 lines) so extension.ts is the only file flagged
-        // right now; it isn't a target size. As extension.ts is decomposed
+        // (extension.ts's methods individually pass max-lines-per-function), yet the file itself
+        // became enormous — proof that "every function is small" doesn't stop a file from
+        // becoming unmanageable. extension.ts is by far the largest file; the threshold isn't a
+        // target size. Run `pnpm run lint` for the current offenders. As extension.ts is decomposed
         // (docs/adr/EXTENSION-TS-DECOMPOSITION.md) and other files are split, ratchet this
         // number down rather than raising it to accommodate growth.
         "max-lines": ["warn", { max: 6000, skipBlankLines: true, skipComments: true }],

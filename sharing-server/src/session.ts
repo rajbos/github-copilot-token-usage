@@ -1,7 +1,21 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { SESSION_MAX_AGE_SECONDS } from './config.js';
 
-const SESSION_SECRET = process.env.SESSION_SECRET ?? 'dev-secret-change-me-in-production';
+/** Insecure fallback, used only when NODE_ENV is explicitly `development` or `test`. Public in the source, so it must never sign a real cookie. */
+export const DEV_SESSION_SECRET = 'dev-secret-change-me-in-production';
+export const MIN_SESSION_SECRET_LENGTH = 32;
+/**
+ * Placeholder values that appeared in documentation or example configs. They are public,
+ * so a copy-pasted one must be refused in production even when it passes the length check.
+ * Matched case-insensitively.
+ */
+export const KNOWN_PLACEHOLDER_SESSION_SECRETS: readonly string[] = [
+	'a_long_random_string_min_32_chars',
+	'any_long_random_string_at_least_32_chars',
+	'change_me_to_a_random_secret',
+	'change_me_to_a_random_secret_at_least_32_chars',
+	'dev-secret-change-me-in-production',
+];
 export const COOKIE_NAME = 'sharing-session';
 export const OAUTH_STATE_COOKIE = 'oauth-state';
 
@@ -12,8 +26,58 @@ export interface SessionClaims {
 	exp: number;  // expires-at (epoch seconds)
 }
 
+/** NODE_ENV values for which the insecure dev fallback is tolerated. Anything else, including unset, needs a real secret. */
+const DEV_FALLBACK_ENVIRONMENTS: readonly string[] = ['development', 'test'];
+
+/**
+ * Throw unless `env` either explicitly opts into development/test or has a usable SESSION_SECRET.
+ *
+ * Admin status is looked up by the cookie's `sub`, so a guessable signing secret means
+ * a forgeable admin session. This fails closed: a deployment that forgets NODE_ENV is treated
+ * as production, and only `NODE_ENV=development|test` may use the dev fallback. Called from
+ * `createApp` and `startServer` (before listening) and again whenever a cookie is signed or
+ * verified, so embedders that bypass either entry point are still covered. Evaluated lazily,
+ * never at import. A secret that is set must be strong in every environment.
+ */
+export function assertSessionSecretConfigured(env: NodeJS.ProcessEnv = process.env): void {
+	const secret = env.SESSION_SECRET;
+	if (!secret && DEV_FALLBACK_ENVIRONMENTS.includes(env.NODE_ENV ?? '')) return;
+	const normalized = secret?.trim().toLowerCase();
+	const problem = !secret ? 'is not set (and NODE_ENV is not "development" or "test")'
+		: secret !== secret.trim() ? 'has leading or trailing whitespace'
+		: normalized === DEV_SESSION_SECRET || KNOWN_PLACEHOLDER_SESSION_SECRETS.includes(normalized!) ? 'is a documented example placeholder'
+		: secret.length < MIN_SESSION_SECRET_LENGTH ? `is shorter than ${MIN_SESSION_SECRET_LENGTH} characters`
+		: undefined;
+	if (problem) {
+		throw new Error(
+			`SESSION_SECRET ${problem}. Refusing to start: session cookies would be forgeable. ` +
+			`Set SESSION_SECRET to a random value of at least ${MIN_SESSION_SECRET_LENGTH} characters, e.g. ` +
+			`openssl rand -base64 48 (or set NODE_ENV=development for local work only).`,
+		);
+	}
+}
+
+let devSecretWarned = false;
+
+/** Test-only: forget that the one-time dev-fallback warning was emitted. */
+export function resetDevSecretWarningForTests(): void {
+	devSecretWarned = false;
+}
+
+/** Resolve the signing secret; falls back to the dev default (one-time warning) only when NODE_ENV is explicitly `development` or `test`. */
+function getSessionSecret(): string {
+	assertSessionSecretConfigured();
+	const secret = process.env.SESSION_SECRET;
+	if (secret) return secret;
+	if (!devSecretWarned) {
+		devSecretWarned = true;
+		console.warn('[session] SESSION_SECRET is not set; using the insecure development default. Set SESSION_SECRET before deploying.');
+	}
+	return DEV_SESSION_SECRET;
+}
+
 function sign(payload: string): string {
-	return createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+	return createHmac('sha256', getSessionSecret()).update(payload).digest('base64url');
 }
 
 export function encodeSession(claims: SessionClaims): string {

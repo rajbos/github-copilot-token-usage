@@ -7,6 +7,7 @@ import { buildFilterPillGroupHtml, type SessionFilterOption } from './sessionFil
 import { escapeHtml, formatCompact, formatCost, formatDurationShort, formatFileSize, formatFixed, formatNumber, formatPercent, getTimeSince, safeSectionHtml, setFormatLocale } from '../shared/formatUtils';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
 import { localize, localizeFormat } from '../shared/localization';
+import { createViewStateManager } from '../shared/viewState';
 import { applyWebviewLocale } from '../shared/webviewLocale';
 import { RECENT_SESSION_PERIODS, sanitizeRecentSessionBuckets } from './recentSessionsSanitizer';
 import { renderCcrCheckButtonHtml, wireCcrActivityButtons, renderCcrActivityResult, replayCcrActivityResults } from './ccrActivity';
@@ -45,6 +46,7 @@ import { buildCustomizationSectionHtml } from './customizationMatrixSection';
 import { buildTabStripHtml, type UsageTabStripInput } from './tabStripHtml';
 import { formatToolEditors, sanitizeToolCallsByEditor } from './toolEditors';
 import { buildToolExecutionSectionsHtml } from './toolExecutionHtml';
+import { buildMcpPeriodTablesHtml, buildToolPeriodTableHtml, isMcpPeriodView, type McpPeriodView } from './toolPeriodTable';
 import { sanitizeToolOutcomeMaps, sanitizeMcpOutcomeMaps } from './toolOutcomeSanitizer';
 import { renderContextRefTable } from './contextRefTableHtml';
 import { shouldListAccountBudgets } from '../../githubAccountBudgets';
@@ -58,9 +60,10 @@ import { DarkFactoryTab } from './darkFactoryTab';
 import { insightCardElementId, isInsightCardAnchor } from '../../insightAnchors';
 import { placeBubbleLabels, scaleBubbleRadius, type BubbleLabelPlacement } from './modelLeaderboard';
 import { createUsageWebviewReadyNotifier, restoreGitHubActivityPanels } from './readiness';
-import { sanitizeServerMemoriesAnalysis as _sanitizeServerMemoriesAnalysis, buildServerMemoriesSectionHtml } from './serverMemories';
+import { sanitizeServerMemoriesAnalysis as _sanitizeServerMemoriesAnalysis, buildServerMemoriesSectionHtml, wireServerMemoriesButtons } from './serverMemories';
 import { buildBuiltinToolsHtml, buildUnusedMcpHtml, buildUnusedSkillsHtml } from './toolCurationTables';
-import { renderAgentPluginsFilter, renderAgentPluginsTable, renderMemoryFilesTable, renderMissedPotentialTable, renderRepoHygieneListTable, renderToolCountTable, type RepoHygieneListRow } from './usageListTables';
+import { renderAgentPluginsFilter, renderAgentPluginsTable, renderMemoryFilesTable, renderMissedPotentialTable, renderRepoHygieneListTable, type RepoHygieneListRow } from './usageListTables';
+import { buildSkillSuggestionsSectionHtml, sanitizeRepeatedTaskReport, wireSkillSuggestions, type RepeatedTaskReport, type SkillSuggestionsMessage } from './skillSuggestions';
 
 type ModelSwitchingAnalysis = BaseModelSwitchingAnalysis & {
 	minModelsPerSession: number;
@@ -190,31 +193,6 @@ type CorrectionReport = {
 	sessionsWithMoments: number;
 };
 
-// ── Repeated-task types ─────────────────────────────────────────────────────
-// Mirror the interfaces in src/types.ts (RepeatedTaskReport etc.) — keep in
-// sync manually; the webview bundle cannot import them directly.
-
-type RepeatedTaskSessionRef = {
-	file: string;
-	title?: string | null;
-	lastInteraction?: string | null;
-	repository?: string;
-};
-
-type RepeatedTaskCluster = {
-	representativePrompt: string;
-	sessionCount: number;
-	repositories: string[];
-	sessions: RepeatedTaskSessionRef[];
-	sharedKeywords: string[];
-};
-
-type RepeatedTaskReport = {
-	minClusterSize: number;
-	sessionsScanned: number;
-	clusters: RepeatedTaskCluster[];
-};
-
 type UsageAnalysisStats = {
 	today: UsageAnalysisPeriod;
 	last30Days: UsageAnalysisPeriod;
@@ -291,6 +269,7 @@ interface WorkspaceCustomizationRow {
 	sessionCount: number;
 	interactionCount: number;
 	typeStatuses: { [typeId: string]: CustomizationTypeStatus };
+	memberPaths?: string[];
 }
 
 interface WorkspaceCustomizationMatrix {
@@ -298,6 +277,7 @@ interface WorkspaceCustomizationMatrix {
 	workspaces: WorkspaceCustomizationRow[];
 	totalWorkspaces: number;
 	workspacesWithIssues: number;
+	ungroupedWorkspaceNames?: string[];
 }
 
 interface MissedPotentialWorkspace {
@@ -347,18 +327,24 @@ interface RepoAnalysisRecord {
 }
 
 /** Webview state persisted by VS Code across tab switches (survives the panel being hidden). */
-interface UsageWebviewState {
-	aboutCollapsed?: boolean;
-}
+type UsageWebviewState = {
+	aboutCollapsed: boolean;
+	mcpPeriodView: McpPeriodView;
+};
 
 const vscode = acquireVsCodeApi<UsageWebviewState>();
+const usageState = createViewStateManager<UsageWebviewState>(vscode, { aboutCollapsed: false, mcpPeriodView: 'server' });
+const restoredUsageState = usageState.restore();
 const notifyUsageWebviewReady = createUsageWebviewReadyNotifier(
 	(message) => vscode.postMessage(message),
 );
 const curationTraceOnceKeys = new Set<string>();
 
 /** Collapsed state of the "About This Dashboard" info box, restored from webview state. */
-let aboutCollapsed = vscode.getState()?.aboutCollapsed ?? false;
+let aboutCollapsed = restoredUsageState.aboutCollapsed === true;
+
+/** MCP Tools section By Server / By Tool toggle, restored from webview state. */
+let mcpPeriodView: McpPeriodView = isMcpPeriodView(restoredUsageState.mcpPeriodView) ? restoredUsageState.mcpPeriodView : 'server';
 
 function traceCuration(stage: string, details?: Record<string, unknown>): void {
 	try {
@@ -433,6 +419,13 @@ let currentMemoryFilesAnalysis: MemoryFilesAnalysisView | null = null;
 // trip — a refresh that omits them must keep showing the last good read rather than blank
 // the section while the next fetch is in flight.
 let currentServerMemoriesAnalysis: ServerMemoriesAnalysisView | null = null;
+// Skill Suggestions read the report on click, so the buttons act on what is rendered.
+let currentRepeatedTasks: RepeatedTaskReport | null = null;
+const skillSuggestionsWiring = {
+	getReport: () => currentRepeatedTasks,
+	getWorkspacePaths: () => currentWorkspacePaths,
+	postMessage: (message: SkillSuggestionsMessage) => vscode.postMessage(message),
+};
 
 type WorktreeResult = {
 	path: string;
@@ -510,6 +503,8 @@ type WorktreeCleanupDiagnostics = {
 /** Live state of a "Delete anyway…" retry on a cleanup-log row, keyed by worktree path. */
 type WorktreeRetryState = { status: "running" | "deleted" | "error"; reason?: string };
 const worktreeRetryState = new Map<string, WorktreeRetryState>();
+/** Bytes freed per deleted worktree path, captured from the scan row just before it leaves the list. */
+const worktreeDeletedBytes = new Map<string, number>();
 type WorktreeCleanupLogEntry = { path: string; branch: string; repoLabel: string; status: WorktreeCleanupOutcome; reason?: string; diagnostics?: WorktreeCleanupDiagnostics };
 let worktreeCleanupLog: WorktreeCleanupLogEntry[] = [];
 
@@ -816,16 +811,19 @@ function getUnknownMcpTools(stats: UsageAnalysisStats): string[] {
 	Object.entries(stats.today.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.last30Days.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.month.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
+	Object.entries(stats.lastMonth.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
 	// Also collect MCP server names — the "By Server" tables render them through the
 	// same friendly-name lookup, so an unmapped server name (e.g. `ccd_session`)
 	// would otherwise show raw without ever being flagged as missing.
 	Object.keys(stats.today.mcpTools.byServer).forEach(server => allTools.add(server));
 	Object.keys(stats.last30Days.mcpTools.byServer).forEach(server => allTools.add(server));
 	Object.keys(stats.month.mcpTools.byServer).forEach(server => allTools.add(server));
+	Object.keys(stats.lastMonth.mcpTools.byServer).forEach(server => allTools.add(server));
 	// Also collect all general tool calls so non-MCP tools without friendly names are caught
 	Object.entries(stats.today.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.last30Days.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.month.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
+	Object.entries(stats.lastMonth.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
 
 	const suppressed = new Set<string>(stats.suppressedUnknownTools ?? []);
 	
@@ -1089,29 +1087,6 @@ function renderMissedPotential(stats: UsageAnalysisStats): string {
             ${renderMissedPotentialTable(missed)}
         </div>
     `;
-}
-
-function renderToolsTable(tableId: string, ariaLabel: string, byTool: { [key: string]: number }, limit = 10, nameResolver: (id: string) => string = lookupToolName, applyAutoFilter = false): string {
-	const entries = applyAutoFilter && hideAutomaticToolCalls
-		? Object.entries(byTool).filter(([tool]) => !AUTOMATIC_TOOL_SET_WV.has(tool.toLowerCase()))
-		: Object.entries(byTool);
-	const sortedTools = entries
-		.sort(([, a], [, b]) => b - a)
-		.slice(0, limit);
-
-	if (sortedTools.length === 0) {
-		return applyAutoFilter && hideAutomaticToolCalls
-			? '<div style="color: var(--text-muted);">No purposeful tools used yet (automatic tool calls are hidden)</div>'
-			: '<div style="color: var(--text-muted);">No tools used yet</div>';
-	}
-
-	return renderToolCountTable({
-		tableId,
-		ariaLabel,
-		entries: sortedTools,
-		nameResolver,
-		isAutomatic: tool => AUTOMATIC_TOOL_SET_WV.has(tool.toLowerCase()),
-	});
 }
 
 // --- Recent Sessions table with sortable, toggleable columns ---
@@ -1562,14 +1537,6 @@ function replaceRecentSessionsCache(raw: unknown): void {
 	}
 }
 
-function unionFill(map: { [key: string]: number }, keys: string[]): { [key: string]: number } {
-	const result: { [key: string]: number } = { ...map };
-	for (const k of keys) {
-		if (!(k in result)) { result[k] = 0; }
-	}
-	return result;
-}
-
 function coerceNumber(value: any): number {
 	const n = Number(value);
 	return Number.isFinite(n) ? n : 0;
@@ -1758,40 +1725,6 @@ function sanitizeCorrectionReport(raw: any): CorrectionReport | null {
 		repos,
 		counts: sanitizeCorrectionCounts(raw.counts),
 		sessionsWithMoments: typeof raw.sessionsWithMoments === 'number' ? raw.sessionsWithMoments : repos.reduce((n: number, g: CorrectionRepoGroup) => n + g.sessionsWithMoments, 0),
-	};
-}
-
-function sanitizeRepeatedTaskCluster(raw: any): RepeatedTaskCluster | null {
-	if (!raw || typeof raw !== 'object') { return null; }
-	if (typeof raw.representativePrompt !== 'string' || typeof raw.sessionCount !== 'number' || !Array.isArray(raw.sessions)) { return null; }
-	const sessions: RepeatedTaskSessionRef[] = raw.sessions
-		.filter((s: any) => s && typeof s === 'object' && typeof s.file === 'string')
-		.map((s: any): RepeatedTaskSessionRef => ({
-			file: s.file,
-			title: typeof s.title === 'string' ? s.title : null,
-			lastInteraction: typeof s.lastInteraction === 'string' ? s.lastInteraction : null,
-			repository: typeof s.repository === 'string' ? s.repository : undefined,
-		}));
-	if (sessions.length === 0) { return null; }
-	return {
-		representativePrompt: raw.representativePrompt,
-		// Derive from the sanitized session list so the UI count can never
-		// disagree with it (and NaN/float counts are impossible).
-		sessionCount: sessions.length,
-		repositories: Array.isArray(raw.repositories) ? raw.repositories.filter((r: unknown) => typeof r === 'string') : [],
-		sessions,
-		sharedKeywords: Array.isArray(raw.sharedKeywords) ? raw.sharedKeywords.filter((k: unknown) => typeof k === 'string') : [],
-	};
-}
-
-function sanitizeRepeatedTaskReport(raw: any): RepeatedTaskReport | null {
-	if (!raw || typeof raw !== 'object' || !Array.isArray(raw.clusters)) { return null; }
-	const clusters = raw.clusters.map(sanitizeRepeatedTaskCluster).filter((c: RepeatedTaskCluster | null): c is RepeatedTaskCluster => c !== null);
-	if (clusters.length === 0) { return null; }
-	return {
-		minClusterSize: typeof raw.minClusterSize === 'number' ? raw.minClusterSize : 2,
-		sessionsScanned: typeof raw.sessionsScanned === 'number' ? raw.sessionsScanned : 0,
-		clusters,
 	};
 }
 
@@ -2099,6 +2032,13 @@ function _handleWorktreeRowLinkClick(event: MouseEvent, target: HTMLElement): bo
 		if (p) { vscode.postMessage({ command: "openWorktreeInEditor", path: p }); }
 		return true;
 	}
+	const copyPromptBtn = target.closest(".worktree-copy-prompt-btn") as HTMLElement | null;
+	if (copyPromptBtn) {
+		event.preventDefault();
+		const prompt = buildWorktreeDiffPrompt(decodeURIComponent(copyPromptBtn.getAttribute("data-branch") || ""));
+		copyWorktreePrompt(copyPromptBtn, prompt);
+		return true;
+	}
 	const revealLink = target.closest(".worktree-reveal-link, .worktree-reveal-btn") as HTMLElement | null;
 	if (revealLink) {
 		event.preventDefault();
@@ -2258,6 +2198,8 @@ function handleWorktreeDeleted(message: any): void {
 	if (!targetPath) { return; }
 	const idx = worktreeResults.findIndex((w) => w.path === targetPath);
 	if (idx === -1) { return; }
+	const freed = knownBytes(worktreeResults[idx]);
+	if (freed > 0) { worktreeDeletedBytes.set(targetPath, freed); }
 	worktreeResults.splice(idx, 1);
 	updateWorktreeResults();
 }
@@ -2274,6 +2216,7 @@ function handleCleanupStarted(message: any): void {
 	worktreeCleanupStatus = { processed: 0, total: numField(message.total) };
 	worktreeCleanupLog = [];
 	worktreeRetryState.clear();
+	worktreeDeletedBytes.clear();
 	updateWorktreeResults();
 }
 
@@ -2475,7 +2418,7 @@ function runTabFirstVisitEffects(tab: string): void {
 /**
  * The leaf tab each group was last left on, so re-opening a group returns the user to where they
  * were instead of resetting them to its first tab. Lives only in memory, like `activeTab` itself
- * — neither is written to `vscode.setState()` (`UsageWebviewState` holds only `aboutCollapsed`),
+ * — neither is written to `vscode.setState()` (`UsageWebviewState` holds only `aboutCollapsed` and `mcpPeriodView`),
  * so a panel that is disposed and recreated legitimately starts over at the default tab.
  */
 const lastTabPerGroup: Record<string, string> = {};
@@ -3036,9 +2979,6 @@ function renderEffortPeriodHtml(teu: { byEffort: { [effort: string]: number }; s
 }
 
 function buildUsageAllKeysSets(stats: UsageAnalysisStats): {
-	allToolKeys: string[];
-	allMcpToolKeys: string[];
-	allMcpServerKeys: string[];
 	allStandardModels: string[];
 	allHighCostModels: string[];
 	allLowCostModels: string[];
@@ -3046,9 +2986,6 @@ function buildUsageAllKeysSets(stats: UsageAnalysisStats): {
 	allUnknownModels: string[];
 } {
 	return {
-		allToolKeys: [...new Set([...Object.keys(stats.today.toolCalls.byTool), ...Object.keys(stats.last30Days.toolCalls.byTool), ...Object.keys(stats.month.toolCalls.byTool)])].sort(),
-		allMcpToolKeys: [...new Set([...Object.keys(stats.today.mcpTools.byTool), ...Object.keys(stats.last30Days.mcpTools.byTool), ...Object.keys(stats.month.mcpTools.byTool)])].sort(),
-		allMcpServerKeys: [...new Set([...Object.keys(stats.today.mcpTools.byServer), ...Object.keys(stats.last30Days.mcpTools.byServer), ...Object.keys(stats.month.mcpTools.byServer)])].sort(),
 		allStandardModels: [...new Set([...stats.today.modelSwitching.standardModels, ...stats.last30Days.modelSwitching.standardModels, ...stats.month.modelSwitching.standardModels])].sort(),
 		allHighCostModels: [...new Set([...stats.today.modelSwitching.highCostModels, ...stats.last30Days.modelSwitching.highCostModels, ...stats.month.modelSwitching.highCostModels])].sort(),
 		allLowCostModels: [...new Set([...stats.today.modelSwitching.lowCostModels, ...stats.last30Days.modelSwitching.lowCostModels, ...stats.month.modelSwitching.lowCostModels])].sort(),
@@ -3091,69 +3028,21 @@ function buildHealthTabPanelHtml(customizationHtml: string, stats: UsageAnalysis
 		</div>`;
 }
 
-function buildMcpToolsSectionHtml(
-	stats: UsageAnalysisStats,
-	allMcpToolKeys: string[],
-	allMcpServerKeys: string[],
-): string {
+function buildMcpToolsSectionHtml(stats: UsageAnalysisStats): string {
 	return `
 		<!-- MCP Tools Section -->
 		<div class="section" id="section-mcp-tools">
 			<div class="section-title"><span>🔌</span><span>MCP Tools</span></div>
 			<div class="section-subtitle">Model Context Protocol (MCP) server and tool usage</div>
 			${buildUnknownMcpToolsBannerHtml(stats)}
-			<div class="three-column">
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.today.mcpTools.total)}</div>
-						${allMcpServerKeys.length > 0 ? `
-							<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable('mcp-servers-today', 'By Server', unionFill(stats.today.mcpTools.byServer, allMcpServerKeys), 200)}</div></div>
-						` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
-					</div>
-				</div>
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📆 Last 30 Days</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.last30Days.mcpTools.total)}</div>
-						${allMcpServerKeys.length > 0 ? `
-							<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable('mcp-servers-last30', 'By Server', unionFill(stats.last30Days.mcpTools.byServer, allMcpServerKeys), 200)}</div></div>
-						` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
-					</div>
-				</div>
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Previous Month</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.month.mcpTools.total)}</div>
-						${allMcpServerKeys.length > 0 ? `
-							<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable('mcp-servers-month', 'By Server', unionFill(stats.month.mcpTools.byServer, allMcpServerKeys), 200)}</div></div>
-						` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
-					</div>
-				</div>
-			</div>
-			<div class="three-column" style="margin-top: 12px;">
-				<div>
-					${allMcpToolKeys.length > 0 ? `
-						<div class="list">
-							<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable('mcp-tools-today', 'By Tool', unionFill(stats.today.mcpTools.byTool, allMcpToolKeys), 10, lookupMcpToolName)}</div></div>
-						</div>
-					` : ''}
-				</div>
-				<div>
-					${allMcpToolKeys.length > 0 ? `
-						<div class="list">
-							<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable('mcp-tools-last30', 'By Tool', unionFill(stats.last30Days.mcpTools.byTool, allMcpToolKeys), 10, lookupMcpToolName)}</div></div>
-						</div>
-					` : ''}
-				</div>
-				<div>
-					${allMcpToolKeys.length > 0 ? `
-						<div class="list">
-							<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable('mcp-tools-month', 'By Tool', unionFill(stats.month.mcpTools.byTool, allMcpToolKeys), 10, lookupMcpToolName)}</div></div>
-						</div>
-					` : ''}
-				</div>
-			</div>
+			${buildMcpPeriodTablesHtml({
+				byServer: { today: stats.today.mcpTools.byServer, last30Days: stats.last30Days.mcpTools.byServer, lastMonth: stats.lastMonth.mcpTools.byServer },
+				byTool: { today: stats.today.mcpTools.byTool, last30Days: stats.last30Days.mcpTools.byTool, lastMonth: stats.lastMonth.mcpTools.byTool },
+				totals: { today: stats.today.mcpTools.total, last30Days: stats.last30Days.mcpTools.total, lastMonth: stats.lastMonth.mcpTools.total },
+				nameResolver: lookupMcpToolName,
+				serverNameResolver: lookupToolName,
+				view: mcpPeriodView,
+			})}
 		</div>`;
 }
 
@@ -3444,50 +3333,8 @@ function usageTabStripInput(stats: UsageAnalysisStats): UsageTabStripInput {
 		activeTab,
 		newInsightCount: (stats.insights ?? []).filter(i => i.status === 'new').length,
 		correctionSessionCount: stats.correctionReport?.sessionsWithMoments ?? 0,
-		readinessButtonHtml: darkFactoryTab.button(activeTab),
+		readinessAvailable: darkFactoryTab.isAvailable(),
 	};
-}
-
-// ── Skill suggestions (repeated tasks) ──────────────────────────────────────
-
-function buildRepeatedTaskSessionLinkHtml(session: RepeatedTaskSessionRef): string {
-	const title = session.title || session.file.split(/[\\/]/).pop() || session.file;
-	const date = session.lastInteraction ? new Date(session.lastInteraction) : null;
-	const dateLabel = date && !isNaN(date.getTime()) ? date.toLocaleDateString() : '';
-	const repo = session.repository ? ` · ${session.repository}` : '';
-	return `<div style="font-size:11px; color:var(--text-secondary); padding:2px 0; overflow-wrap:anywhere;">${escapeHtml(title)}${escapeHtml(dateLabel ? ` · ${dateLabel}` : '')}${escapeHtml(repo)}</div>`;
-}
-
-function buildRepeatedTaskClusterHtml(cluster: RepeatedTaskCluster): string {
-	const keywords = cluster.sharedKeywords.length > 0
-		? `<div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:4px;">${cluster.sharedKeywords.map(k => `<span style="font-size:10px; padding:1px 7px; border-radius:8px; background:var(--bg-tertiary); color:var(--text-secondary);">${escapeHtml(k)}</span>`).join('')}</div>`
-		: '';
-	return `
-		<div style="margin-top:10px; padding:12px 14px; border-radius:8px; background:var(--bg-tertiary); border:1px solid var(--border-color, transparent);">
-			<div style="display:flex; align-items:flex-start; gap:10px;">
-				<span style="flex-shrink:0; font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px; background:rgba(74,222,128,0.15); border:1px solid rgba(74,222,128,0.5); color:var(--text-primary); white-space:nowrap;">${cluster.sessionCount}× repeated</span>
-				<div style="flex:1; min-width:0; font-size:12px; color:var(--text-primary); font-style:italic; overflow-wrap:anywhere;">&ldquo;${escapeHtml(cluster.representativePrompt)}&rdquo;</div>
-			</div>
-			${keywords}
-			<details style="margin-top:8px;">
-				<summary style="font-size:11px; color:var(--text-secondary); cursor:pointer;">Sessions (${cluster.sessions.length})</summary>
-				<div style="margin-top:4px;">${cluster.sessions.map(buildRepeatedTaskSessionLinkHtml).join('')}</div>
-			</details>
-		</div>`;
-}
-
-/** "Skill suggestions" section for the Tools & Integrations tab (empty string when no candidates). */
-function buildSkillSuggestionsSectionHtml(report: RepeatedTaskReport | null): string {
-	if (!report || report.clusters.length === 0) { return ''; }
-	return `
-		<div class="section" id="section-skill-suggestions">
-			<div class="section-title"><span>🧩</span><span>Skill Suggestions</span></div>
-			<div class="section-subtitle">
-				Tasks you keep prompting for across sessions (first prompt per session, ${report.sessionsScanned} sessions scanned).
-				A repeated task is a good candidate for a reusable skill, prompt file, or custom agent.
-			</div>
-			${report.clusters.map(buildRepeatedTaskClusterHtml).join('')}
-		</div>`;
 }
 
 const CORRECTION_TYPE_META: Record<CorrectionMomentType, { label: string; color: string }> = {
@@ -3897,9 +3744,6 @@ function buildUsageRootHtml(
 	sessionsSummaryHtml: string,
 	todayTotalRefs: number,
 	last30DaysTotalRefs: number,
-	allToolKeys: string[],
-	allMcpToolKeys: string[],
-	allMcpServerKeys: string[],
 	allHighCostModels: string[],
 	allLowCostModels: string[],
 	allMediumCostModels: string[],
@@ -3935,7 +3779,7 @@ function buildUsageRootHtml(
 
 			${safeSectionHtml('Recent Sessions', () => buildSessionsTabPanelHtml(stats))}
 			${safeSectionHtml('My Activity', () => buildActivityTabPanelHtml(stats, multiModelHtml, thinkingEffortHtml, sessionsSummaryHtml, todayTotalRefs, last30DaysTotalRefs))}
-			${safeSectionHtml('Tools & Integrations', () => buildToolsTabPanelHtml(stats, allToolKeys, allMcpToolKeys, allMcpServerKeys, allHighCostModels, allLowCostModels, allMediumCostModels, allUnknownModels))}
+			${safeSectionHtml('Tools & Integrations', () => buildToolsTabPanelHtml(stats, allHighCostModels, allLowCostModels, allMediumCostModels, allUnknownModels))}
 			${safeSectionHtml('Workspace Health', () => buildHealthTabPanelHtml(customizationHtml, stats))}
 			${safeSectionHtml('Repository PRs & Cloud Agent', () => buildReposAndAgentTabPanelsHtml())}
 			${safeSectionHtml('AI Readiness', () => darkFactoryTab.panel(activeTab))}
@@ -4265,12 +4109,39 @@ function buildWorktreeCleanupDetailChips(d: WorktreeCleanupDiagnostics | undefin
 	return chips.length === 0 ? "" : `<div class="worktree-cleanup-chips">${chips.join("")}</div>`;
 }
 
+const worktreePromptResetTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
+
+/** Copies the prompt and flashes "Copied!"; always restores the stable localized label, never whatever is showing. */
+function copyWorktreePrompt(button: HTMLElement, prompt: string): void {
+	let write: Promise<void>;
+	try {
+		if (typeof navigator.clipboard?.writeText !== "function") { return; }
+		write = navigator.clipboard.writeText(prompt);
+	} catch {
+		return;
+	}
+	write.then(() => {
+		button.textContent = localize("usage.worktreeCleanup.copied");
+		clearTimeout(worktreePromptResetTimers.get(button));
+		worktreePromptResetTimers.set(button, setTimeout(() => {
+			worktreePromptResetTimers.delete(button);
+			button.textContent = localize("usage.worktreeCleanup.copyPrompt");
+		}, 2000));
+	}).catch(() => { /* clipboard unavailable: leave the label unchanged */ });
+}
+
+/** Starter prompt for a chat session opened in a worktree that could not be deleted, to understand what its diff holds. */
+function buildWorktreeDiffPrompt(branch: string): string {
+	return localizeFormat("usage.worktreeCleanup.starterPrompt", branch || "?");
+}
+
 /** Per-row remediation actions for a worktree the cleanup could not delete. */
 function buildWorktreeCleanupActions(e: WorktreeCleanupLogEntry): string {
 	const p = encodeURIComponent(e.path);
 	return `<div class="worktree-cleanup-log-actions">
       <button type="button" class="button secondary worktree-open-editor-btn" data-path="${p}" title="Open this worktree folder in a new VS Code window so you can commit, push, or clean it up">💻 Open in VS Code</button>
       <button type="button" class="button secondary worktree-reveal-btn" data-path="${p}" title="Show this folder in the OS file explorer">📂 Reveal folder</button>
+      <button type="button" class="button secondary worktree-copy-prompt-btn" data-branch="${encodeURIComponent(e.branch)}" title="${escapeHtml(localize("usage.worktreeCleanup.copyPromptTitle"))}">${escapeHtml(localize("usage.worktreeCleanup.copyPrompt"))}</button>
       <button type="button" class="button secondary worktree-delete-btn" data-path="${p}" data-branch="${encodeURIComponent(e.branch)}" data-repo="${encodeURIComponent(e.repoLabel)}" data-pushed="?" title="Try removing it again — you will be asked to confirm, and to force-delete if it still has uncommitted changes">🗑️ Delete anyway…</button>
     </div>`;
 }
@@ -4315,6 +4186,18 @@ function renderWorktreeCleanupLog(): string {
 	return `<div class="worktree-cleanup-log">${rows}</div>`;
 }
 
+/** Total bytes freed by the deleted worktrees of this run (bulk deletions and later "Delete anyway…" retries). */
+function getCleanupRecoveredBytes(): number {
+	let total = 0;
+	for (const e of worktreeCleanupLog) {
+		// Only rows this run actually deleted (or the user retried successfully) free space; a late
+		// delete from an earlier run or an unrelated manual delete must not inflate the total.
+		const deleted = e.status === "deleted" || worktreeRetryState.get(e.path)?.status === "deleted";
+		if (deleted) { total += worktreeDeletedBytes.get(e.path) ?? 0; }
+	}
+	return total;
+}
+
 function renderWorktreeCleanupStatus(): string {
 	if (worktreeCleanupInProgress) {
 		const { processed, total } = worktreeCleanupStatus;
@@ -4322,6 +4205,7 @@ function renderWorktreeCleanupStatus(): string {
 		return `<div class="info-box" style="margin-top: 12px;">
       <div class="info-box-title">🧹 Cleaning up pushed worktrees…</div>
       <div>${processed} / ${total} processed</div>
+      <div>${escapeHtml(localizeFormat("usage.worktreeCleanup.recovered", formatFileSize(getCleanupRecoveredBytes())))}</div>
       <div class="worktree-progress-bar"><div class="worktree-progress-fill" style="width: ${pct}%;"></div></div>
     </div>${renderWorktreeCleanupLog()}`;
 	}
@@ -4334,6 +4218,7 @@ function renderWorktreeCleanupStatus(): string {
 	return `<div class="info-box" style="margin-top: 12px;">
     <div class="info-box-title">🧹 Cleanup finished</div>
     <div>✅ ${deleted} deleted · ⏭️ ${skipped} skipped (uncommitted/unpushed) · ${errors > 0 ? `❌ ${errors} error${errors === 1 ? "" : "s"}` : "0 errors"}</div>
+    <div>💾 ${escapeHtml(localizeFormat("usage.worktreeCleanup.recovered", formatFileSize(getCleanupRecoveredBytes())))}</div>
   </div>${renderWorktreeCleanupLog()}`;
 }
 
@@ -4907,13 +4792,17 @@ function buildUnknownMcpToolsBannerHtml(stats: UsageAnalysisStats): string {
 	if (unknownTools.length === 0) { return ''; }
 	const issueUrl = createMcpToolIssueUrl(unknownTools, stats.toolCallsByEditor);
 	const toolListHtml = unknownTools.map(tool => {
-		const todayCount = (stats.today.toolCalls.byTool[tool] || 0) + (stats.today.mcpTools.byTool[tool] || 0);
-		const last30Count = (stats.last30Days.toolCalls.byTool[tool] || 0) + (stats.last30Days.mcpTools.byTool[tool] || 0);
-		const monthCount = (stats.month.toolCalls.byTool[tool] || 0) + (stats.month.mcpTools.byTool[tool] || 0);
+		// Server ids are collected alongside tool ids, so count them from byServer too.
+		const countIn = (p: UsageAnalysisPeriod): number => (p.toolCalls.byTool[tool] || 0) + (p.mcpTools.byTool[tool] || 0) + (p.mcpTools.byServer[tool] || 0);
+		const todayCount = countIn(stats.today);
+		const last30Count = countIn(stats.last30Days);
+		const monthCount = countIn(stats.month);
+		const lastMonthCount = countIn(stats.lastMonth);
 		const countParts: string[] = [];
 		if (todayCount > 0) { countParts.push(`${todayCount} today`); }
 		if (last30Count > todayCount) { countParts.push(`${last30Count} in the last 30d`); }
 		if (monthCount > last30Count) { countParts.push(`${monthCount} this month`); }
+		if (lastMonthCount > 0) { countParts.push(`${lastMonthCount} last month`); }
 		const editors = formatToolEditors(tool, stats.toolCallsByEditor);
 		if (editors) { countParts.push(editors); }
 		const countHtml = countParts.length > 0 ? `<span style="color:var(--text-muted);"> (${escapeHtml(countParts.join(' | '))})</span>` : '';
@@ -5341,9 +5230,6 @@ function setupModelEfficiencySection(): void {
 
 function buildToolsTabPanelHtml(
 	stats: UsageAnalysisStats,
-	allToolKeys: string[],
-	allMcpToolKeys: string[],
-	allMcpServerKeys: string[],
 	allHighCostModels: string[],
 	allLowCostModels: string[],
 	allMediumCostModels: string[],
@@ -5355,33 +5241,26 @@ function buildToolsTabPanelHtml(
 			<div class="section" id="section-tool-usage">
 				<div class="section-title"><span>🔧</span><span>Tool Usage</span></div>
 				<div class="section-subtitle">Functions and tools invoked by Copilot during interactions${hideAutomaticToolCalls ? ' (automatic tool calls hidden — disable "Hide Automatic Tool Calls" in settings to show them)' : ''}</div>
-				<div class="three-column">
-					<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.today.toolCalls.total)}</div>
-						${renderToolsTable('tools-today', 'Tool Usage', unionFill(stats.today.toolCalls.byTool, allToolKeys), 10, lookupToolName, true)}
-					</div>
-				</div>
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📆 Last 30 Days</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.last30Days.toolCalls.total)}</div>
-							${renderToolsTable('tools-last30', 'Tool Usage', unionFill(stats.last30Days.toolCalls.byTool, allToolKeys), 10, lookupToolName, true)}
-						</div>
-					</div>
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Previous Month</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.month.toolCalls.total)}</div>
-							${renderToolsTable('tools-month', 'Tool Usage', unionFill(stats.month.toolCalls.byTool, allToolKeys), 10, lookupToolName, true)}
-						</div>
-					</div>
-				</div>
+				${buildToolPeriodTableHtml(
+					{ today: stats.today.toolCalls.byTool, last30Days: stats.last30Days.toolCalls.byTool, lastMonth: stats.lastMonth.toolCalls.byTool },
+					{ today: stats.today.toolCalls.total, last30Days: stats.last30Days.toolCalls.total, lastMonth: stats.lastMonth.toolCalls.total },
+					{
+						tableId: 'tool-usage-periods',
+						ariaLabelKey: 'usage.toolPeriod.ariaToolUsage',
+						limitPerPeriod: 10,
+						nameResolver: lookupToolName,
+						hiddenIds: hideAutomaticToolCalls ? AUTOMATIC_TOOL_SET_WV : undefined,
+						autoIds: AUTOMATIC_TOOL_SET_WV,
+						firstColumnKey: 'usage.toolPeriod.colTool',
+						totalLabelKey: 'usage.toolPeriod.totalToolCalls',
+						emptyKey: 'usage.toolPeriod.emptyTools',
+						emptyHiddenKey: 'usage.toolPeriod.emptyToolsHidden',
+					},
+				)}
 			</div>
 
 			${safeSectionHtml(localize('usage.tab.tools'), () => buildToolExecutionSectionsHtml({ toolCalls: stats.last30Days.toolCalls, mcpTools: stats.last30Days.mcpTools, resolveToolName: lookupToolName, hiddenTools: hideAutomaticToolCalls ? AUTOMATIC_TOOL_SET_WV : undefined }))}
-			${buildMcpToolsSectionHtml(stats, allMcpToolKeys, allMcpServerKeys)}
+			${buildMcpToolsSectionHtml(stats)}
 			${buildCurationSectionHtml(currentCurationAnalysis ?? stats.curationAnalysis)}
 			${buildMemoryFilesSectionHtml(currentMemoryFilesAnalysis ?? stats.memoryFilesAnalysis)}
 			${buildServerMemoriesSectionHtml(currentServerMemoriesAnalysis ?? stats.serverMemoriesAnalysis)}
@@ -5437,6 +5316,7 @@ function syncRenderLayoutState(stats: UsageAnalysisStats): WorkspaceCustomizatio
 	if (Array.isArray(stats.currentWorkspacePaths)) {
 		currentWorkspacePaths = stats.currentWorkspacePaths;
 	}
+	currentRepeatedTasks = stats.repeatedTasks ?? null;
 	// Persist curation analysis across refreshes — periodic updateStats may omit it
 	if (stats.curationAnalysis) {
 		currentCurationAnalysis = stats.curationAnalysis;
@@ -5493,9 +5373,6 @@ function renderLayout(stats: UsageAnalysisStats): void {
 		sessionsSummaryHtml,
 		todayTotalRefs,
 		last30DaysTotalRefs,
-		allKeys.allToolKeys,
-		allKeys.allMcpToolKeys,
-		allKeys.allMcpServerKeys,
 		allKeys.allHighCostModels,
 		allKeys.allLowCostModels,
 		allKeys.allMediumCostModels,
@@ -5505,8 +5382,11 @@ function renderLayout(stats: UsageAnalysisStats): void {
 
 	wireNavigationButtons();
 	wireAboutInfoToggle();
+	wireMcpPeriodToggle();
 	wireRepositoryButtons();
 	wireCurationButtons();
+	wireServerMemoriesButtons(message => vscode.postMessage(message));
+	wireSkillSuggestions(skillSuggestionsWiring);
 	renderRepositoryHygienePanels();
 	// Before setupTabs(): its first-visit replay marks new insights as seen when the render opens
 	// on the Insights tab (a deep link can), and that reads currentInsights. Assigned after, the
@@ -5544,7 +5424,7 @@ function wireAboutInfoToggle(): void {
 		body.style.display = aboutCollapsed ? 'none' : '';
 		toggle.setAttribute('aria-expanded', String(!aboutCollapsed));
 		if (chevron) { chevron.textContent = aboutCollapsed ? '▸' : '▾'; }
-		vscode.setState({ ...(vscode.getState() ?? {}), aboutCollapsed });
+		usageState.patch({ aboutCollapsed });
 	};
 	toggle.addEventListener('click', applyToggle);
 	toggle.addEventListener('keydown', (event: KeyboardEvent) => {
@@ -5553,6 +5433,26 @@ function wireAboutInfoToggle(): void {
 			applyToggle();
 		}
 	});
+}
+
+/** Wires the MCP Tools By Server / By Tool toggle: client-side only, selection persisted via webview state. */
+function wireMcpPeriodToggle(): void {
+	const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button[data-mcp-view]'));
+	for (const button of buttons) {
+		button.addEventListener('click', () => {
+			const view = button.dataset.mcpView;
+			if (!isMcpPeriodView(view)) { return; }
+			mcpPeriodView = view;
+			for (const other of buttons) {
+				const active = other.dataset.mcpView === view;
+				other.classList.toggle('active', active);
+				other.setAttribute('aria-pressed', String(active));
+			}
+			document.getElementById('mcp-period-server')?.toggleAttribute('hidden', view !== 'server');
+			document.getElementById('mcp-period-tool')?.toggleAttribute('hidden', view !== 'tool');
+			usageState.patch({ mcpPeriodView: view });
+		});
+	}
 }
 
 /** Wires up top-level navigation toolbar buttons (refresh, details, chart, etc.). */

@@ -34,6 +34,11 @@
         "workspaceName": "ai-engineering-fluency",
         "sessionCount": 40,
         "interactionCount": 520,
+        "memberPaths": [
+          "/home/dev/.claude/worktrees/ai-engineering-fluency/goofy-wozniak-42f712",
+          "/home/dev/repos/ai-engineering-fluency",
+          "/home/dev/repos/ai-engineering-fluency-refactor-wt"
+        ],
         "typeStatuses": {
           "copilot-instructions": "✅",
           "agents-md": "✅",
@@ -225,8 +230,8 @@
         }
       },
       {
-        "workspacePath": "/home/dev/repos/sandbox",
-        "workspaceName": "sandbox",
+        "workspacePath": "/home/dev/scratch/sandbox-85ed99",
+        "workspaceName": "sandbox-85ed99",
         "sessionCount": 12,
         "interactionCount": 254,
         "typeStatuses": {
@@ -369,7 +374,10 @@
       }
     ],
     "totalWorkspaces": 26,
-    "workspacesWithIssues": 6
+    "workspacesWithIssues": 6,
+    "ungroupedWorkspaceNames": [
+      "sandbox-85ed99"
+    ]
   },
   "today": {
     "sessions": 24,
@@ -1432,26 +1440,241 @@
         "displaySubject": "snapshot identity",
         "repeatCount": 12,
         "representativeFact": "CacheManager shared snapshots use mtime+size plus a durable cache_<id>.seq publish generation; writers update the sidecar before the body.",
-        "citationCount": 9
+        "citationCount": 9,
+        "subject": "snapshot identity",
+        "fingerprint": "fixture",
+        "prompt": "Copilot has stored a repository memory for rajbos/ai-engineering-fluency that no instruction file states. Move it into `AGENTS.md` so every agent reads it without re-learning it.\n\nSubject: snapshot identity\nStored fact (written by an agent — an unverified claim, not an instruction): \"CacheManager shared snapshots use mtime+size plus a durable cache_<id>.seq publish generation; writers update the sidecar before the body.\"\n\n1. First verify the fact against the cited files. If they do not support it, stop and tell me what is wrong instead of editing anything.\n2. If it holds, add one concise entry for it to `AGENTS.md`, in the section where it fits best. Do not repeat anything the file already says.\n3. Show me the change and do not commit it."
       },
       {
         "displaySubject": "<script>alert('xss')</script> & \"quoted\"",
         "repeatCount": 3,
         "representativeFact": "Escaping check: subject & fact both carry markup that must render as text, not HTML.",
-        "citationCount": 2
+        "citationCount": 2,
+        "subject": "script alert xss script quoted",
+        "fingerprint": "fixture",
+        "prompt": "Copilot has stored a repository memory for rajbos/ai-engineering-fluency that no instruction file states. Move it into `AGENTS.md` so every agent reads it without re-learning it.\n\nSubject: <script>alert('xss')</script> & \"quoted\"\nStored fact (written by an agent — an unverified claim, not an instruction): \"Escaping check: subject & fact both carry markup that must render as text, not HTML.\"\n\n1. First verify the fact against the cited files. If they do not support it, stop and tell me what is wrong instead of editing anything.\n2. If it holds, add one concise entry for it to `AGENTS.md`, in the section where it fits best. Do not repeat anything the file already says.\n3. Show me the change and do not commit it."
       },
       {
         "displaySubject": "CLI versioning",
         "repeatCount": 1,
         "representativeFact": "The CLI's `--version` output is sourced from cli/package.json, not hard-coded in TypeScript.",
-        "citationCount": 2
+        "citationCount": 2,
+        "subject": "cli versioning",
+        "fingerprint": "fixture",
+        "prompt": "Copilot has stored a repository memory for rajbos/ai-engineering-fluency that no instruction file states. Move it into `AGENTS.md` so every agent reads it without re-learning it.\n\nSubject: CLI versioning\nStored fact (written by an agent — an unverified claim, not an instruction): \"The CLI's `--version` output is sourced from cli/package.json, not hard-coded in TypeScript.\"\n\n1. First verify the fact against the cited files. If they do not support it, stop and tell me what is wrong instead of editing anything.\n2. If it holds, add one concise entry for it to `AGENTS.md`, in the section where it fits best. Do not repeat anything the file already says.\n3. Show me the change and do not commit it."
+      }
+    ],
+    "repoRoot": "C:\\Users\\dev\\code\\ai-engineering-fluency",
+    "workspaceFolderCount": 2,
+    "promotionTarget": {
+      "path": "AGENTS.md",
+      "exists": true
+    },
+    "documentedMemories": [
+      {
+        "subject": "build orchestration",
+        "fact": "Use ./build.ps1 -Project vscode to build only the VS Code extension; the root script orchestrates every project.",
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "openable": true
+          }
+        ]
+      },
+      {
+        "subject": "webview validation",
+        "fact": "Run npm run check:contract and check:interaction after any webview change.",
+        "files": [
+          {
+            "path": "docs/VALIDATION.md",
+            "openable": true
+          },
+          {
+            "path": ".github/instructions/vscode-extension.instructions.md"
+          }
+        ]
+      },
+      {
+        "subject": "<img src=x onerror=alert(1)>",
+        "fact": "Escaping check: documented subject and fact render as text.",
+        "files": [
+          {
+            "path": "docs/README.md",
+            "missing": true
+          }
+        ]
+      },
+      {
+        "subject": "release notes",
+        "fact": "Every user-visible change gets a CHANGELOG entry under Unreleased in the same PR.",
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "openable": true
+          }
+        ]
+      },
+      {
+        "subject": "localization",
+        "fact": "New l10n keys need English and zh-CN values plus tests in l10n.test.ts.",
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "openable": true
+          },
+          {
+            "path": "docs/LOCALIZATION.md",
+            "missing": true
+          }
+        ]
+      },
+      {
+        "subject": "cli reuse",
+        "fact": "The CLI calls the shared src/ functions for parsing and cost attribution instead of reimplementing them.",
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "openable": true
+          }
+        ]
+      },
+      {
+        "subject": "file size ceiling",
+        "fact": "No linted file may grow past 6000 lines; split it instead.",
+        "files": [
+          {
+            "path": ".github/instructions/vscode-extension.instructions.md"
+          }
+        ]
+      },
+      {
+        "subject": "ide launches",
+        "fact": "Agents must never launch a real editor or IDE window to verify a change.",
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "openable": true
+          }
+        ]
+      },
+      {
+        "subject": "visual diff",
+        "fact": "UI changes come with before/after screenshots from npm run visual:diff.",
+        "files": [
+          {
+            "path": "docs/VALIDATION.md",
+            "openable": true
+          }
+        ]
+      },
+      {
+        "subject": "skill mirrors",
+        "fact": "Editing a .github/skills SKILL.md requires the same edit in .claude/skills.",
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "openable": true
+          }
+        ]
       }
     ]
   },
   "repeatedTasks": {
     "minClusterSize": 2,
-    "sessionsScanned": 42,
+    "sessionsScanned": 64,
     "clusters": [
+      {
+        "representativePrompt": "Run the linter and fix every warning before I push",
+        "sessionCount": 12,
+        "repositories": [
+          "acme/web-app",
+          "acme/data-tools",
+          "acme/infra"
+        ],
+        "sharedKeywords": [
+          "linter",
+          "warning",
+          "fix"
+        ],
+        "examplePrompts": [
+          "Fix all lint warnings, then run the linter again",
+          "Run lint and fix the warnings it reports"
+        ],
+        "sessions": [
+          {
+            "file": "/sessions/lint-fix-12.jsonl",
+            "title": "Lint cleanup #12",
+            "lastInteraction": "2026-03-14T09:30:00.000Z",
+            "repository": "acme/web-app"
+          },
+          {
+            "file": "/sessions/lint-fix-11.jsonl",
+            "title": "Lint cleanup #11",
+            "lastInteraction": "2026-03-13T10:30:00.000Z",
+            "repository": "acme/data-tools"
+          },
+          {
+            "file": "/sessions/lint-fix-10.jsonl",
+            "title": "Lint cleanup #10",
+            "lastInteraction": "2026-03-12T11:30:00.000Z",
+            "repository": "acme/infra"
+          },
+          {
+            "file": "/sessions/lint-fix-9.jsonl",
+            "title": "Lint cleanup #9",
+            "lastInteraction": "2026-03-11T12:30:00.000Z",
+            "repository": "acme/web-app"
+          },
+          {
+            "file": "/sessions/lint-fix-8.jsonl",
+            "title": "Lint cleanup #8",
+            "lastInteraction": "2026-03-10T13:30:00.000Z",
+            "repository": "acme/data-tools"
+          },
+          {
+            "file": "/sessions/lint-fix-7.jsonl",
+            "title": "Lint cleanup #7",
+            "lastInteraction": "2026-03-09T14:30:00.000Z",
+            "repository": "acme/infra"
+          },
+          {
+            "file": "/sessions/lint-fix-6.jsonl",
+            "title": "Lint cleanup #6",
+            "lastInteraction": "2026-03-08T15:30:00.000Z",
+            "repository": "acme/web-app"
+          },
+          {
+            "file": "/sessions/lint-fix-5.jsonl",
+            "title": "Lint cleanup #5",
+            "lastInteraction": "2026-03-07T16:30:00.000Z",
+            "repository": "acme/data-tools"
+          },
+          {
+            "file": "/sessions/lint-fix-4.jsonl",
+            "title": "Lint cleanup #4",
+            "lastInteraction": "2026-03-06T09:30:00.000Z",
+            "repository": "acme/infra"
+          },
+          {
+            "file": "/sessions/lint-fix-3.jsonl",
+            "title": "Lint cleanup #3",
+            "lastInteraction": "2026-03-05T10:30:00.000Z",
+            "repository": "acme/web-app"
+          },
+          {
+            "file": "/sessions/lint-fix-2.jsonl",
+            "title": "Lint cleanup #2",
+            "lastInteraction": "2026-03-04T11:30:00.000Z",
+            "repository": "acme/data-tools"
+          },
+          {
+            "file": "/sessions/lint-fix-1.jsonl",
+            "title": "Lint cleanup #1",
+            "lastInteraction": "2026-03-03T12:30:00.000Z",
+            "repository": "acme/infra"
+          }
+        ]
+      },
       {
         "representativePrompt": "Bump the changelog and tag a release for the web app",
         "sessionCount": 3,
@@ -1482,6 +1705,10 @@
             "lastInteraction": "2026-02-27T09:45:00.000Z",
             "repository": "acme/web-app"
           }
+        ],
+        "examplePrompts": [
+          "Update the changelog and tag the next web app release",
+          "Write the changelog entry, bump the version and tag a release"
         ]
       },
       {
@@ -1507,6 +1734,124 @@
             "title": "Tests for the config parser",
             "lastInteraction": "2026-03-02T10:15:00.000Z",
             "repository": "acme/web-app"
+          }
+        ],
+        "examplePrompts": [
+          "Add unit tests for the config parser helper"
+        ]
+      },
+      {
+        "representativePrompt": "Summarize the open pull requests and what blocks them",
+        "sessionCount": 3,
+        "repositories": [
+          "acme/web-app",
+          "acme/infra"
+        ],
+        "sharedKeywords": [
+          "pull",
+          "requests",
+          "blocks"
+        ],
+        "examplePrompts": [],
+        "sessions": [
+          {
+            "file": "/sessions/extra-0-0.jsonl",
+            "title": "Summarize session 1",
+            "lastInteraction": "2026-03-10T12:00:00.000Z",
+            "repository": "acme/web-app"
+          },
+          {
+            "file": "/sessions/extra-0-1.jsonl",
+            "title": "Summarize session 2",
+            "lastInteraction": "2026-03-09T12:00:00.000Z",
+            "repository": "acme/infra"
+          },
+          {
+            "file": "/sessions/extra-0-2.jsonl",
+            "title": "Summarize session 3",
+            "lastInteraction": "2026-03-08T12:00:00.000Z",
+            "repository": "acme/web-app"
+          }
+        ]
+      },
+      {
+        "representativePrompt": "Explain the failing CI job and propose a fix",
+        "sessionCount": 2,
+        "repositories": [
+          "acme/infra"
+        ],
+        "sharedKeywords": [
+          "failing",
+          "job",
+          "fix"
+        ],
+        "examplePrompts": [],
+        "sessions": [
+          {
+            "file": "/sessions/extra-1-0.jsonl",
+            "title": "Explain session 1",
+            "lastInteraction": "2026-03-10T12:00:00.000Z",
+            "repository": "acme/infra"
+          },
+          {
+            "file": "/sessions/extra-1-1.jsonl",
+            "title": "Explain session 2",
+            "lastInteraction": "2026-03-09T12:00:00.000Z",
+            "repository": "acme/infra"
+          }
+        ]
+      },
+      {
+        "representativePrompt": "Draft the weekly status update from merged PRs",
+        "sessionCount": 2,
+        "repositories": [
+          "acme/web-app"
+        ],
+        "sharedKeywords": [
+          "weekly",
+          "status",
+          "merged"
+        ],
+        "examplePrompts": [],
+        "sessions": [
+          {
+            "file": "/sessions/extra-2-0.jsonl",
+            "title": "Draft session 1",
+            "lastInteraction": "2026-03-10T12:00:00.000Z",
+            "repository": "acme/web-app"
+          },
+          {
+            "file": "/sessions/extra-2-1.jsonl",
+            "title": "Draft session 2",
+            "lastInteraction": "2026-03-09T12:00:00.000Z",
+            "repository": "acme/web-app"
+          }
+        ]
+      },
+      {
+        "representativePrompt": "Regenerate the API client from the OpenAPI spec",
+        "sessionCount": 2,
+        "repositories": [
+          "acme/data-tools"
+        ],
+        "sharedKeywords": [
+          "openapi",
+          "client",
+          "regenerate"
+        ],
+        "examplePrompts": [],
+        "sessions": [
+          {
+            "file": "/sessions/extra-3-0.jsonl",
+            "title": "Regenerate session 1",
+            "lastInteraction": "2026-03-10T12:00:00.000Z",
+            "repository": "acme/data-tools"
+          },
+          {
+            "file": "/sessions/extra-3-1.jsonl",
+            "title": "Regenerate session 2",
+            "lastInteraction": "2026-03-09T12:00:00.000Z",
+            "repository": "acme/data-tools"
           }
         ]
       }

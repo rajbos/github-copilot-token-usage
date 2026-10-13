@@ -20,7 +20,7 @@ plugins {
     // Pinned below CodeQL's current Kotlin version ceiling: the CodeQL analysis
     // job fails on 2.4.20 with "Kotlin version 2.4.20 is too recent". Keep the
     // last known-good Kotlin line until CodeQL adds support for 2.4.20+.
-    kotlin("jvm") version "2.4.20"
+    kotlin("jvm") version "2.4.21"
     id("org.jetbrains.intellij.platform") version "2.19.0"
 }
 

@@ -12,7 +12,6 @@ import {
 	renderAgentPluginsTable,
 	renderMemoryFilesTable,
 	renderRepoHygieneListTable,
-	renderToolCountTable,
 	REPO_HYGIENE_LIST_TABLE_ID,
 	type RepoHygieneListRow,
 } from '../../src/webview/usage/usageListTables';
@@ -65,20 +64,6 @@ test('context refs: a row tooltip is escaped onto the row', () => {
 	resetDataTableState(CTX_REF_TABLE_ID);
 	const html = renderContextRefTable([{ ...ref('#file', { today: 1 }), title: 'a "quoted" <tip>' }], { today: 1, month: 0, lastMonth: 0, last30: 0 }, false);
 	assert.match(html, /<tr title="a &quot;quoted&quot; &lt;tip&gt;">/);
-});
-
-test('tool counts: the # column ranks by calls and does not renumber when the table is re-sorted', () => {
-	const html = renderToolCountTable({
-		tableId: 'tools-test',
-		ariaLabel: 'Tool Usage',
-		entries: [['read_file', 9], ['<b>x</b>', 4]],
-		nameResolver: id => id === 'read_file' ? 'Read File' : id,
-		isAutomatic: id => id === 'read_file',
-	});
-	assert.deepEqual(bodyRows(html), [['1', 'Read Fileauto', '9'], ['2', '<b>x</b>', '4']]);
-	assert.match(html, /<strong title="read_file">Read File<\/strong><span class="auto-badge"/);
-	assert.ok(!html.includes('<b>x</b>'), 'tool ids are escaped');
-	assert.match(html, /aria-sort="descending"[^>]*><button[^>]*data-table-sort="calls"/, 'sorted by calls by default');
 });
 
 test('agent plugins: plugins with usage are hidden by default and the toggle reveals them', () => {

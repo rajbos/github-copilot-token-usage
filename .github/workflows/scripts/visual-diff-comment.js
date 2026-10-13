@@ -26,6 +26,10 @@
  *   --artifact <name>     Name of the uploaded screenshots artifact, for the
  *                         footer and the no-images fallback.
  *   --base <sha>          Baseline commit, shown in the header.
+ *   --notice <kind>      Write only comment-plain.md, a short replacement for an
+ *                         earlier screenshot comment that no longer applies:
+ *                         `skipped` (this head has no UI-relevant changes) or
+ *                         `no-report` (the diff produced no report).
  *   --max-attachments <n> Attachment budget. gh allows 50 per command; the
  *                         default leaves a little headroom. Default: 48
  *
@@ -50,12 +54,28 @@
 const fs = require('fs');
 const path = require('path');
 
+// Bounds for artifact contents, which a PR's CI job (not this one) produced.
+const MAX_PNG_BYTES = 10 * 1024 * 1024;
+const MAX_REPORT_BYTES = 2 * 1024 * 1024;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
 const STATUS_LABEL = {
   changed: '🎨 changed',
   unchanged: '⚪ unchanged',
   added: '🆕 added',
   removed: '🗑️ removed',
 };
+
+const NOTICES = {
+  skipped: 'This head has no UI-relevant changes, so no visual diff was produced; the screenshots from an earlier push no longer apply.',
+  'no-report': 'The visual diff produced no report on this push (the render or the diff step failed), so the screenshots from the previous push no longer apply.',
+};
+
+/** The short comment that replaces a stale screenshot comment. */
+function renderNotice(opts) {
+  const link = opts.runUrl ? ` See the [workflow run](${opts.runUrl}).` : '';
+  return `<!-- ${opts.marker} -->\n### Webview screenshots\n\n${NOTICES[opts.notice]}${link}\n`;
+}
 
 function parseArgs(argv) {
   const opts = {
@@ -67,6 +87,7 @@ function parseArgs(argv) {
     artifact: 'webview-screenshots',
     base: '',
     maxAttachments: 48,
+    notice: '',
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -85,11 +106,16 @@ function parseArgs(argv) {
     else if (arg === '--run-url') opts.runUrl = next();
     else if (arg === '--artifact') opts.artifact = next();
     else if (arg === '--base') opts.base = next().replace(/[^0-9a-f]/gi, '');
+    else if (arg === '--notice') opts.notice = next();
     else if (arg === '--max-attachments') opts.maxAttachments = Number(next());
     else {
       console.error(`Unknown option: ${arg}`);
       process.exit(2);
     }
+  }
+  if (opts.notice && !NOTICES[opts.notice]) {
+    console.error('--notice must be one of: ' + Object.keys(NOTICES).join(', '));
+    process.exit(2);
   }
   opts.marker = safeId(opts.marker);
   opts.artifact = safeId(opts.artifact);
@@ -207,17 +233,26 @@ function resolveAttachment(rootDir, subDir, fileName) {
     return null;
   }
   const relative = path.posix.join(rootDir, subDir, fileName);
-  let real;
+  // Containment first (realpath resolves symlinks anywhere in the path), then
+  // ONE open that refuses a final-component symlink; size and signature are
+  // read from that descriptor, so nothing is checked by path and used later.
+  let fd;
   try {
-    if (fs.lstatSync(relative).isSymbolicLink()) { return null; }
-    real = fs.realpathSync(relative);
-    if (!fs.statSync(real).isFile()) { return null; }
+    const rootReal = fs.realpathSync(rootDir);
+    const real = fs.realpathSync(relative);
+    if (!real.startsWith(rootReal + path.sep)) { return null; }
+    fd = fs.openSync(real, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile() || stat.size > MAX_PNG_BYTES) { return null; }
+    // The screenshots arrive as an artifact from a job that ran PR code, so
+    // they are untrusted bytes: only something that really is a PNG goes out.
+    const head = Buffer.alloc(PNG_SIGNATURE.length);
+    const read = fs.readSync(fd, head, 0, head.length, 0);
+    if (read !== head.length || !head.equals(PNG_SIGNATURE)) { return null; }
   } catch {
     return null;
-  }
-  const rootReal = (() => { try { return fs.realpathSync(rootDir); } catch { return null; } })();
-  if (!rootReal || !real.startsWith(rootReal + path.sep)) {
-    return null;
+  } finally {
+    if (fd !== undefined) { fs.closeSync(fd); }
   }
   return relative;
 }
@@ -229,22 +264,33 @@ function describe(c, titles) {
 }
 
 /**
- * Decides which screenshots ride along inline. Dark theme first, then light,
- * largest change first within a theme, and a changed view takes its before,
- * after and diff together or not at all — two of the three tell a reviewer
- * less than none. Whatever does not fit is still in the table and the artifact.
+ * Decides which screenshots ride along inline. Views are prioritized by their
+ * largest change, with light before dark within each view, and a changed view
+ * takes its before, after and diff together or not at all — two of the three
+ * tell a reviewer less than none. Whatever does not fit is still in the table
+ * and the artifact.
  */
 function planAttachments(comparisons, roots, budget, titles) {
   const interesting = comparisons.filter((c) => c.status !== 'unchanged');
-  const order = { dark: 0, light: 1 };
-  interesting.sort((a, b) =>
-    (order[a.theme] ?? 2) - (order[b.theme] ?? 2) ||
-    (b.changedPixels || 0) - (a.changedPixels || 0) ||
-    key(a).localeCompare(key(b)));
+  const themeOrder = { light: 0, dark: 1 };
+  const groups = new Map();
+  for (const c of interesting) {
+    const groupKey = key(c);
+    if (!groups.has(groupKey)) groups.set(groupKey, []);
+    groups.get(groupKey).push(c);
+  }
+  const ordered = [...groups.values()]
+    .sort((a, b) =>
+      Math.max(...b.map((c) => c.changedPixels || 0)) -
+      Math.max(...a.map((c) => c.changedPixels || 0)) ||
+      key(a[0]).localeCompare(key(b[0])))
+    .flatMap((group) => group.sort((a, b) =>
+      (themeOrder[a.theme] ?? 2) - (themeOrder[b.theme] ?? 2) ||
+      (b.changedPixels || 0) - (a.changedPixels || 0)));
 
   const attachments = [];
   const inline = new Map();
-  for (const c of interesting) {
+  for (const c of ordered) {
     const label = `${describe(c, titles)} ${c.theme}`;
     const files = [];
     if (c.status === 'changed') {
@@ -273,53 +319,33 @@ function planAttachments(comparisons, roots, budget, titles) {
   return { attachments, inline };
 }
 
-/** Screenshots per row in the inline grid; three keeps a full-page shot readable without endless scrolling. */
-const GRID_COLUMNS = 3;
-
 const image = (f) => `![${f.alt}](${f.file})`;
 
 /**
- * Only one image per view is shown inline: the diff for a changed view, the
- * screenshot itself for an added or removed one. The webview screenshots are
- * full-page (often 6000+ px tall), so a before/after/diff row per view made
- * the comment one long scroll. Before and after still matter — the diff paints
- * changed pixels solid magenta, so it shows where the UI changed but not what
- * it now looks like — and sit in a collapsed section, one click away.
+ * Show the before, after and diff together for each changed view. Sorting by
+ * view first keeps light and dark rows together, with light mode first.
  */
 function renderImages(lines, shown, plan, titles) {
   const files = (c) => plan.inline.get(`${key(c)}.${c.theme}`);
   if (shown.length === 0) return;
-  const cells = shown.map((c) => {
-    const lead = files(c).find((f) => f.kind === 'Diff') || files(c)[0];
-    const note = c.status === 'changed' ? `${formatPercent(c.changedPercent)} changed` : c.status;
-    return `<code>${key(c)}</code> · ${c.theme}<br>${note}<br>${image(lead)}`;
-  });
-  // One table rather than one per row: GitHub sizes columns per table, so a
-  // short last row keeps the width of the full rows above it instead of
-  // stretching its images across the whole comment. `gh --attach` only
-  // rewrites Markdown image references, so an <img width> is not an option.
-  const columns = Math.min(GRID_COLUMNS, cells.length);
-  lines.push(`|${' |'.repeat(columns)}`, `|${' --- |'.repeat(columns)}`);
-  for (let i = 0; i < cells.length; i += columns) {
-    const row = cells.slice(i, i + columns);
-    while (row.length < columns) row.push(' ');
-    lines.push(`| ${row.join(' | ')} |`);
-  }
-  // Added and removed views show the screenshot itself, not a diff, so the
-  // magenta legend only belongs when a changed view is in the grid.
-  const pairs = shown.filter((c) => c.status === 'changed');
-  const legend = pairs.length > 0 ? 'Magenta marks changed pixels; the rest is the new screenshot, dimmed. ' : '';
-  lines.push('', `<sub>${legend}Click an image for full size.</sub>`, '');
+  const themeOrder = { light: 0, dark: 1 };
+  const ordered = [...shown].sort((a, b) =>
+    key(a).localeCompare(key(b)) ||
+    themeOrder[a.theme] - themeOrder[b.theme]);
+  const screenshot = (c, kind) => files(c).find((f) => f.kind === kind);
+  const cell = (c, kind) => {
+    const file = screenshot(c, kind);
+    return file ? image(file) : '';
+  };
 
-  if (pairs.length > 0) {
-    lines.push(`<details><summary>Before and after screenshots (${pairs.length})</summary>`, '');
-    for (const c of pairs) {
-      const [before, after] = ['Before', 'After'].map((kind) => files(c).find((f) => f.kind === kind));
-      lines.push(`**<code>${key(c)}</code> · ${describe(c, titles)} · ${c.theme}**`, '');
-      lines.push('| Before | After |', '| --- | --- |', `| ${image(before)} | ${image(after)} |`, '');
-    }
-    lines.push('</details>', '');
+  lines.push('| Name | Before | After | Diff |', '| --- | --- | --- | --- |');
+  for (const c of ordered) {
+    const name = `**${describe(c, titles)}** (${c.theme} mode)`;
+    lines.push(`| ${name} | ${cell(c, 'Before')} | ${cell(c, 'After')} | ${cell(c, 'Diff')} |`);
   }
+  const hasDiff = ordered.some((c) => screenshot(c, 'Diff'));
+  const legend = hasDiff ? 'Magenta marks changed pixels in the diff. ' : '';
+  lines.push('', `<sub>${legend}Click an image for full size.</sub>`, '');
 }
 
 function renderBody(report, opts, titles, plan, { withImages }) {
@@ -374,9 +400,26 @@ function renderBody(report, opts, titles, plan, { withImages }) {
   return lines.join('\n');
 }
 
+/** Reads a regular file through a single descriptor, refusing anything over `limit` bytes. */
+function readBounded(file, limit) {
+  const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+  try {
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile() || stat.size > limit) throw new Error('not a regular file within the size limit');
+    return fs.readFileSync(fd, 'utf8');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   fs.mkdirSync(opts.outDir, { recursive: true });
+
+  if (opts.notice) {
+    fs.writeFileSync(path.join(opts.outDir, 'comment-plain.md'), renderNotice(opts));
+    return;
+  }
 
   const outputs = [];
   const emit = (name, value) => outputs.push(`${name}=${value}`);
@@ -389,7 +432,18 @@ function main() {
     return finish(outputs);
   }
 
-  const report = JSON.parse(fs.readFileSync(opts.report, 'utf8'));
+  // The report comes out of an artifact built by PR code: bound it and treat
+  // an unreadable one like a missing one rather than failing the job.
+  let report;
+  try {
+    report = JSON.parse(readBounded(opts.report, MAX_REPORT_BYTES));
+  } catch (err) {
+    console.log(`Report at ${opts.report} is unusable (${safeText(err.message)}); nothing to post.`);
+    emit('has_report', 'false');
+    emit('has_changes', 'false');
+    emit('attachments', '0');
+    return finish(outputs);
+  }
   const comparisons = (Array.isArray(report.comparisons) ? report.comparisons : [])
     .filter((c) => c && typeof c === 'object')
     .map(normalizeComparison)

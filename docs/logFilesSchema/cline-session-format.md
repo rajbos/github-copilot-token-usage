@@ -141,4 +141,4 @@ mode buckets in usage analysis.
 Editor display name: **`Cline`** (all three sources of truth:
 `cli/src/analysis.ts::getEditorSourceFromPath`,
 `src/workspaceHelpers.ts::getEditorTypeFromPath`, and `EDITOR_ICON_MAP` in
-`vscode-extension/src/editorIcons.ts`, icon 🤖).
+`src/editorIcons.ts`, icon 🤖).

@@ -1,6 +1,6 @@
 import { setHtml } from '../shared/domUtils';
 import { localize } from '../shared/localization';
-import { buildDarkFactoryChatPrompt, buildDarkFactorySectionHtml } from '../maturity/darkFactorySection';
+import { buildDarkFactoryChatPrompt, buildDarkFactorySectionHtml } from './darkFactorySection';
 import type { DarkFactoryReport } from '../../../../src/types';
 
 type ReadinessMessage = { command: string; requestId?: unknown; report?: unknown; refreshing?: unknown };
@@ -25,16 +25,15 @@ export class DarkFactoryTab {
 		this.available = available;
 	}
 
-	button(activeTab: string): string {
-		if (!this.available) { return ''; }
-		return `<button class="tab-button ${activeTab === 'readiness' ? 'active' : ''}" data-tab="readiness"><span class="codicon codicon-shield"></span> ${localize('nav.btnReadiness')}</button>`;
+	isAvailable(): boolean {
+		return this.available;
 	}
 
 	panel(activeTab: string): string {
 		if (!this.available) { return ''; }
 		return `<div id="tab-panel-readiness" class="tab-panel"${activeTab !== 'readiness' ? ' style="display:none"' : ''}>
 			<div class="section">
-				<div class="section-title"><span class="codicon codicon-shield"></span><span>${localize('nav.btnReadiness')}</span></div>
+				<div class="section-title"><span class="codicon codicon-shield"></span><span>${localize('usage.tab.readiness')}</span></div>
 				<button class="button secondary" id="btn-refresh-readiness">${localize('nav.btnRefresh')}</button>
 				<div id="readiness-content"></div>
 			</div>

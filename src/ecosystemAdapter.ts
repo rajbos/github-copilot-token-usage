@@ -221,3 +221,20 @@ export interface IAnalyzableEcosystem {
 export function isAnalyzable(adapter: IEcosystemAdapter): adapter is IEcosystemAdapter & IAnalyzableEcosystem {
 	return typeof (adapter as any).analyzeUsage === 'function';
 }
+
+/**
+ * Ask any adapter that does *not* handle this file whether it can still supply a workspace
+ * directory for it. Used for files like Copilot CLI `events.jsonl`, which an adapter discovers
+ * but the generic JSONL path parses. Shared by the extension and the CLI.
+ */
+export async function findWorkspacePathForDiscoveredPath(ecosystems: readonly IEcosystemAdapter[], sessionFile: string): Promise<string | undefined> {
+	for (const eco of ecosystems) {
+		if (eco.handles(sessionFile)) { continue; }
+		if (typeof eco.getWorkspacePathForDiscoveredPath !== 'function') { continue; }
+		try {
+			const cwd = await eco.getWorkspacePathForDiscoveredPath(sessionFile);
+			if (cwd) { return cwd; }
+		} catch { /* adapter failed; try next */ }
+	}
+	return undefined;
+}

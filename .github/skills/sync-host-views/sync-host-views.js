@@ -202,7 +202,7 @@ function printReport(result) {
   console.log(bold('\nHost view sync report'));
   console.log('-'.repeat(60));
   console.log(`Canonical VS Code views (${result.canonical.length}): ${cyan(result.canonical.join(', '))}`);
-  console.log(`dist/webview built: ${result.distAvailable ? green('yes') : red('NO — run npm run package')}`);
+  console.log(`dist/webview built: ${result.distAvailable ? green('yes') : red('NO — run pnpm run package')}`);
 
   for (const [name, h] of [['Visual Studio', result.vs], ['JetBrains', result.jb]]) {
     console.log(bold(`\n${name}`));

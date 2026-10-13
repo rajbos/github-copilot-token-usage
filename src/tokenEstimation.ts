@@ -6,6 +6,7 @@ import type { ModelUsage, ModelPricing, ContextReferenceUsage, TokenEstimator, C
 import { toLocalDayKey } from './utils/dayKeys';
 import type { CopilotCliOtelSessionUsage } from './copilotCliOtel';
 import { getModelLookupCandidates } from './webview/shared/modelUtils';
+import { applyCliShutdownMetrics, createCliShutdownAccumulator, getCliShutdownTotals, type CliShutdownAccumulator, type CliShutdownModelMetricsEntry } from './cliShutdownMetrics';
 
 /** Minimum request shape needed by getModelFromRequest. */
 interface ModelRequestSource {
@@ -24,16 +25,6 @@ interface DeltaEvent {
 	k?: unknown;
 	/** Value to set or append. */
 	v?: unknown;
-}
-
-/** Per-model metrics from a session.shutdown event. */
-interface ShutdownModelMetrics {
-	usage?: {
-		inputTokens?: number;
-		outputTokens?: number;
-		cacheReadTokens?: number;
-		cacheWriteTokens?: number;
-	};
 }
 
 /** Shape of a `toolInvocationSerialized` response item. */
@@ -482,10 +473,17 @@ interface EjtsState {
 	cliActualTokens: number;
 	cliCacheReadTokens: number;
 	cliShutdownModelUsage: ModelUsage | null;
+	/** Folded session.shutdown modelMetrics; null until the first shutdown with modelMetrics. */
+	cliShutdown: CliShutdownAccumulator | null;
 	cliRealOutputByModel: { [model: string]: number } | null;
 	totalEstToolCalls: number;
 	dailyActualTokens: Record<string, number>;
-	/** Sum of totalNanoAiu from all session.shutdown events (exact Copilot billing). */
+	/**
+	 * Exact Copilot billing for the session, from the latest `session.usage_checkpoint` or
+	 * `session.shutdown` event carrying `totalNanoAiu`. The value is a running total over the
+	 * whole session (it carries across `session.resume`), so the latest event wins — summing
+	 * events would count resumed sessions more than once.
+	 */
 	cliTotalNanoAiu: number;
 	/** Count of session.truncation events where at least one message was removed. */
 	truncationCount: number;
@@ -495,46 +493,45 @@ interface EjtsState {
 	contextTier: string | null;
 }
 
-/** Accumulate one model's metrics from a session.shutdown event into state. Returns the total tokens added. */
-function _ejtsAccumulateModelMetrics(modelName: string, metrics: ShutdownModelMetrics, state: EjtsState): number {
-	const usage = metrics?.usage;
-	if (!usage) { return 0; }
-	const input = typeof usage.inputTokens === 'number' ? usage.inputTokens : 0;
-	const output = typeof usage.outputTokens === 'number' ? usage.outputTokens : 0;
-	const cacheRead = typeof usage.cacheReadTokens === 'number' ? usage.cacheReadTokens : 0;
-	const cacheWrite = typeof usage.cacheWriteTokens === 'number' ? usage.cacheWriteTokens : 0;
-	state.cliActualTokens += input + output;
-	state.cliCacheReadTokens += cacheRead;
-	if (!state.cliShutdownModelUsage![modelName]) {
-		state.cliShutdownModelUsage![modelName] = { inputTokens: 0, outputTokens: 0, sessions: 0 };
-	}
-	state.cliShutdownModelUsage![modelName].inputTokens += input;
-	state.cliShutdownModelUsage![modelName].outputTokens += output;
-	if (cacheRead > 0) {
-		state.cliShutdownModelUsage![modelName].cachedReadTokens = (state.cliShutdownModelUsage![modelName].cachedReadTokens ?? 0) + cacheRead;
-	}
-	if (cacheWrite > 0) {
-		state.cliShutdownModelUsage![modelName].cacheCreationTokens = (state.cliShutdownModelUsage![modelName].cacheCreationTokens ?? 0) + cacheWrite;
-	}
-	return input + output;
+/**
+ * Record the session's running Copilot billing total from a `session.usage_checkpoint` or
+ * `session.shutdown` event. `totalNanoAiu` is cumulative for the whole session, so the
+ * latest event replaces the previous value instead of adding to it.
+ */
+function _ejtsHandleNanoAiu(event: Record<string, unknown>, state: EjtsState): void {
+	const data = event.data as Record<string, unknown> | undefined;
+	const nanoAiu = typeof data?.totalNanoAiu === 'number' ? data.totalNanoAiu : 0;
+	if (nanoAiu > 0) { state.cliTotalNanoAiu = nanoAiu; }
 }
 
-/** Handle a session.shutdown event — extract per-model token totals and daily attribution. */
+/**
+ * Handle a session.shutdown event — fold its per-model totals into the session
+ * total and attribute the tokens it adds to the shutdown's day. Copilot CLI
+ * shutdown metrics are cumulative across resume, so this is a delta, not the
+ * shutdown's full total (see cliShutdownMetrics.ts).
+ */
 function _ejtsHandleShutdown(event: Record<string, unknown>, state: EjtsState): void {
+	_ejtsHandleNanoAiu(event, state);
 	const data = event.data as Record<string, unknown> | undefined;
 	if (!data?.modelMetrics) { return; }
-	if (!state.cliShutdownModelUsage) { state.cliShutdownModelUsage = {}; }
-	let shutdownTotal = 0;
-	for (const [modelName, metrics] of Object.entries(data.modelMetrics) as [string, ShutdownModelMetrics][]) {
-		shutdownTotal += _ejtsAccumulateModelMetrics(modelName, metrics, state);
-	}
-	const nanoAiu = typeof data.totalNanoAiu === 'number' ? data.totalNanoAiu : 0;
-	if (nanoAiu > 0) { state.cliTotalNanoAiu += nanoAiu; }
-	if (shutdownTotal > 0 && event.timestamp) {
+	if (!state.cliShutdown) { state.cliShutdown = createCliShutdownAccumulator(); }
+	const delta = applyCliShutdownMetrics(state.cliShutdown, data.modelMetrics as Record<string, CliShutdownModelMetricsEntry>);
+	if (delta > 0 && event.timestamp) {
 		const dayKey = toLocalDayKey(new Date(String(event.timestamp)));
 		if (dayKey && dayKey !== 'Inval') {
-			state.dailyActualTokens[dayKey] = (state.dailyActualTokens[dayKey] || 0) + shutdownTotal;
+			state.dailyActualTokens[dayKey] = (state.dailyActualTokens[dayKey] || 0) + delta;
 		}
+	}
+}
+
+/** Copy the folded shutdown totals into the actual-token / cache-read / model-usage fields. */
+function _ejtsFinalizeShutdownTotals(state: EjtsState): void {
+	if (!state.cliShutdown) { return; }
+	const totals = getCliShutdownTotals(state.cliShutdown);
+	state.cliShutdownModelUsage = totals;
+	for (const u of Object.values(totals)) {
+		state.cliActualTokens += u.inputTokens + u.outputTokens;
+		state.cliCacheReadTokens += u.cachedReadTokens ?? 0;
 	}
 }
 
@@ -624,6 +621,7 @@ function _ejtsEstimateFromRealOutput(state: EjtsState): void {
  *
  * Events are identified by a `type` string field. Supports:
  * - `session.shutdown`: exact token totals per model, daily attribution
+ * - `session.usage_checkpoint` / `session.shutdown`: running exact billing total (`totalNanoAiu`)
  * - `user.message` / `user.message_rendered`: user input estimation
  * - `assistant.message`: output estimation or real token counts
  * - `tool.execution_start` / `tool.execution_complete`: tool call counting and result estimation
@@ -637,6 +635,7 @@ export class EventJsonlTokenStrategy implements TokenEstimationStrategy {
 			cliActualTokens: 0,
 			cliCacheReadTokens: 0,
 			cliShutdownModelUsage: null,
+			cliShutdown: null,
 			cliRealOutputByModel: null,
 			totalEstToolCalls: 0,
 			dailyActualTokens: {},
@@ -651,11 +650,14 @@ export class EventJsonlTokenStrategy implements TokenEstimationStrategy {
 			try {
 				const event = JSON.parse(line) as Record<string, unknown>;
 				if (event.type === 'session.shutdown') { _ejtsHandleShutdown(event, state); }
+				else if (event.type === 'session.usage_checkpoint') { _ejtsHandleNanoAiu(event, state); }
 				else if (event.type === 'session.truncation') { _ejtsHandleTruncation(event, state); }
 				else if (event.type === 'session.start' || event.type === 'session.resume' || event.type === 'session.model_change') { _ejtsHandleContextTier(event, state); }
 				_ejtsHandleEventType(event, state);
 			} catch { /* skip invalid lines */ }
 		}
+
+		_ejtsFinalizeShutdownTotals(state);
 
 		// No session.shutdown: use real outputTokens from assistant.message + observed input:output ratios.
 		if (!state.cliActualTokens) { _ejtsEstimateFromRealOutput(state); }

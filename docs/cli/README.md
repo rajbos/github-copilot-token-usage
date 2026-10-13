@@ -169,6 +169,8 @@ Figures are estimates: tokens are weighted by type (output fully, fresh input an
 
 Your AI Engineering Fluency stage (1–4) overall and across six categories — Prompt Engineering, Context Engineering, Agentic, Tool Usage, Customization and Workflow Integration — based on the last 30 days, with the evidence behind each score. Scoring rules: [FLUENCY-LEVELS.md](../FLUENCY-LEVELS.md).
 
+The Customization category counts the workspaces you worked in that have an instructions file. Worktrees, scratch clones and case or WSL spellings of one repository are counted as one workspace, using the same grouping rules as the VS Code extension ([workspace grouping](../features/WORKSPACE-GROUPING.md)), so the workspace counts in the evidence match the extension's.
+
 ```bash
 ai-engineering-fluency fluency
 ai-engineering-fluency fluency --tips  # Show how to reach the next stage in each category
@@ -239,12 +241,12 @@ Optionally also read this repository's **server-side** Copilot memories — the 
 | `--server` | Also fetch the server-side memories for this repository. |
 | `--repo <owner/name>` | Repository to read. Default: the current checkout's `origin` remote. Implies `--server`. |
 | `--limit <n>` | Maximum number of server memories to request. |
-| `--promote` | Print the memories worth promoting into `AGENTS.md` as a ready-to-paste Markdown block. Implies `--server`. |
+| `--promote` | Print the memories worth promoting into `AGENTS.md` as a ready-to-paste Markdown block. Implies `--server`. The block names the suggested target file (root `AGENTS.md`, else `.github/copilot-instructions.md`, else a new `AGENTS.md`), says it was not checked when `--repo` names a repository other than this checkout, or says there is none when the chosen file is not a regular file inside the checkout (e.g. an escaping symlink); the checkout analyzed is printed to stderr. |
 
 With `--json` and `--server`, `--repo` or `--promote`, the output gains a `serverMemories` key (`--limit` only controls a server read requested by one of those options):
 
 - `null` only when no repository could be determined — the current directory is not a checkout with a github.com `origin` remote, and no `--repo` was given.
-- Otherwise an object with the analysis. If the read failed (no `gh`, no github.com token, no Copilot access, memory disabled, or an invalid `--repo`), the object has an `error` string and zeroed counts. Check `serverMemories.error` rather than testing for `null`.
+- Otherwise an object with the analysis, including `repoRoot` (the checkout analyzed, when it is this one), `promotionTarget` (`{ path, exists }`, absent when it could not be safely determined; `promotionTargetBlockedPath` then names the rejected file if that was the reason) and `documentedMemories` (each memory that cites an instruction/doc file, with those `instructionFiles`). If the read failed (no `gh`, no github.com token, no Copilot access, memory disabled, or an invalid `--repo`), the object has an `error` string and zeroed counts. Check `serverMemories.error` rather than testing for `null`.
 
 `--json` takes precedence over `--promote`: the JSON is printed and no Markdown block is written. Without `--json`, a server read failure under `--promote` prints the reason to stderr and exits with code `1`, so an empty promotion list is never mistaken for "nothing to document". If no repository can be determined, the command instead prints guidance to stdout and exits with code `0`.
 
@@ -421,7 +423,7 @@ The CLI writes two files under `~/.copilot-token-tracker/` (the folder name pred
 | `cli-cache.json` | Parsed per-file results, keyed on file path and modification time, so unchanged files are not re-parsed. Holds at most 2,000 entries. | Until the file changes. Discarded automatically when a new CLI version changes the cache format. |
 | `omp-segment-cache.json` | Last `segment` output. | `--ttl` minutes (default 5). |
 
-To bypass the parse cache for one run, use `--no-cache`. To reset everything, delete the folder — it is rebuilt on the next run.
+To bypass the parse cache for one run, use `--no-cache`. To reset everything, delete the folder — it is rebuilt on the next run. The [library entry point](#programmatic-use) keeps its cache in memory and never touches these files.
 
 ---
 
@@ -469,6 +471,49 @@ Run `ai-engineering-fluency diagnostics` to see exactly which of these locations
 
 ---
 
+## Programmatic use
+
+Since 0.7.0 the package also works as a Node library. The `@rajbos/ai-engineering-fluency/session` entry point returns token usage and cost for one session file, so another app can show per-session cost without running the CLI. It works with `require()` and `import`, ships its own TypeScript types, and contains none of the CLI code.
+
+```bash
+pnpm install @rajbos/ai-engineering-fluency
+```
+
+```js
+const { analyzeSessionFile, analyzeSessionFiles } = require('@rajbos/ai-engineering-fluency/session');
+
+const usage = await analyzeSessionFile('/home/me/.copilot/session-state/<id>/events.jsonl');
+if (usage) {
+  console.log(usage.editorSource, usage.totalTokens, usage.estimatedCostUsd.provider);
+  if (usage.copilotCredits !== null) {
+    console.log(`${usage.copilotCredits} AI credits billed`);
+  }
+}
+
+// Several files at once. The Map only holds the files that parsed.
+const byPath = await analyzeSessionFiles([claudeSessionPath, copilotEventsPath]);
+```
+
+Pass absolute paths (for example built with `os.homedir()`). Node does not expand `~`. `analyzeSessionFile(filePath, { cache? })` resolves to a `SessionUsage`, or to `null` for a missing, unknown or unparsable file, a session file over 100 MB, and a session with no activity recorded yet (no turns, tokens, models or billing). Database-backed sessions (`…/state.db#<id>`, `session-store.db#<id>`, …) are not size-capped, because one database holds every session. It never throws for a bad file, never writes to the console and never exits the process. Each `SessionUsage` has these fields:
+
+| Field | Meaning |
+|---|---|
+| `filePath` | The path you passed in. |
+| `editorSource` | Friendly tool name, the same one the CLI shows: `Claude Code`, `Copilot CLI`, `VS Code`, and so on. |
+| `interactions` | Number of user turns. |
+| `models` / `modelUsage` | Model ids, and per model: `inputTokens` (including cache reads and writes), `outputTokens`, `cachedReadTokens`, `cacheCreationTokens`, and so on. |
+| `totalTokens` | Session total. Exact where the tool records it, otherwise estimated (see [Data Sources](#data-sources)). |
+| `copilotNanoAiu` | Exact GitHub Copilot billed amount, in nano-AI-units, from the latest Copilot CLI `session.usage_checkpoint` or `session.shutdown` event, the Copilot CLI billing store, or a Copilot Chat debug log. `0` when not available. |
+| `copilotCredits` | `copilotNanoAiu / 1e9` (1 AI credit = $0.01), or `null` when not available. |
+| `estimatedCostUsd` | `{ provider, copilot }`: an estimate from the per-model token counts, at provider API rates and at Copilot rates, using the same pricing table as the CLI. |
+| `lastModified` | File modification time, ISO 8601. |
+
+**Polling.** Results are cached in memory, per path. A cached result is reused while the session file's modification time and size stay the same, and so do those of the side files it draws on: for Copilot CLI sessions, `~/.copilot/session-store.db` and the OTel export in `~/.copilot/otel/`; for VS Code chat sessions, the Copilot Chat debug log. A repeated call on an unchanged session therefore costs a few `stat` calls. When any of those files changes, including a Claude Code or Copilot CLI log that is still being appended to, the session is re-parsed on the next call. The OTel export is re-indexed at most every 30 seconds. Concurrent calls on the same file share one parse. Pass `{ cache: false }` to always re-parse. Returned objects are frozen, and repeated calls may hand back the same object.
+
+The library does not read or write the CLI's `cli-cache.json`, so it is safe to use while the CLI is running. It never reads anything stored in the OS temp directory, including databases behind `…#<id>` paths, so Visual Studio's logs under `%LOCALAPPDATA%\Temp` are not supported by the library. The CLI still reads those.
+
+---
+
 ## Troubleshooting
 
 **"No session files found" or a tool is missing**
@@ -501,16 +546,16 @@ Every session file is parsed once; later runs only re-parse files that changed.
 
 ```bash
 # From the repository root
-npm run cli:build           # Build the CLI
-npm run cli:stats           # Run stats command
-npm run cli:usage           # Run usage command
-npm run cli:environmental   # Run environmental command
-npm run cli:fluency         # Run fluency command
-npm run cli:diagnostics     # Run diagnostics command
-npm run cli -- --help       # Run any CLI command
+pnpm run cli:build           # Build the CLI
+pnpm run cli:stats           # Run stats command
+pnpm run cli:usage           # Run usage command
+pnpm run cli:environmental   # Run environmental command
+pnpm run cli:fluency         # Run fluency command
+pnpm run cli:diagnostics     # Run diagnostics command
+pnpm run cli -- --help       # Run any CLI command
 ```
 
-From `cli/`: `npm run build`, `npm test`, `npm run check-types`, `npm run lint`. The CLI is a thin wrapper around the shared modules in the repository's [`src/`](../../src/) folder — parsing and cost logic belong there, not in `cli/`. See the [CLI contributor guide](../../.github/instructions/cli.instructions.md).
+From `cli/`: `pnpm run build`, `pnpm test`, `pnpm run check-types`, `pnpm run lint`. The CLI is a thin wrapper around the shared modules in the repository's [`src/`](../../src/) folder — parsing and cost logic belong there, not in `cli/`. See the [CLI contributor guide](../../.github/instructions/cli.instructions.md).
 
 When you add or change a command or option, update this page: a unit test (`cli/src/test/docsCoverage.test.ts`) fails if a command or option is missing here.
 

@@ -5,7 +5,11 @@
  * This script scans for GitHub Copilot Chat session files across all known locations
  * on any VS Code installation (stable, Insiders, remote, etc.) and reports what it finds.
  * 
- * Usage: node .github/skills/copilot-log-analysis/diagnose-session-files.js
+ * Usage: node .github/skills/copilot-log-analysis/diagnose-session-files.js [--verbose] [--show-paths]
+ *
+ * Printed paths show the home directory as "~" unless --show-paths is given.
+ * They still contain workspace hashes and session ids, so review the output
+ * before pasting it into a public issue.
  * 
  * Can be run directly from the terminal on any machine to diagnose session file discovery issues.
  */
@@ -13,6 +17,10 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { redactHomePath } = require('./session-file-discovery');
+
+const showPaths = process.argv.includes('--show-paths');
+const displayPath = p => (showPaths ? p : redactHomePath(p));
 
 // Color codes for terminal output
 const colors = {
@@ -333,7 +341,7 @@ function runDiagnostics() {
 
     logSection('System Information');
     log(`  Platform: ${os.platform()} (${os.arch()})`, colors.reset);
-    log(`  Home directory: ${os.homedir()}`, colors.reset);
+    log(`  Home directory: ${displayPath(os.homedir())}`, colors.reset);
     log(`  Node version: ${process.version}`, colors.reset);
 
     // Environment detection
@@ -354,7 +362,7 @@ function runDiagnostics() {
         
         if (exists) {
             logSuccess(`Found ${vscodeInfo.type} (${vscodeInfo.platform})`);
-            log(`     Path: ${vscodeInfo.userPath}`, colors.dim);
+            log(`     Path: ${displayPath(vscodeInfo.userPath)}`, colors.dim);
 
             // Scan workspace storage
             const workspaceStoragePath = path.join(vscodeInfo.userPath, 'workspaceStorage');
@@ -389,7 +397,7 @@ function runDiagnostics() {
         
         if (exists) {
             logSuccess(`Found ${cliPath.type}`);
-            log(`     Path: ${cliPath.path}`, colors.dim);
+            log(`     Path: ${displayPath(cliPath.path)}`, colors.dim);
             log(`     Description: ${cliPath.description}`, colors.dim);
 
             const cliFiles = scanCopilotCliSessions(cliPath.path);
@@ -402,7 +410,7 @@ function runDiagnostics() {
                 logInfo('No session files found');
             }
         } else {
-            logInfo(`${cliPath.type} directory not found: ${cliPath.path}`);
+            logInfo(`${cliPath.type} directory not found: ${displayPath(cliPath.path)}`);
         }
     }
 
@@ -415,7 +423,7 @@ function runDiagnostics() {
 
         if (exists) {
             logSuccess(`Found ${ocPath.type}`);
-            log(`     Path: ${ocPath.path}`, colors.dim);
+            log(`     Path: ${displayPath(ocPath.path)}`, colors.dim);
             log(`     Description: ${ocPath.description}`, colors.dim);
 
             const ocFiles = scanOpenCodeSessions(ocPath.path);
@@ -428,7 +436,7 @@ function runDiagnostics() {
                 logInfo('No session files found');
             }
         } else {
-            logInfo(`${ocPath.type} directory not found: ${ocPath.path}`);
+            logInfo(`${ocPath.type} directory not found: ${displayPath(ocPath.path)}`);
         }
     }
 
@@ -483,12 +491,13 @@ function runDiagnostics() {
     if (allSessionFiles.length > 0 && process.argv.includes('--verbose')) {
         logSection('All Session File Paths (--verbose)');
         for (const f of allSessionFiles) {
-            log(`  ${f.filePath}`, colors.dim);
+            log(`  ${displayPath(f.filePath)}`, colors.dim);
         }
     }
 
     logHeader('Diagnostic Complete');
     log(`  Run with --verbose to see all file paths`, colors.dim);
+    log(`  Paths include workspace hashes and session ids: review before sharing publicly`, colors.dim);
     
     return {
         totalFiles: allSessionFiles.length,
