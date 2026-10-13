@@ -95,8 +95,8 @@ export default [
         "max-lines-per-function": ["warn", 80],
 
         // File-size ceiling. The per-function rules above are satisfied almost everywhere
-        // (extension.ts's methods pass max-lines-per-function apart from a few explicit
-        // eslint-disable exemptions), yet the file itself
+        // (extension.ts's methods pass max-lines-per-function apart from an explicit
+        // eslint-disable exemption), yet the file itself
         // became enormous — proof that "every function is small" doesn't stop a file from
         // becoming unmanageable. extension.ts is by far the largest file; the threshold isn't a
         // target size. Run `pnpm run lint` for the current offenders. As extension.ts is decomposed

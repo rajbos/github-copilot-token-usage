@@ -33,10 +33,10 @@ Run `ls -a` (or `git ls-files | cut -d/ -f1 | sort -u`) for the live top level.
 ├── omp-segment/                 ← Oh My Posh terminal prompt segment showing token usage
 ├── assets/                      ← Logos and other static brand assets
 ├── docs/                        ← Shared documentation
-├── screenshots/                 ← Workspace for the manual (Windows-only) release-screenshot
-│                                   capture: `scripts/pre-release.js` runs
-│                                   `scripts/capture-screenshots.ps1`, which opens it in a
-│                                   human-run editor window (agents must not run it)
+├── screenshots/                 ← Only a `.vscode/settings.json` pointing the sample-data
+│                                   setting at sample session data. `scripts/capture-screenshots.ps1`
+│                                   (manual, Windows-only, run by `scripts/pre-release.js`) names it
+│                                   but does not currently open it; agents must not run that script
 ├── .vscode/                     ← Shared VS Code settings, tasks and launch configs
 │                                   (for human developers; see "Never Launch a Real Editor/IDE Instance")
 ├── .devcontainer/               ← Dev container definition (see "DevContainer Terminal Behavior")
