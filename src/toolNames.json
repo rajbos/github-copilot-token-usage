@@ -1490,4 +1490,13 @@
   ,"rename_chat": "Rename Chat"
   ,"ccd_sidebar": "CCD Sidebar"
   ,"mcp__ccd_sidebar__mark_completed": "CCD Sidebar: Mark Completed"
+  ,"com-microsoft-azure-applicationinsights": "Microsoft Azure Application Insights"
+  ,"com-microsoft-azure-arm": "Microsoft Azure Arm"
+  ,"com-microsoft-azure-bicepschema": "Microsoft Azure Bicepschema"
+  ,"com-microsoft-azure-documentation": "Microsoft Azure Documentation"
+  ,"com-microsoft-azure-get_azure_bestpractices": "Microsoft Azure - Get Azure Best Practices"
+  ,"com-microsoft-azure-group_list": "Microsoft Azure Group List"
+  ,"com-microsoft-azure-group_resource_list": "Microsoft Azure Group Resource List"
+  ,"com-microsoft-azure-monitor": "Microsoft Azure Monitor"
+  ,"com-microsoft-azure-subscription_list": "Microsoft Azure Subscription List"
 }
