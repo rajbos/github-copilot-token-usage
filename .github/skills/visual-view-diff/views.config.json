@@ -348,7 +348,7 @@
       "states": [
         {
           "id": "skills",
-          "title": "Tools & Skills tab",
+          "title": "Skills tab",
           "steps": [{ "click": ".eff-tab[data-tab=\"skills\"]" }],
           "expect": ".eff-tab.active[data-tab=\"skills\"]",
           "settleMs": 3000,
