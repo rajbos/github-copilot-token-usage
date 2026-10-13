@@ -385,7 +385,7 @@ jobs:
     # (loc-stats.test.js runs in its own loc-stats.yml workflow.)
     - name: Run repository script tests
       shell: bash
-      run: node --test scripts/release-changelog.test.js scripts/sync-changelog.test.js scripts/fetch-copilot-memories.test.js
+      run: node --test scripts/release-changelog.test.js scripts/sync-changelog.test.js scripts/fetch-copilot-memories.test.js scripts/bump-vscode-types.test.js
 
     - name: Verify build outputs exist
       shell: bash
