@@ -17,7 +17,6 @@ import modelPricingData from '../../src/modelPricing.json';
 import toolNamesData from '../../src/toolNames.json';
 import builtinCommandDescriptionsData from '../../src/builtinCommandDescriptions.json';
 import automaticToolsData from '../../src/automaticTools.json';
-import customizationPatternsData from '../../src/customizationPatterns.json';
 import copilotPlansData from './copilotPlans.json';
 import * as packageJson from '../package.json';
 import { getToolFamilies, DEFAULT_TOOL_FAMILIES } from './toolFamilies';
@@ -57,7 +56,6 @@ import type {
   UsageAnalysisStats,
   TodaySessionSummary,
   ClaudeDesktopCoverage,
-  CustomizationTypeStatus,
   WorkspaceCustomizationRow,
   WorkspaceCustomizationMatrix,
   UsageAnalysisPeriod,
@@ -119,13 +117,15 @@ import {
   discoverSkillEntries as _discoverSkillEntries,
   analyzeToolCuration as _analyzeToolCuration,
   findSkillDescriptionInWorkspaces as _findSkillDescriptionInWorkspaces,
+  mergeAvailableToolEntries as _mergeAvailableToolEntries,
 } from '../../src/toolCuration';
+import { buildUsageAnalysisViewData as _buildUsageAnalysisViewData, type UsageAnalysisViewInputs } from '../../src/usageAnalysisViewBuilder';
+import { buildWorkspaceCustomization as _buildWorkspaceCustomization, copilotCustomizationTypes as _copilotCustomizationTypes } from '../../src/customizationMatrix';
 
 // --- Copilot memory files (hygiene analysis) ---
 import {
   discoverAllMemoryFiles as _discoverAllMemoryFiles,
   analyzeMemoryFiles as _analyzeMemoryFiles,
-  toMemoryFilesAnalysisView as _toMemoryFilesAnalysisView,
 } from '../../src/copilotMemoryFiles';
 
 /**
@@ -192,11 +192,11 @@ const PUBLIC_GITHUB_AUTH_PROVIDER_ID = 'github';
 // --- Insights engine ---
 import type { TaskCategory, TaskCategoryBreakdown } from '../../src/taskClassification';
 import {
-  evaluateInsights as _evaluateInsights,
+  evaluateUsageInsights as _evaluateUsageInsights,
   mergeInsightStates as _mergeInsightStates,
   countNewInsights as _countNewInsights,
   isToastAllowed as _isToastAllowed,
-} from './insightsEngine';
+} from '../../src/insightsEngine';
 
 // --- Worktree background scan (once-daily, leader-only disk-usage scan) ---
 import {
@@ -306,37 +306,18 @@ import { calculateEnvironmentalImpact, getEnvironmentalMethodologySourceUrl } fr
 
 // --- Efficiency analysis ---
 import {
-  buildEfficiencyTrends as _buildEfficiencyTrends,
-  buildSkillUsageTrends as _buildSkillUsageTrends,
-  computeCostAttribution as _computeCostAttribution,
-  computeEfficiencyDeltas as _computeEfficiencyDeltas,
-  computeSkillImpact as _computeSkillImpact,
-  listComparableModels as _listComparableModels,
-  listEfficiencyEditors as _listEfficiencyEditors,
-  resolveEfficiencyRange as _resolveEfficiencyRange,
-  splitModelDayByEditor as _splitModelDayByEditor,
   computeValueSignals as _computeValueSignals,
-  getTrailingWindowBoundaries as _getTrailingWindowBoundaries,
-  splitTrailingWindows as _splitTrailingWindows,
-  toEfficiencyDailyVolume as _toEfficiencyDailyVolume,
-  type EfficiencyDailyVolume,
-  type EfficiencyDeps,
   type EfficiencySessionInput,
   type EfficiencyViewData,
-  type ModelDailyInput,
-  type PeriodVolumeTotals,
   valueSignalsEqual as _valueSignalsEqual,
   type ValueSignals,
   type ValueSignalsInput,
 } from '../../src/efficiencyAnalysis';
-
-/**
- * Weeks of session logs walked for the Efficiency view's behavioural inputs
- * (duration, retries, applies, skills). Shorter than the year of daily volume
- * aggregates because it costs a full session-file scan — longer time presets
- * therefore show behavioural gaps rather than invented values.
- */
-const EFFICIENCY_BEHAVIOR_WEEKS = 12;
+import {
+  buildEfficiencyViewData as _buildEfficiencyViewData,
+  toEfficiencySessionInput as _toEfficiencySessionInput,
+  EFFICIENCY_BEHAVIOR_WEEKS,
+} from '../../src/efficiencyViewBuilder';
 
 import { DARK_FACTORY_CACHE_KEY, isReportStale, parseCacheEntry, readinessScopeKey, scanDarkFactoryReadiness } from './darkFactoryService';
 
@@ -374,7 +355,7 @@ import {
   normalizeToRepoRoot as _normalizeToRepoRoot,
   resolveDebugLogCandidatePaths as _resolveDebugLogCandidatePaths,
 } from '../../src/workspaceHelpers';
-import { groupWorkspaces as _groupWorkspaces, detectArtefactWorkspaceNames as _detectArtefactWorkspaceNames, mergeGroupCustomizationFiles as _mergeGroupCustomizationFiles, workspaceEntriesWithRemotes as _workspaceEntriesWithRemotes, groupFolders as _groupFolders, type WorkspaceGroup } from '../../src/workspaceGrouping';
+import { groupWorkspaces as _groupWorkspaces, mergeGroupCustomizationFiles as _mergeGroupCustomizationFiles, workspaceEntriesWithRemotes as _workspaceEntriesWithRemotes, groupFolders as _groupFolders, type WorkspaceGroup } from '../../src/workspaceGrouping';
 import { prefetchWorkspaceGroupingProbes as _prefetchWorkspaceGroupingProbes } from '../../src/workspaceGroupingProbes';
 import { getRepositoryUrl as _getRepositoryUrl } from './repositoryUrl';
 
@@ -399,7 +380,7 @@ import { countDelegationToolCalls } from '../../src/taskClassification';
 
 // --- Stats helpers ---
 import { addModelUsage, addEditorUsage, addLanguageUsage, computeUtcDateRanges, aggregatePeriodStats, makePeriodAccumulator, computeSessionTotalTokens, computeSessionDurationMs, reconcileModelUsageToTotal, type SessionAggregateInput } from '../../src/statsHelpers';
-import { preferActualTokens, addTaskCategoryToDailyEntry as _addTaskCategoryToDailyEntry } from '../../src/statsHelpers';
+import { repositoryKey, addTaskCategoryToDailyEntry as _addTaskCategoryToDailyEntry } from '../../src/statsHelpers';
 
 // --- GitHub & agent sessions ---
 import {
@@ -1187,7 +1168,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// skip re-analysis, so existing entries would lack the metric until their file changed.
 	// v80: Resolve each session's git remote during analysis (adapter metadata, else content
 	// references) so workspace grouping has it on a cold cache; existing entries lack it.
-	private static readonly CACHE_VERSION = 81;
+	// v82: Task attribution falls back to the tool heuristic when the analysis' classification is
+	// the empty placeholder, and the per-day rollups use the same resolved attribution (#2316):
+	// cache hits skip re-analysis, so existing entries would keep "Conversation" until they changed.
+	// v83: Deletion-only sessions keep their lines of code (sessionLocFromUsageAnalysis, #2316):
+	// existing entries dropped them, so Chart/Efficiency would undercount until the file changed.
+	private static readonly CACHE_VERSION = 83;
 	/** Initial stats should not wait indefinitely for one inaccessible or stalled session. */
 	private static readonly SESSION_PRELOAD_TIMEOUT_MS = 15_000;
 	/**
@@ -1214,8 +1200,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * growing without limit as more workers hit the same stuck wall across successive waves.
 	 */
 	private static readonly DEFERRED_PARSE_RESERVE_PERMITS = 10;
-	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
-	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 	private static readonly SEEN_EDITORS_STATE_KEY = 'discovery.seenEditors';
 	private static readonly NOTIFIED_EDITORS_STATE_KEY = 'discovery.notifiedEditors';
 
@@ -6309,21 +6293,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const cadenceDays = vscode.workspace.getConfiguration('aiEngineeringFluency').get<number>('insights.cadenceDays', 2);
 		const now = new Date().toISOString();
 
-		const ctx = {
-			// insightsEngine.ts stays VS Code-free, so it cannot reach l10n's t()
-			// itself — the host injects it (issue #2081).
-			translate: l10nT,
-			today: stats.today,
-			last30Days: stats.last30Days,
-			month: stats.month,
-			lastMonth: stats.lastMonth,
-			autoCompactionsLast7Days: stats.autoCompactionsLast7Days,
-			missedPotential: stats.missedPotential ?? [],
-			customizationMatrix: stats.customizationMatrix,
-			memoryFilesAnalysis: stats.memoryFilesAnalysis ?? null,
-		};
-
-		const evaluated = _evaluateInsights(ctx, this._insightStateBag, cadenceDays, this._lastInsightNudgeAt);
+		// The same evaluation the Usage Analysis payload runs, so a toast never sees fewer inputs than the panel.
+		const evaluated = _evaluateUsageInsights(stats, this.insightEvaluationState());
 		_mergeInsightStates(evaluated, this._insightStateBag, now);
 
 		this.refreshInsightBadgeFromState(now, evaluated);
@@ -6375,23 +6346,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	/** Builds the current evaluated insight list from cached state + latest stats. */
 	private buildCurrentInsights(stats: UsageAnalysisStats): EvaluatedInsight[] {
-		const cadenceDays = vscode.workspace.getConfiguration('aiEngineeringFluency').get<number>('insights.cadenceDays', 2);
-		const ctx = {
-			// See evaluateAndSurfaceInsights above: the engine is injected with t().
+		return _evaluateUsageInsights(stats, this.insightEvaluationState());
+	}
+
+	/** The extension's insight state for the shared evaluator: t(), the persisted bag and cadence. */
+	private insightEvaluationState(): UsageAnalysisViewInputs['insights'] {
+		return {
+			// insightsEngine.ts stays VS Code-free, so it cannot reach l10n's t()
+			// itself — the host injects it (issue #2081).
 			translate: l10nT,
-			today: stats.today,
-			last30Days: stats.last30Days,
-			month: stats.month,
-			lastMonth: stats.lastMonth,
-			autoCompactionsLast7Days: stats.autoCompactionsLast7Days,
-			missedPotential: stats.missedPotential ?? [],
-			customizationMatrix: stats.customizationMatrix,
-			todaySessions: stats.todaySessions,
-			curationAnalysis: stats.curationAnalysis ?? null,
-			repeatedTasks: stats.repeatedTasks ?? null,
-			memoryFilesAnalysis: stats.memoryFilesAnalysis ?? null,
+			stateBag: this._insightStateBag,
+			cadenceDays: vscode.workspace.getConfiguration('aiEngineeringFluency').get<number>('insights.cadenceDays', 2),
+			lastNudgeAt: this._lastInsightNudgeAt,
 		};
-		return _evaluateInsights(ctx, this._insightStateBag, cadenceDays, this._lastInsightNudgeAt);
 	}
 
 	private async calculateTokenUsage(): Promise<Pick<TokenUsageStats, 'todayTokens' | 'monthTokens'>> {		const now = new Date();
@@ -6820,7 +6787,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const { sessionFile, sessionData, mtime } = r;
 				try {
 					const editorType = this.getEditorTypeFromPath(sessionFile);
-					const repository = sessionData.repository || 'Unknown';
+					const repository = repositoryKey(sessionData.repository);
 					if (sessionData.dailyRollups && Object.keys(sessionData.dailyRollups).length > 0) {
 						this.accumulateDailyRollups(dailyStatsMap, sessionData, editorType, repository, cutoffStartKey);
 					} else {
@@ -6958,39 +6925,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (!entry.languageUsage) { entry.languageUsage = {}; }
 			addLanguageUsage(entry.languageUsage, languageUsage);
 		}
-	}
-
-	private detectMissedPotential(
-		workspaceSessionCounts: Map<string, number>,
-		workspaceInteractionCounts: Map<string, number>
-	): MissedPotentialWorkspace[] {
-		const missedPotential: MissedPotentialWorkspace[] = [];
-
-		for (const [workspacePath, sessionCount] of workspaceSessionCounts) {
-			const files = this._customizationFilesCache.get(workspacePath) || [];
-			
-			// Check for Copilot files (category "copilot" or undefined for backward compatibility)
-			const hasCopilotFiles = files.some(f => !f.category || f.category === 'copilot');
-			
-			// Check for non-Copilot files (must be explicitly "non-copilot")
-			const nonCopilotFiles = files.filter(f => f.category === 'non-copilot');
-			
-			// Missed potential = has non-Copilot files AND NO Copilot files
-			if (nonCopilotFiles.length > 0 && !hasCopilotFiles) {
-				missedPotential.push({
-					workspacePath,
-					workspaceName: this._workspaceGroups.get(workspacePath)?.displayName ?? path.basename(workspacePath),
-					sessionCount,
-					interactionCount: workspaceInteractionCounts.get(workspacePath) || 0,
-					nonCopilotFiles
-				});
-			}
-		}
-
-		// Sort by interaction count (descending) so most active "missed" repos are first
-		missedPotential.sort((a, b) => b.interactionCount - a.interactionCount);
-
-		return missedPotential;
 	}
 
 	/**
@@ -7172,18 +7106,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				skills: skillEntries.length,
 			}, originGeneration);
 
-			// Merge: runtime entries already include MCP tools from vscode.lm.tools.
-			// Deduplicate MCP server entries (prefer runtime over all static sources).
-			const runtimeServers = new Set(runtimeEntries.filter(e => e.source === 'mcp').map(e => e.server));
-			const uniqueMcpEntries = mcpEntries.filter(e => !runtimeServers.has(e.server));
-			const uniqueExtensionMcpEntries = extensionMcpEntries.filter(e => !runtimeServers.has(e.server) && !uniqueMcpEntries.some(m => m.server === e.server));
-			const uniqueSettingsMcpEntries = settingsMcpEntries.filter(e =>
-				!runtimeServers.has(e.server) &&
-				!uniqueMcpEntries.some(m => m.server === e.server) &&
-				!uniqueExtensionMcpEntries.some(m => m.server === e.server)
-			);
-
-			const availableTools = [...runtimeEntries, ...uniqueMcpEntries, ...uniqueExtensionMcpEntries, ...uniqueSettingsMcpEntries, ...skillEntries];
+			// Merged by the shared rule every host uses (one entry per MCP server, runtime first).
+			const availableTools = _mergeAvailableToolEntries({
+				runtime: runtimeEntries, mcpJson: mcpEntries, extensionMcp: extensionMcpEntries,
+				settingsMcp: settingsMcpEntries, skills: skillEntries,
+			});
 			if (availableTools.length === 0) {
 				this.postUsageLoadingProgress('curation:done', { availableTools: 0 }, originGeneration);
 				return null;
@@ -8598,81 +8525,29 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
-	private buildResolvedWorkspaceMatrixRows(
-		sessionCounts: Map<string, number>, interactionCounts: Map<string, number>,
-		customizationTypes: { id: string; icon: string; label: string }[]
-	): { rows: WorkspaceCustomizationRow[]; issues: number } {
-		const rows: WorkspaceCustomizationRow[] = [];
-		let issues = 0;
-		for (const [folderPath, sessionCount] of sessionCounts) {
-			const files = this._customizationFilesCache.get(folderPath) || [];
-			const typeStatuses: { [typeId: string]: CustomizationTypeStatus } = {};
-			for (const type of customizationTypes) {
-				const filesOfType = files.filter(f => f.type === type.id);
-				if (filesOfType.length === 0) { typeStatuses[type.id] = '❌'; }
-				else if (filesOfType.some(f => f.isStale)) { typeStatuses[type.id] = '⚠️'; }
-				else { typeStatuses[type.id] = '✅'; }
-			}
-			if (customizationTypes.every(t => typeStatuses[t.id] === '❌')) { issues++; }
-			const group = this._workspaceGroups.get(folderPath);
-			const folders = group ? _groupFolders(group) : [];
-			const memberPaths = folders.length > 1 ? folders : undefined;
-			rows.push({
-				workspacePath: folderPath, workspaceName: group?.displayName ?? path.basename(folderPath),
-				sessionCount, interactionCount: interactionCounts.get(folderPath) || 0, typeStatuses,
-				...(memberPaths ? { memberPaths } : {}),
-			});
-		}
-		return { rows, issues };
-	}
-
-	private buildUnresolvedWorkspaceMatrixRows(
-		unresolvedIds: Set<string>, unresolvedCounts: Map<string, number>,
-		customizationTypes: { id: string; icon: string; label: string }[]
-	): { rows: WorkspaceCustomizationRow[]; issues: number } {
-		const rows: WorkspaceCustomizationRow[] = [];
-		let issues = 0;
-		for (const workspaceId of unresolvedIds) {
-			const typeStatuses: { [typeId: string]: CustomizationTypeStatus } = {};
-			for (const type of customizationTypes) { typeStatuses[type.id] = '❌'; }
-			issues++;
-			const displayId = workspaceId.length > CopilotTokenTracker.WORKSPACE_ID_DISPLAY_LENGTH
-				? `${workspaceId.substring(0, CopilotTokenTracker.WORKSPACE_ID_DISPLAY_LENGTH)}...`
-				: workspaceId;
-			rows.push({
-				workspacePath: `<unresolved:${workspaceId}>`, workspaceName: `Unresolved (${displayId})`,
-				sessionCount: 0, interactionCount: unresolvedCounts.get(workspaceId) || 0, typeStatuses
-			});
-		}
-		return { rows, issues };
-	}
-
 	private buildUsageCustomizationMatrix(
 		sessionCounts: Map<string, number>, interactionCounts: Map<string, number>,
 		unresolvedIds: Set<string>, unresolvedCounts: Map<string, number>
 	): void {
 		try {
-			const uniqueTypes = new Map<string, { icon: string; label: string }>();
-			for (const pattern of (customizationPatternsData as any).patterns || []) {
-				if (pattern.category && pattern.category !== 'copilot') { continue; }
-				if (!uniqueTypes.has(pattern.type)) {
-					uniqueTypes.set(pattern.type, { icon: pattern.icon || '', label: pattern.label || pattern.type });
-				}
-			}
-			const customizationTypes = Array.from(uniqueTypes.entries()).map(([id, v]) => ({ id, icon: v.icon, label: v.label }));
-			const { rows: resolvedRows, issues: resolvedIssues } = this.buildResolvedWorkspaceMatrixRows(sessionCounts, interactionCounts, customizationTypes);
-			const { rows: unresolvedRows, issues: unresolvedIssues } = this.buildUnresolvedWorkspaceMatrixRows(unresolvedIds, unresolvedCounts, customizationTypes);
-			const matrixRows = [...resolvedRows, ...unresolvedRows];
-			matrixRows.sort((a, b) => b.interactionCount !== a.interactionCount ? b.interactionCount - a.interactionCount : b.sessionCount - a.sessionCount);
-			const artefactNames = _detectArtefactWorkspaceNames([...this._workspaceGroups.values()]);
-			this._lastCustomizationMatrix = {
-				customizationTypes, workspaces: matrixRows, totalWorkspaces: matrixRows.length, workspacesWithIssues: resolvedIssues + unresolvedIssues,
-				...(artefactNames.length > 0 ? { ungroupedWorkspaceNames: artefactNames.map(a => a.displayName) } : {}),
-			};
+			// Rows, issue counts and missed potential are assembled by the shared builder every
+			// host calls (src/customizationMatrix.ts); this host supplies the full scan's files.
+			const { customizationMatrix, missedPotential } = _buildWorkspaceCustomization({
+				customizationTypes: _copilotCustomizationTypes(),
+				workspaces: [...sessionCounts].map(([workspacePath, sessionCount]) => ({
+					path: workspacePath, sessionCount,
+					interactionCount: interactionCounts.get(workspacePath) || 0,
+					group: this._workspaceGroups.get(workspacePath),
+				})),
+				filesFor: (workspacePath) => this._customizationFilesCache.get(workspacePath),
+				unresolvedWorkspaces: new Map([...unresolvedIds].map(id => [id, unresolvedCounts.get(id) || 0])),
+			});
+			this._lastCustomizationMatrix = customizationMatrix;
+			const artefactNames = customizationMatrix.ungroupedWorkspaceNames ?? [];
 			if (artefactNames.length > 0) {
-				this.log(`🔍 [Usage Analysis] ${artefactNames.length} workspace name(s) look like ungrouped worktrees or clones: ${artefactNames.slice(0, 5).map(a => `${a.displayName} (${a.reason})`).join(', ')}`);
+				this.log(`🔍 [Usage Analysis] ${artefactNames.length} workspace name(s) look like ungrouped worktrees or clones: ${artefactNames.slice(0, 5).join(', ')}`);
 			}
-			this._lastMissedPotential = this.detectMissedPotential(sessionCounts, interactionCounts);
+			this._lastMissedPotential = missedPotential;
 		} catch (e) { /* ignore overall customization scanning errors */ }
 	}
 
@@ -10532,37 +10407,39 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	private _buildAnalysisUpdateData(analysisStats: Awaited<ReturnType<typeof this.calculateUsageAnalysisStats>>): object {
-		const workspacePaths = vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [];
 		return {
-			today: analysisStats.today, last30Days: analysisStats.last30Days,
-			month: analysisStats.month, lastMonth: analysisStats.lastMonth,
-			autoCompactionsLast7Days: analysisStats.autoCompactionsLast7Days,
-			locale: analysisStats.locale,
-			customizationMatrix: analysisStats.customizationMatrix || null,
-			missedPotential: analysisStats.missedPotential || [],
-			lastUpdated: analysisStats.lastUpdated.toISOString(),
-			backendConfigured: this.isBackendConfigured(),
-			readinessAvailable: true,
-			currentWorkspacePaths: workspacePaths,
-			toolCallsByEditor: analysisStats.toolCallsByEditor ?? {},
-			todaySessions: analysisStats.todaySessions || [],
-			claudeDesktopCoverage: analysisStats.claudeDesktopCoverage ?? null,
-			insights: this.buildCurrentInsights(analysisStats),
-			correctionReport: analysisStats.correctionReport ?? null,
-			repeatedTasks: analysisStats.repeatedTasks ?? null,
-			curationAnalysis: analysisStats.curationAnalysis ?? null,
+			...this.buildUsageAnalysisViewData(analysisStats, analysisStats.locale ?? Intl.DateTimeFormat().resolvedOptions().locale),
 			// A cold-opened panel gets `window.__INITIAL_USAGE__ = null` when there are no cached
 			// stats yet (_buildUsageAnalysisInitialData returns 'null'), so the webview's
 			// initial-payload localization step is skipped entirely. Without this the whole view —
 			// tab groups, band headings, context-pressure rows — falls back to English on a
 			// non-English VS Code until the panel is reopened with stats already cached.
 			...this.getWebviewLocaleFields(),
-			memoryFilesAnalysis: _toMemoryFilesAnalysisView(analysisStats.memoryFilesAnalysis ?? null),
+			...this.usageAnalysisExtensionOnlyFields(),
+		};
+	}
+
+	/** The shared Usage Analysis payload (src/usageAnalysisViewBuilder.ts) with this host's settings. */
+	private buildUsageAnalysisViewData(stats: UsageAnalysisStats, locale: string): ReturnType<typeof _buildUsageAnalysisViewData> {
+		return _buildUsageAnalysisViewData(stats, {
+			locale,
+			backendConfigured: this.isBackendConfigured(),
+			readinessAvailable: true,
+			currentWorkspacePaths: vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [],
+			hideAutomaticToolCalls: this.getHideAutomaticToolCallsSetting(),
+			use24HourTime: this.getUse24HourTimeSetting(),
+			suppressedUnknownTools: vscode.workspace.getConfiguration('aiEngineeringFluency').get<string[]>('suppressedUnknownTools', []),
+			insights: this.insightEvaluationState(),
+		});
+	}
+
+	/** Usage Analysis fields only the extension has: its API quota, budgets and server memories. */
+	private usageAnalysisExtensionOnlyFields(): object {
+		return {
 			serverMemoriesAnalysis: this.buildServerMemoriesView(),
 			copilotApiBalance: this._buildCopilotApiBalance(),
 			accountBudgets: this._accountBudgets,
 			monthBillingGroupCosts: this.currentDetailedStats?.month.billingGroupCosts ?? null,
-			hideAutomaticToolCalls: this.getHideAutomaticToolCallsSetting(),
 		};
 	}
 
@@ -12204,25 +12081,7 @@ private async shareTextToSocialPlatform(shareText: string, platform: 'linkedin' 
 
 	/** Maps one cached session to the pure-module input shape for efficiency trends. */
 	private toEfficiencySessionInput(sessionData: SessionFileCache, mtime: number, editor?: string): EfficiencySessionInput {
-		const dayKey = this.computeLastActivityKey(sessionData, mtime);
-		const ua = sessionData.usageAnalysis;
-		let editTurns = 0, retries = 0;
-		for (const c of Object.values(ua?.modelEfficiency ?? {})) { editTurns += c.editTurns; retries += c.retries; }
-		const skillCalls = ua?.skillCalls?.byName && Object.keys(ua.skillCalls.byName).length > 0
-			? ua.skillCalls.byName
-			: undefined;
-		return {
-			dayKey,
-			activeDurationMs: ua?.sessionDuration?.activeDurationMs,
-			editTurns,
-			retries,
-			applies: ua?.applyUsage?.totalApplies,
-			codeBlocks: ua?.applyUsage?.totalCodeBlocks,
-			interactions: sessionData.interactions,
-			totalTokens: preferActualTokens(sessionData.actualTokens, sessionData.tokens),
-			skillCalls,
-			editor,
-		};
+		return _toEfficiencySessionInput(sessionData, this.computeLastActivityKey(sessionData, mtime), editor);
 	}
 
 	/**
@@ -12260,54 +12119,6 @@ private async shareTextToSocialPlatform(shareText: string, platform: 'linkedin' 
 			this.error('Error collecting efficiency session inputs:', error);
 		}
 		return inputs;
-	}
-
-	/** Sums token/session/cost totals for the daily entries within one calendar month (YYYY-MM). */
-	private monthVolumeTotals(dailyStats: DailyTokenStats[], monthKey: string): PeriodVolumeTotals {
-		let tokens = 0, sessions = 0, estimatedCost = 0;
-		for (const day of dailyStats) {
-			if (day.date.slice(0, 7) !== monthKey) { continue; }
-			tokens += day.tokens;
-			sessions += day.sessions;
-			estimatedCost += this.calculateEstimatedCost(day.modelUsage, 'copilot');
-		}
-		return { tokens, sessions, estimatedCost };
-	}
-
-	/**
-	 * Trims the daily stats down to the per-model slice the Models tab needs, over
-	 * the last year so month-vs-month comparisons have history to draw on. Days
-	 * without per-model data are dropped to keep the webview payload small.
-	 */
-	private buildModelDailyPayload(dailyStats: DailyTokenStats[], now: Date): ModelDailyInput[] {
-		// Same snapped cutoff as the volume payload: the 1-year preset starts on
-		// the first of the month, so a flat 365-day window would leave the drift
-		// chart's earliest bucket short of up to a month of data.
-		const cutoffKey = _resolveEfficiencyRange('last1y', now).startKey;
-		const payload: ModelDailyInput[] = [];
-		for (const day of dailyStats) {
-			if (day.date < cutoffKey || !day.modelEfficiency || Object.keys(day.modelEfficiency).length === 0) { continue; }
-			const split = _splitModelDayByEditor(day);
-			payload.push(...(split.length > 0 ? split : [{
-				date: day.date,
-				modelEfficiency: day.modelEfficiency,
-				...(day.taskCategoryUsage ? { taskCategoryUsage: day.taskCategoryUsage } : {}),
-			}]));
-		}
-		return payload;
-	}
-
-	/**
-	 * Compact per-day volume aggregates for the trailing year — the payload the
-	 * Efficiency view's time presets, drill-down and editor filter recompute
-	 * from. Numbers only: no session titles, paths, prompts or repositories.
-	 */
-	private buildEfficiencyDailyVolumePayload(dailyStats: DailyTokenStats[], now: Date, deps: EfficiencyDeps): EfficiencyDailyVolume[] {
-		// Cut off at the start of the widest preset rather than a flat day count:
-		// the 1-year preset snaps back to the first of the month, so a plain
-		// 365-day window would leave its earliest month half-empty.
-		const cutoffKey = _resolveEfficiencyRange('last1y', now).startKey;
-		return _toEfficiencyDailyVolume(dailyStats.filter(d => d.date >= cutoffKey), deps);
 	}
 
 	/**
@@ -12479,72 +12290,20 @@ private async shareTextToSocialPlatform(shareText: string, platform: 'linkedin' 
 	): Promise<EfficiencyViewData> {
 		const now = new Date();
 		const { dailyStats, usage, sessionInputs } = await this.collectEfficiencyInputs(forceRecalc, send, originGeneration);
-		const deps = {
+		// Assembly is shared with the desktop app (src/efficiencyViewBuilder.ts); this host only
+		// gathers the inputs and supplies its settings (#2316).
+		return _buildEfficiencyViewData({
+			dailyStats,
+			usage,
+			sessionInputs,
+			now,
 			calculateEstimatedCost: (mu: ModelUsage, src: 'provider' | 'copilot') => this.calculateEstimatedCost(mu, src),
-			now,
-		};
-		const weekly = _buildEfficiencyTrends(dailyStats, sessionInputs, deps);
-		const modelDaily = this.buildModelDailyPayload(dailyStats, now);
-		const dailyVolume = this.buildEfficiencyDailyVolumePayload(dailyStats, now, deps);
-		const skillTrends = _buildSkillUsageTrends(sessionInputs, deps);
-		const skillImpact = _computeSkillImpact(sessionInputs);
-		const { prevDays, curDays } = _splitTrailingWindows(dailyStats, now);
-		const attributionBoundaries = _getTrailingWindowBoundaries(now);
-		const attribution = _computeCostAttribution(prevDays, curDays, deps);
-		const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-		const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-		const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
-		const deltas = _computeEfficiencyDeltas(
-			usage.month, usage.lastMonth,
-			this.monthVolumeTotals(dailyStats, monthKey),
-			this.monthVolumeTotals(dailyStats, lastMonthKey),
-		);
-		const curCost = curDays.reduce((s, d) => s + this.calculateEstimatedCost(d.modelUsage, 'copilot'), 0);
-		const curLoc = curDays.reduce((s, d) => s + (d.linesAdded ?? 0) + (d.linesRemoved ?? 0), 0);
-		const value = _computeValueSignals({
-			...this.repoPrValueInputs(),
-			periodCost: curCost,
-			applyUsage: usage.last30Days.applyUsage,
-			linesChanged: curLoc,
-			now,
-		});
-		return {
-			weekly,
-			hasLoc: weekly.some(w => w.loc > 0),
-			hasDuration: weekly.some(w => w.activeMinutesPerSession !== null),
-			hasRetry: weekly.some(w => w.retryRate !== null),
-			hasApply: weekly.some(w => w.applyRate !== null),
-			attribution,
-			attributionWindows: {
-				prev: 'previous 30 days',
-				cur: 'last 30 days',
-				prevRange: `${this.formatAttributionDate(attributionBoundaries.prevStart)}–${this.formatAttributionDate(attributionBoundaries.prevEnd)}`,
-				curRange: `${this.formatAttributionDate(attributionBoundaries.curStart)}–${this.formatAttributionDate(attributionBoundaries.curEnd)}`,
-			},
-			deltas,
-			deltaWindows: {
-				prev: lastMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
-				cur: `${now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} (to date)`,
-			},
-			value,
-			skillTrends,
-			skillImpact,
-			hasSkills: skillTrends.totalCalls > 0,
-			modelDaily,
-			hasModelComparison: _listComparableModels(modelDaily).filter(m => m.sampleSufficient).length >= 2,
-			dailyVolume,
-			sessionSamples: sessionInputs,
-			editors: _listEfficiencyEditors(dailyVolume),
-			behaviorWindowDays: EFFICIENCY_BEHAVIOR_WEEKS * 7,
-			cacheBreakage: usage.last30Days.cacheBreakage ?? null,
-			lastUpdated: now.toISOString(),
+			prValueInputs: this.repoPrValueInputs(),
+			formatAttributionDate: (date) => this.formatAttributionDate(date),
 			backendConfigured: this.isBackendConfigured(),
 			compactNumbers: this.getCompactNumbersSetting(),
-			// Same detected locale the Usage Analysis view formats with, so both
-			// views group numbers and place currency symbols identically.
-			locale: usage.locale,
 			isDebugMode: this.context.extensionMode === vscode.ExtensionMode.Development,
-		};
+		});
 	}
 
 	private getEfficiencyHtml(webview: vscode.Webview, data: EfficiencyViewData): string {
@@ -15552,40 +15311,12 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
   /** Build the JSON-serialized initial payload injected into the usage analysis webview. */
   private _buildUsageAnalysisInitialData(stats: UsageAnalysisStats | null, detectedLocale: string): string {
     if (!stats) { return 'null'; }
-    const suppressedUnknownTools = vscode.workspace
-      .getConfiguration('aiEngineeringFluency')
-      .get<string[]>('suppressedUnknownTools', []);
     const sessionColumnSettings = this.context.globalState.get('usage.sessionColumnSettings', {});
 
     return JSON.stringify({
-      today: stats.today,
-      last30Days: stats.last30Days,
-      month: stats.month,
-      lastMonth: stats.lastMonth,
-      autoCompactionsLast7Days: stats.autoCompactionsLast7Days,
-      locale: detectedLocale,
-      customizationMatrix: stats.customizationMatrix || null,
-      missedPotential: stats.missedPotential || [],
-      lastUpdated: stats.lastUpdated.toISOString(),
-      backendConfigured: this.isBackendConfigured(),
-      readinessAvailable: true,
-      currentWorkspacePaths: vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [],
-      suppressedUnknownTools,
-      toolCallsByEditor: stats.toolCallsByEditor ?? {},
-      todaySessions: stats.todaySessions || [],
-      claudeDesktopCoverage: stats.claudeDesktopCoverage ?? null,
-      use24HourTime: this.getUse24HourTimeSetting(),
-      hideAutomaticToolCalls: this.getHideAutomaticToolCallsSetting(),
-      insights: this.buildCurrentInsights(stats),
-      correctionReport: stats.correctionReport ?? null,
-      repeatedTasks: stats.repeatedTasks ?? null,
-      curationAnalysis: stats.curationAnalysis ?? null,
-      memoryFilesAnalysis: _toMemoryFilesAnalysisView(stats.memoryFilesAnalysis ?? null),
-      serverMemoriesAnalysis: this.buildServerMemoriesView(),
+      ...this.buildUsageAnalysisViewData(stats, detectedLocale),
+      ...this.usageAnalysisExtensionOnlyFields(),
       sessionColumnSettings,
-      copilotApiBalance: this._buildCopilotApiBalance(),
-      accountBudgets: this._accountBudgets,
-      monthBillingGroupCosts: this.currentDetailedStats?.month.billingGroupCosts ?? null,
       worktreeScanRoots: this.buildInitialWorktreeRoots(),
       ...this.getWebviewLocaleFields(),
       worktreeBackgroundScan: this.context.globalState.get<WorktreeBackgroundScanResult>(CopilotTokenTracker.WORKTREE_BG_SCAN_RESULT_KEY) ?? null,
@@ -16156,6 +15887,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AiFlue
   setCopilotCliOtelSnapshotPath(path.join(context.globalStorageUri.fsPath, 'copilot-cli-otel-index.json'));
   // The index starts before the tracker (and its output channel) exists, so early messages wait for it.
   const earlyOtelMessages: string[] = [];
+  // eslint-disable-next-line prefer-const -- assigned after the logger closure that reads it is registered
   let otelLogTarget: CopilotTokenTracker | undefined;
   setCopilotCliOtelLogger((message) => { if (otelLogTarget) { otelLogTarget.log(message); } else { earlyOtelMessages.push(message); } });
   void loadCopilotCliOtelIndex().catch(() => { /* off-by-default export; degrades to no data */ });

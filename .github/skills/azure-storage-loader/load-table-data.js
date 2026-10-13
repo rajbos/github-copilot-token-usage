@@ -255,13 +255,39 @@ function sanitizeEntityString(value) {
 	return result === '' ? undefined : result;
 }
 
-// Map a raw table entity onto the output shape, sanitizing every string field
+// A count from an uploaded row: kept only when it is a non-negative safe
+// integer, otherwise 0. Strings, booleans, negatives, fractions, NaN and
+// Infinity are all rejected. Each row's count is then exact, but a sum of
+// several safe integers can still exceed the safe range, so totals are
+// computed with BigInt in sumCounts().
+function toCount(value) {
+	return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+// Exact totals across entities. Uses BigInt so that rows whose counts are
+// individually safe cannot overflow Number precision when added together.
+function sumCounts(entities) {
+	const totals = { inputTokens: 0n, outputTokens: 0n, interactions: 0n };
+	for (const entity of entities) {
+		totals.inputTokens += BigInt(toCount(entity.inputTokens));
+		totals.outputTokens += BigInt(toCount(entity.outputTokens));
+		totals.interactions += BigInt(toCount(entity.interactions));
+	}
+	totals.totalTokens = totals.inputTokens + totals.outputTokens;
+	return totals;
+}
+
+// Map a raw table entity onto the output shape. The non-string fields are
+// type-checked: schemaVersion and the counts must be safe integers and
+// shareWithTeam must be the boolean true. Text fields are not type-checked:
+// they are coerced with String() and sanitized by sanitizeEntityString (so an
+// object becomes "[object Object]"), never passed through raw.
 function normalizeEntity(entity, partitionKey, datasetId, dayKey) {
 	const text = (value, fallback) => sanitizeEntityString(value) ?? fallback;
 	return {
 		partitionKey: text(entity.partitionKey, partitionKey),
 		rowKey: text(entity.rowKey, ''),
-		schemaVersion: entity.schemaVersion,
+		schemaVersion: Number.isSafeInteger(entity.schemaVersion) ? entity.schemaVersion : undefined,
 		datasetId: text(entity.datasetId, datasetId),
 		day: text(entity.day, dayKey),
 		model: text(entity.model, ''),
@@ -271,11 +297,11 @@ function normalizeEntity(entity, partitionKey, datasetId, dayKey) {
 		machineName: text(entity.machineName, undefined),
 		userId: text(entity.userId, undefined),
 		userKeyType: text(entity.userKeyType, undefined),
-		shareWithTeam: entity.shareWithTeam || undefined,
+		shareWithTeam: entity.shareWithTeam === true ? true : undefined,
 		consentAt: text(entity.consentAt, undefined),
-		inputTokens: typeof entity.inputTokens === 'number' ? entity.inputTokens : 0,
-		outputTokens: typeof entity.outputTokens === 'number' ? entity.outputTokens : 0,
-		interactions: typeof entity.interactions === 'number' ? entity.interactions : 0,
+		inputTokens: toCount(entity.inputTokens),
+		outputTokens: toCount(entity.outputTokens),
+		interactions: toCount(entity.interactions),
 		updatedAt: text(entity.updatedAt, new Date().toISOString())
 	};
 }
@@ -477,22 +503,14 @@ async function main(argv = process.argv, env = process.env, createClient = creat
 	console.error('');
 	console.error(`Total entities fetched: ${entities.length}`);
 
-	// Calculate totals
-	const totals = entities.reduce(
-		(acc, entity) => {
-			acc.inputTokens += entity.inputTokens;
-			acc.outputTokens += entity.outputTokens;
-			acc.interactions += entity.interactions;
-			return acc;
-		},
-		{ inputTokens: 0, outputTokens: 0, interactions: 0 }
-	);
+	// Calculate exact totals (BigInt; see sumCounts)
+	const totals = sumCounts(entities);
 
 	console.error('');
 	console.error('Totals:');
 	console.error(`  Input Tokens: ${totals.inputTokens.toLocaleString()}`);
 	console.error(`  Output Tokens: ${totals.outputTokens.toLocaleString()}`);
-	console.error(`  Total Tokens: ${(totals.inputTokens + totals.outputTokens).toLocaleString()}`);
+	console.error(`  Total Tokens: ${totals.totalTokens.toLocaleString()}`);
 	console.error(`  Interactions: ${totals.interactions.toLocaleString()}`);
 	console.error('');
 
@@ -547,6 +565,8 @@ module.exports = {
 	createTableClient,
 	sanitizeEntityString,
 	normalizeEntity,
+	toCount,
+	sumCounts,
 	fetchEntities,
 	formatAsJSON,
 	formatCsvCell,

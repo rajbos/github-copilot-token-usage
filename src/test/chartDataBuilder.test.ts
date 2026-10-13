@@ -309,3 +309,54 @@ assert.ok(copilotDataset, 'expected GitHub Copilot provider token dataset');
 // day1: (400+100)+(300+200)=1000, day2: 300+200=500
 assert.equal((copilotDataset as any).data.reduce((a: number, b: number) => a + b, 0), 1500);
 });
+
+test('buildChartData ignores prototype-polluting usage keys from cached daily stats', () => {
+	// Daily stats can come back from a JSON cache, where JSON.parse creates an own "__proto__"
+	// key; such a key must not reach the plain-object accumulators (see protoGuard.ts).
+	const today = new Date();
+	const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+	const day = JSON.parse(JSON.stringify({
+		date, tokens: 10, sessions: 1, interactions: 1, modelUsage: {}, taskCategoryUsage: {},
+		editorUsage: { 'VS Code': { tokens: 10, sessions: 1 } },
+		repositoryUsage: { 'https://github.com/o/r': { tokens: 10, sessions: 1 } },
+	})) as DailyTokenStats;
+	(day.editorUsage as Record<string, unknown>) = JSON.parse('{"__proto__": {"tokens": 5, "sessions": 1}, "VS Code": {"tokens": 10, "sessions": 1}}');
+	(day.repositoryUsage as Record<string, unknown>) = JSON.parse('{"__proto__": {"tokens": 5, "sessions": 1}, "git@host:__proto__": {"tokens": 3, "sessions": 1}, "https://github.com/o/r": {"tokens": 10, "sessions": 1}}');
+	const payload = buildChartData([day], {
+		getRepoDisplayName: (url: string) => (url.endsWith('/r') ? 'o/r' : '__proto__'),
+		calculateEstimatedCost: () => 0, backendConfigured: false, compactNumbers: false, now: today,
+	});
+	assert.deepEqual(Object.keys(payload.editorTotalsMap), ['VS Code']);
+	assert.deepEqual(Object.keys(payload.repositoryTotalsMap), ['o/r']);
+	assert.equal(({} as Record<string, unknown>).tokens, undefined, 'Object.prototype must not gain a tokens field');
+});
+
+test('buildChartData ignores unsafe language, editor-model and task keys from cached daily stats', () => {
+	const today = new Date();
+	const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+	// JSON.parse, as a cache read does, creates own "__proto__" keys in every one of these maps.
+	const day = JSON.parse(`{
+		"date": "${date}", "tokens": 10, "sessions": 1, "interactions": 1, "modelUsage": {},
+		"editorUsage": {}, "repositoryUsage": {}, "taskCategoryUsage": {},
+		"linesAdded": 2, "linesRemoved": 0,
+		"languageUsage": { "__proto__": { "linesAdded": 7, "linesRemoved": 1 }, "toString": { "linesAdded": 4, "linesRemoved": 0 }, "ts": { "linesAdded": 2, "linesRemoved": 0 } },
+		"editorModelUsage": { "__proto__": { "gpt-4o": { "inputTokens": 1, "outputTokens": 1, "sessions": 0 } } },
+		"taskCategoryTokens": { "__proto__": 5, "Coding": 10 },
+		"taskCategorySessions": { "__proto__": 1, "Coding": 1 },
+		"taskCategoryModelUsage": { "__proto__": { "gpt-4o": { "inputTokens": 1, "outputTokens": 1, "sessions": 0 } } }
+	}`) as DailyTokenStats;
+	const payload = buildChartData([day], {
+		getRepoDisplayName: (url: string) => url, calculateEstimatedCost: () => 0,
+		backendConfigured: false, compactNumbers: false, now: today,
+	});
+	// "__proto__" is skipped; an inherited name such as "toString" gets its own entry instead of
+	// resolving to (and mutating) the shared built-in.
+	const languages = (payload.periods.day.languageDatasets as Array<{ label: string }>).map(d => d.label).sort();
+	assert.deepEqual(languages, ['toString', 'ts']);
+	assert.equal(typeof Object.prototype.toString, 'function');
+	assert.equal((Object.prototype.toString as unknown as Record<string, unknown>).linesAdded, undefined);
+	const proto = Object.prototype as Record<string, unknown>;
+	for (const field of ['linesAdded', 'linesRemoved', 'gpt-4o', 'tokens']) {
+		assert.equal(proto[field], undefined, `Object.prototype must not gain "${field}"`);
+	}
+});

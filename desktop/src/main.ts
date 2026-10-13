@@ -7,9 +7,10 @@ import {
     discoverSessionFiles,
     effectiveTokens,
     calculateDetailedStats,
-    calculateDailyStats,
     calculateUsageAnalysisStats,
+    calculateViewStats,
     buildChartPayload,
+    buildEfficiencyPayload,
     getDiagnosticPaths,
     getSessionBackingPath,
     getSessionLastActivity,
@@ -18,8 +19,11 @@ import {
     loadCache,
     saveCache,
 } from '../../cli/src/helpers';
+import { standaloneUsageAnalysisViewInputs, withUsageAnalysisViewStats } from '../../cli/src/usageAnalysisView';
+import { buildUsageAnalysisViewData } from '../../src/usageAnalysisViewBuilder';
 import { getEditorSourceFromPath, runWithConcurrency } from '../../cli/src/analysis';
-import type { DetailedStats, UsageAnalysisStats } from '../../src/types';
+import type { DailyTokenStats, DetailedStats, UsageAnalysisStats } from '../../src/types';
+import type { EfficiencySessionInput } from '../../src/efficiencyAnalysis';
 import { getEnvironmentalMethodologySourceUrl } from '../../src/environmentalImpact';
 import { createEmptyContextRefs } from '../../src/tokenEstimation';
 import { toLocalDayKey } from '../../src/utils/dayKeys';
@@ -36,13 +40,18 @@ import {
 import { detectEditorSource } from '../../src/workspaceHelpers';
 import { getEditorIconByName } from '../../src/editorIcons';
 import { buildWebviewLocalization } from '../../vscode-extension/src/webviewLocalization';
-import { createTranslator, resolvedLocale } from '../../vscode-extension/src/l10nCore';
+import { createTranslator, resolvedLocale } from '../../cli/src/l10n';
 
 // JSON config data embedded into every panel HTML (mirrors extension's getJsonConfigScript)
 import tokenEstimatorsData from '../../src/tokenEstimators.json';
 import modelPricingData from '../../src/modelPricing.json';
 import toolNamesData from '../../src/toolNames.json';
 import automaticToolsData from '../../src/automaticTools.json';
+// Messages the shared views post that this app does not handle (checked by scripts/validate-desktop-contract.js).
+import unsupportedWebviewCommands from './unsupportedWebviewCommands.json';
+// --vscode-* theme tokens, shared with the headless visual-view-diff harness.
+import themeDarkCss from '../../.github/skills/visual-view-diff/lib/theme-dark.css';
+import themeLightCss from '../../.github/skills/visual-view-diff/lib/theme-light.css';
 
 // In dev mode use a local userData directory so cache files never conflict
 // between hot-reload restarts (the default %APPDATA%\Electron is shared with
@@ -63,7 +72,7 @@ protocol.registerSchemesAsPrivileged([
 // State
 // ---------------------------------------------------------------------------
 
-type PanelId = 'details' | 'environmental' | 'chart' | 'usage' | 'diagnostics' | 'maturity' | 'fluency-level-viewer';
+type PanelId = 'details' | 'environmental' | 'chart' | 'efficiency' | 'usage' | 'diagnostics' | 'maturity' | 'fluency-level-viewer';
 
 // Mirrors build.appId in package.json. Used as the Windows AppUserModelID so the
 // OS associates the taskbar button (and its icon) with this app rather than the
@@ -77,6 +86,12 @@ let cachedStats: DetailedStats | null = null;
 let cachedSessionFiles: string[] | null = null;
 let cachedUsageStats: UsageAnalysisStats | null = null;
 let cachedChartPayload: object | null = null;
+// Session-derived inputs behind both the Chart and Efficiency payloads, from one session walk.
+let cachedViewStats: ViewStats | null = null;
+let cachedEfficiencyPayload: object | null = null;
+// Set when a panel's data walk was stopped because the window was hidden to the tray;
+// showing the window again resumes that navigation (behind the loading screen).
+let resumePanelOnShow = false;
 // Local day the cached stats, usage and chart data were computed for. All three
 // have "today" / "this month" windows baked in, so a tray app left running
 // overnight must rebuild them rather than keep showing yesterday as today.
@@ -110,119 +125,28 @@ function resolveAppIcon(): string {
 // ---------------------------------------------------------------------------
 // VS Code CSS variable seed
 // Provides concrete values for --vscode-* custom properties so the existing
-// webview IIFE bundles render correctly outside of VS Code.
+// webview IIFE bundles render correctly outside of VS Code. The values come from
+// the visual-view-diff harness's theme files, the one list of tokens the shared
+// views reference; scripts/validate-webview-shell.js fails when a view starts
+// using a token that list does not define.
 // ---------------------------------------------------------------------------
 
-const VSCODE_DARK_VARS = `
-:root {
-    --vscode-editor-background: #1e1e1e;
-    --vscode-sideBar-background: #252526;
-    --vscode-editorWidget-background: #252526;
-    --vscode-editor-foreground: #d4d4d4;
-    --vscode-descriptionForeground: #9d9d9d;
-    --vscode-disabledForeground: #585858;
-    --vscode-panel-border: #454545;
-    --vscode-widget-border: #454545;
-    --vscode-button-background: #0e639c;
-    --vscode-button-foreground: #ffffff;
-    --vscode-button-hoverBackground: #1177bb;
-    --vscode-button-secondaryBackground: #3a3d41;
-    --vscode-button-secondaryForeground: #cccccc;
-    --vscode-button-secondaryHoverBackground: #45494e;
-    --vscode-input-background: #3c3c3c;
-    --vscode-input-foreground: #cccccc;
-    --vscode-input-border: #3c3c3c;
-    --vscode-list-hoverBackground: #2a2d2e;
-    --vscode-list-activeSelectionBackground: #094771;
-    --vscode-list-activeSelectionForeground: #ffffff;
-    --vscode-list-inactiveSelectionBackground: #37373d;
-    --vscode-badge-background: #4d4d4d;
-    --vscode-badge-foreground: #cccccc;
-    --vscode-focusBorder: #007fd4;
-    --vscode-textLink-foreground: #3794ff;
-    --vscode-textLink-activeForeground: #3794ff;
-    --vscode-errorForeground: #f48771;
-    --vscode-editorWarning-foreground: #cca700;
-    --vscode-terminal-ansiGreen: #4ec94c;
-    --vscode-contrastBorder: #6fc3df;
-    --vscode-foreground: #cccccc;
-    --vscode-editor-font-family: Consolas, 'Courier New', monospace;
-    --vscode-button-border: transparent;
-    --vscode-dropdown-background: #313131;
-    --vscode-dropdown-foreground: #cccccc;
-    --vscode-dropdown-border: #3c3c3c;
-    --vscode-textBlockQuote-background: #2b2b2b;
-    --vscode-editorInfo-foreground: #3794ff;
-    --vscode-inputValidation-infoBackground: #063b49;
-    --vscode-inputValidation-infoBorder: #1a85ff;
-    --vscode-inputValidation-warningBackground: #352a05;
-    --vscode-inputValidation-warningBorder: #b89500;
-    --vscode-inputValidation-errorBackground: #5a1d1d;
-    --vscode-inputValidation-errorBorder: #be1100;
-    --vscode-charts-blue: #4daafc;
-    --vscode-charts-green: #89d185;
-    --vscode-charts-orange: #d18616;
-    --vscode-charts-purple: #b180d7;
-    --vscode-charts-red: #f14c4c;
-    --vscode-charts-yellow: #cca700;
-    --vscode-terminal-ansiCyan: #11a8cd;
+const VSCODE_THEME_VARS = `
+${themeDarkCss}
+@media (prefers-color-scheme: light) {
+${themeLightCss}
 }
 `;
 
-const VSCODE_LIGHT_VARS = `
-@media (prefers-color-scheme: light) {
-    :root {
-        --vscode-editor-background: #ffffff;
-        --vscode-sideBar-background: #f3f3f3;
-        --vscode-editorWidget-background: #f3f3f3;
-        --vscode-editor-foreground: #000000;
-        --vscode-descriptionForeground: #717171;
-        --vscode-disabledForeground: #717171;
-        --vscode-panel-border: #e7e7e7;
-        --vscode-widget-border: #c8c8c8;
-        --vscode-button-background: #007acc;
-        --vscode-button-foreground: #ffffff;
-        --vscode-button-hoverBackground: #0062a3;
-        --vscode-button-secondaryBackground: #5f6a79;
-        --vscode-button-secondaryForeground: #ffffff;
-        --vscode-button-secondaryHoverBackground: #4c5561;
-        --vscode-input-background: #ffffff;
-        --vscode-input-foreground: #616161;
-        --vscode-input-border: #cecece;
-        --vscode-list-hoverBackground: #e8e8e8;
-        --vscode-list-activeSelectionBackground: #0060c0;
-        --vscode-list-activeSelectionForeground: #ffffff;
-        --vscode-list-inactiveSelectionBackground: #e4e6f1;
-        --vscode-badge-background: #c4c4c4;
-        --vscode-badge-foreground: #333333;
-        --vscode-focusBorder: #0090f1;
-        --vscode-textLink-foreground: #006ab1;
-        --vscode-textLink-activeForeground: #006ab1;
-        --vscode-errorForeground: #a1260d;
-        --vscode-editorWarning-foreground: #b89500;
-        --vscode-terminal-ansiGreen: #00bc00;
-        --vscode-contrastBorder: #6fc3df;
-        --vscode-foreground: #3b3b3b;
-        --vscode-dropdown-background: #ffffff;
-        --vscode-dropdown-foreground: #3b3b3b;
-        --vscode-dropdown-border: #cecece;
-        --vscode-textBlockQuote-background: #f8f8f8;
-        --vscode-editorInfo-foreground: #1a85ff;
-        --vscode-inputValidation-infoBackground: #d6ecf2;
-        --vscode-inputValidation-infoBorder: #007acc;
-        --vscode-inputValidation-warningBackground: #f6f5d2;
-        --vscode-inputValidation-warningBorder: #b89500;
-        --vscode-inputValidation-errorBackground: #f2dede;
-        --vscode-inputValidation-errorBorder: #be1100;
-        --vscode-charts-blue: #1a85ff;
-        --vscode-charts-green: #388a34;
-        --vscode-charts-purple: #652d90;
-        --vscode-charts-red: #e51400;
-        --vscode-charts-yellow: #bf8803;
-        --vscode-terminal-ansiCyan: #0598bc;
-    }
-}
-`;
+/**
+ * Controls the desktop app cannot act on yet. They are rendered by the shared
+ * webview bundles, so the only host-side way to avoid a dead control is to hide
+ * it. The list is the 'hidden' entries of unsupportedWebviewCommands.json, which
+ * scripts/validate-desktop-contract.js checks against the views' messages and
+ * registerIpcHandlers — remove an entry there when its message gets a handler.
+ */
+const HIDDEN_CONTROL_SELECTORS: string[] = [...new Set(Object.values(unsupportedWebviewCommands.commands)
+    .flatMap(entry => (entry as { hiddenBy?: string[] }).hiddenBy ?? []))];
 
 const BASE_BODY_STYLE = `
 body {
@@ -233,32 +157,7 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 13px;
 }
-/* Controls the desktop app cannot act on yet. They are rendered by the shared
-   webview bundles, so the only host-side way to avoid a dead control is to hide
-   it. Remove a selector here when its message gets a handler in registerIpcHandlers. */
-#btn-efficiency,
-/* Diagnostics: formatted-file viewer, editor-path reporting, GitHub sign-in,
-   backend/team-server setup, VS Code settings, folder analysis, cache reset,
-   social sharing. */
-.view-formatted-link,
-.report-editor-link,
-#btn-authenticate-github,
-#btn-sign-out-github,
-#btn-team-server-auth-warning,
-#btn-configure-backend,
-#btn-configure-backend-team,
-#btn-open-settings,
-#btn-open-display-settings,
-#btn-open-tool-families-settings,
-#btn-browse-folder,
-#btn-analyze-folder,
-#btn-clear-cache,
-#btn-clear-cache-tab,
-#btn-reset-insights,
-#btn-reset-insights-tab,
-#btn-reset-discovered-editors,
-#btn-reset-debug-counters,
-.share-btn { display: none !important; }
+${HIDDEN_CONTROL_SELECTORS.length > 0 ? `${HIDDEN_CONTROL_SELECTORS.join(',\n')} { display: none !important; }` : ''}
 `;
 
 // ---------------------------------------------------------------------------
@@ -266,7 +165,7 @@ body {
 // ---------------------------------------------------------------------------
 
 // Computations currently running, by name. These walk the whole session history,
-// so a second caller (opening Chart while startup is still pre-warming it, or
+// so a second caller (opening Usage Analysis while startup is still pre-warming it, or
 // reloading a view) must join the run in progress instead of starting another.
 const inFlight = new Map<string, Promise<unknown>>();
 
@@ -406,7 +305,9 @@ async function loadUsageStats(): Promise<UsageAnalysisStats> {
     // this function resuming; the next pass then computes against the new data.
     while (!cachedUsageStats) {
         await computeForCurrentFiles(
-            files => calculateUsageAnalysisStats(files),
+            // The CLI's collectors fill customization and curation the way `usage-analysis`
+            // does; with no open workspace only user-level skills count as available tools.
+            async files => withUsageAnalysisViewStats(files, await calculateUsageAnalysisStats(files), { workspaceFolderPaths: [] }),
             (usageStats) => { cachedUsageStats ??= usageStats; },
         );
     }
@@ -425,15 +326,79 @@ function getChartPayload(): Promise<object> {
 async function loadChartPayload(): Promise<object> {
     expireCachesOnDateChange();
     while (!cachedChartPayload) {
+        // Inputs are read inside the computation, so a refresh that lands meanwhile
+        // fails its generation check and the payload is rebuilt from the new data.
         await computeForCurrentFiles(
-            async (files) => {
-                const { labels, days, allDaysMap } = await calculateDailyStats(files);
-                return buildChartPayload(labels, days, allDaysMap);
-            },
+            async () => buildChartPayload((await getViewStats()).dailyStats),
             (payload) => { cachedChartPayload ??= payload; },
         );
     }
     return cachedChartPayload;
+}
+
+type ViewStats = { dailyStats: DailyTokenStats[]; efficiencySessionInputs: EfficiencySessionInput[] };
+
+/**
+ * Full-history daily stats plus the Efficiency session inputs, built in one walk over the
+ * session files and shared by the Chart and Efficiency payloads, so a cold Efficiency open
+ * does not parse and analyze every session twice.
+ */
+function getViewStats(): Promise<ViewStats> {
+    return shareInFlight('viewStats', loadViewStats);
+}
+
+/** The panels that wait on the view stats walk; leaving them all cancels it. */
+const VIEW_STATS_PANELS: ReadonlySet<PanelId> = new Set<PanelId>(['chart', 'efficiency']);
+
+async function loadViewStats(): Promise<ViewStats> {
+    expireCachesOnDateChange();
+    while (!cachedViewStats) {
+        await computeForCurrentFiles(
+            // The walk can run for minutes on a large history, on this main process, so it stops
+            // between files and throws (ViewStatsCancelledError) as soon as nobody needs it:
+            //  - the user left Chart and Efficiency; reopening either starts a fresh walk, which
+            //    reuses the session cache this one filled;
+            //  - a refresh replaced the data it was computed for (dataGeneration moved). The
+            //    refreshed navigation owns the walk for the new data; without this the old walk
+            //    kept going and computeForCurrentFiles() then retried it, so two ran at once.
+            // Nothing partial is cached, and the throw also ends computeForCurrentFiles()'s retry
+            // loop for the obsolete caller.
+            files => {
+                const generation = dataGeneration;
+                return calculateViewStats(files, false, undefined, {
+                    // Hidden to the tray counts as "nobody waiting" too: closing the window only
+                    // hides it and leaves currentPanel unchanged.
+                    isCancelled: () => generation !== dataGeneration || !VIEW_STATS_PANELS.has(currentPanel)
+                        || !(mainWindow?.isVisible() ?? false),
+                });
+            },
+            (viewStats) => { cachedViewStats ??= viewStats; },
+        );
+    }
+    return cachedViewStats;
+}
+
+/**
+ * Efficiency payload, built by the same shared builder as the extension's
+ * (src/efficiencyViewBuilder.ts). Its session inputs come from the same walk as the
+ * Chart's daily stats; the usage analysis (a separate, recent-files pass) runs alongside.
+ */
+function getEfficiencyPayload(): Promise<object> {
+    return shareInFlight('efficiency', loadEfficiencyPayload);
+}
+
+async function loadEfficiencyPayload(): Promise<object> {
+    expireCachesOnDateChange();
+    while (!cachedEfficiencyPayload) {
+        await computeForCurrentFiles(
+            async () => {
+                const [viewStats, usage] = await Promise.all([getViewStats(), getUsageStats()]);
+                return buildEfficiencyPayload({ dailyStats: viewStats.dailyStats, usage, sessionInputs: viewStats.efficiencySessionInputs });
+            },
+            (payload) => { cachedEfficiencyPayload ??= payload; },
+        );
+    }
+    return cachedEfficiencyPayload;
 }
 
 /** Whether a panel can render straight away, i.e. without a long computation first. */
@@ -448,6 +413,8 @@ function expireCachesOnDateChange(): void {
         cachedStats = null;
         cachedUsageStats = null;
         cachedChartPayload = null;
+        cachedViewStats = null;
+        cachedEfficiencyPayload = null;
         // A calculation that started yesterday must not cache yesterday's
         // totals under today's day: make its generation check fail so it retries.
         dataGeneration++;
@@ -463,6 +430,8 @@ function isPanelDataReady(panel: PanelId): boolean {
             return cachedStats !== null;
         case 'chart':
             return cachedChartPayload !== null;
+        case 'efficiency':
+            return cachedEfficiencyPayload !== null;
         case 'usage':
         case 'maturity':
             return cachedUsageStats !== null;
@@ -482,6 +451,9 @@ async function loadPanelData(panel: PanelId): Promise<void> {
             break;
         case 'chart':
             await getChartPayload();
+            break;
+        case 'efficiency':
+            await getEfficiencyPayload();
             break;
         case 'usage':
         case 'maturity':
@@ -512,6 +484,8 @@ async function refreshStats(): Promise<void> {
         cachedDataDay = toLocalDayKey(stats.lastUpdated);
         cachedUsageStats = null; // reset so it recomputes on next access
         cachedChartPayload = null;
+        cachedViewStats = null;
+        cachedEfficiencyPayload = null;
         await saveCache();
     } finally {
         isRefreshing = false;
@@ -704,27 +678,21 @@ async function buildPanelHtml(panel: PanelId): Promise<string> {
         };
         initialDataScript = panelPayloadScript('__INITIAL_CHART__', chartData);
 
+    } else if (panel === 'efficiency') {
+        title = 'AI Efficiency Trends';
+        initialDataScript = panelPayloadScript('__INITIAL_EFFICIENCY__', await getEfficiencyPayload());
+
     } else if (panel === 'usage') {
         title = 'Usage Analysis';
         const usageStats = await getUsageStats();
         const locale = Intl.DateTimeFormat().resolvedOptions().locale;
-        const usageData = {
-            today: usageStats.today,
-            last30Days: usageStats.last30Days,
-            month: usageStats.month,
-            lastMonth: usageStats.lastMonth,
-            locale,
-            customizationMatrix: null,
-            missedPotential: [],
-            lastUpdated: usageStats.lastUpdated.toISOString(),
-            backendConfigured: false,
-            currentWorkspacePaths: [],
-            suppressedUnknownTools: [],
-            todaySessions: usageStats.todaySessions || [],
-            use24HourTime: false,
-            insights: [],
-            curationAnalysis: null,
-        };
+        // The shared builder the extension and CLI use. This host keeps no insight state:
+        // every applicable insight shows as new, and the cards' dismiss/snooze messages
+        // (`insightAction`) are not handled here yet.
+        const usageData = buildUsageAnalysisViewData(
+            usageStats,
+            standaloneUsageAnalysisViewInputs(locale, resolvedLocale(app.getLocale())),
+        );
         initialDataScript = panelPayloadScript('__INITIAL_USAGE__', usageData);
 
     } else if (panel === 'diagnostics') {
@@ -798,7 +766,7 @@ async function buildPanelHtml(panel: PanelId): Promise<string> {
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' app://panel; script-src 'nonce-${nonce}' app://static; img-src data: app://static blob:; font-src app://panel data:;" />
     <link id="vscode-codicon-stylesheet" rel="stylesheet" href="app://panel/${PANEL_ASSET_PREFIX}codicons/codicon.css" />
     <title>${title}</title>
-    <style>${VSCODE_DARK_VARS}${VSCODE_LIGHT_VARS}${BASE_BODY_STYLE}</style>
+    <style>${VSCODE_THEME_VARS}${BASE_BODY_STYLE}</style>
 </head>
 <body>
     <div id="root"></div>
@@ -835,7 +803,7 @@ function buildLoadingHtml(): string {
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data:;" />
     <title>AI Engineering Fluency — Loading</title>
     <style>
-${VSCODE_DARK_VARS}${VSCODE_LIGHT_VARS}
+${VSCODE_THEME_VARS}
 ${getLoadingHtmlCssBase()}
 ${getLoadingHtmlCssSteps()}
     </style>
@@ -854,7 +822,7 @@ function buildErrorHtml(panel: string, err: unknown): string {
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';" />
     <title>Error</title>
     <style>
-        ${VSCODE_DARK_VARS}${VSCODE_LIGHT_VARS}
+        ${VSCODE_THEME_VARS}
         body { margin: 0; padding: 24px; background: var(--vscode-editor-background);
                color: var(--vscode-editor-foreground); font-family: -apple-system, 'Segoe UI', sans-serif; }
         h2 { font-weight: 400; color: var(--vscode-errorForeground); }
@@ -981,6 +949,13 @@ function createWindow(): BrowserWindow {
         }
     });
 
+    // A data walk stopped while the window was hidden resumes when it is shown again.
+    win.on('show', () => {
+        if (!resumePanelOnShow) { return; }
+        resumePanelOnShow = false;
+        navigateToPanel(currentPanel);
+    });
+
     // Hide to tray on close instead of quitting
     win.on('close', (event) => {
         if (!isQuitting) {
@@ -995,9 +970,27 @@ function createWindow(): BrowserWindow {
 function showPanel(panel: PanelId): void {
     currentPanel = panel;
     if (!mainWindow) { return; }
+    mainWindow.show();
+    mainWindow.focus();
+    navigateToPanel(panel);
+}
+
+/**
+ * Loads a panel, putting the loading screen up first when its data still has to be
+ * computed. Every navigation goes through here — including the reload after a refresh
+ * or the startup warm-up, which clear or have not yet built the caches — because a
+ * cache miss can mean a multi-minute walk on this main process (the Chart/Efficiency
+ * enrichment), and loading `app://panel/...` directly would block on it with the old
+ * page, or nothing, on screen.
+ */
+/** Bumped by every navigateToPanel() call; a pending navigation that sees a newer value was superseded. */
+let navigationGeneration = 0;
+
+function navigateToPanel(panel: PanelId): void {
+    if (!mainWindow || mainWindow.isDestroyed()) { return; }
     const win = mainWindow;
-    win.show();
-    win.focus();
+    const generation = ++navigationGeneration;
+    const isCurrent = () => generation === navigationGeneration && currentPanel === panel && !win.isDestroyed();
     if (isPanelDataReady(panel)) {
         win.loadURL(`app://panel/${panel}`);
         return;
@@ -1006,13 +999,23 @@ function showPanel(panel: PanelId): void {
     // and keeps the main process busy. Put the loading screen up first — and let
     // it paint — so the window is never left blank while that runs.
     void win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(buildLoadingHtml()))
-        .catch(() => { /* superseded by a later navigation */ })
-        .then(() => loadPanelData(panel))
-        .catch(() => { /* surfaced by the panel's own error page below */ })
-        .then(() => {
-            if (currentPanel === panel && !win.isDestroyed()) {
-                win.loadURL(`app://panel/${panel}`);
+        .then(() => true, () => false)
+        .then(async (painted) => {
+            // Superseded while the loading page went up (another panel, a refresh, or the window
+            // closed): never start this panel's computation — on a cold Chart/Efficiency cache
+            // that is a multi-minute walk on this main process nobody is waiting for. The later
+            // navigation owns the window.
+            if (!isCurrent()) { return; }
+            if (painted) {
+                try { await loadPanelData(panel); } catch { /* surfaced by the panel's own error page below */ }
             }
+            // Re-checked after the wait: the user may have moved on while the data was computed.
+            if (!isCurrent()) { return; }
+            // The walk stops while the window is hidden to the tray. Loading the panel now would
+            // start it again, unseen; resume when the window is shown instead.
+            if (!win.isVisible() && !isPanelDataReady(panel)) { resumePanelOnShow = true; return; }
+            // A loading page that failed for another reason falls through to the panel itself.
+            win.loadURL(`app://panel/${panel}`);
         });
 }
 
@@ -1021,6 +1024,7 @@ const PANEL_MENU: { label: string; panel: PanelId }[] = [
     { label: 'Details', panel: 'details' },
     { label: 'Environmental Impact', panel: 'environmental' },
     { label: 'Token Usage Chart', panel: 'chart' },
+    { label: 'Efficiency', panel: 'efficiency' },
     { label: 'Usage Analysis', panel: 'usage' },
     { label: 'Fluency Score', panel: 'maturity' },
     { label: 'Scoring Guide', panel: 'fluency-level-viewer' },
@@ -1070,7 +1074,7 @@ function updateTrayMenu(t: Tray): void {
             click: async () => {
                 await refreshStats();
                 if (mainWindow?.isVisible()) {
-                    mainWindow.loadURL(`app://panel/${currentPanel}`);
+                    navigateToPanel(currentPanel);
                 }
             },
         },
@@ -1108,7 +1112,7 @@ function registerIpcHandlers(): void {
         switch (message.command) {
             case 'refresh':
                 await refreshStats();
-                mainWindow?.loadURL(`app://panel/${currentPanel}`);
+                navigateToPanel(currentPanel);
                 break;
 
             case 'showDetails':
@@ -1121,6 +1125,10 @@ function registerIpcHandlers(): void {
 
             case 'showChart':
                 showPanel('chart');
+                break;
+
+            case 'showEfficiency':
+                showPanel('efficiency');
                 break;
 
             case 'showUsageAnalysis':
@@ -1169,9 +1177,6 @@ function registerIpcHandlers(): void {
                 showPanel('fluency-level-viewer');
                 break;
 
-            case 'saveSortSettings':
-                // Persist sort preferences — stored in memory for now
-                break;
 
             case 'openFile':
                 if (typeof message.path === 'string' && message.path) {
@@ -1276,17 +1281,19 @@ app.whenReady().then(async () => {
     tray = createTray();
 
     // Warm the caches in the background, showing the loading page meanwhile.
-    // Detailed stats power Details/Chart/Environmental; usage stats power Usage
+    // Detailed stats power Details/Environmental; usage stats power Usage
     // Analysis and Fluency Score. Both are expensive (tens of seconds over large
     // histories) and run synchronously, so pre-warm BOTH at startup — otherwise
     // the first open of Usage Analysis / Fluency Score freezes the UI mid-click
     // and looks like the panel never loads.
+    // The Chart/Efficiency walk is deliberately NOT pre-warmed: it analyzes every
+    // historical session (usage analysis + repository lookup), which on a large
+    // history runs for minutes on this main process. Unattended, after Details is
+    // already showing, that would freeze the visible window; on demand it runs
+    // behind the loading screen showPanel() puts up first.
     getStats().then(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.loadURL(`app://panel/${currentPanel}`);
-        }
-        // Continue warming the chart and usage data so those panels open instantly too.
-        return getChartPayload().then(() => getUsageStats());
+        navigateToPanel(currentPanel);
+        return getUsageStats();
     }).catch(() => { /* surfaced per-panel via the error page */ });
 
     startUpdateChecks({
@@ -1299,7 +1306,7 @@ app.whenReady().then(async () => {
     // Listen for system theme changes and reload the current panel
     nativeTheme.on('updated', () => {
         if (mainWindow?.isVisible()) {
-            mainWindow.loadURL(`app://panel/${currentPanel}`);
+            navigateToPanel(currentPanel);
         }
     });
 });

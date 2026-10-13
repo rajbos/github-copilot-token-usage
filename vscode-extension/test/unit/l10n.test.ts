@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import * as vscode from 'vscode';
 import { t } from '../../src/l10n';
 import { ENGLISH_BUNDLE, resolvedLocale } from '../../src/l10nCore';
-import { INSIGHT_CATALOG, evaluateInsights } from '../../src/insightsEngine';
+import { INSIGHT_CATALOG, evaluateInsights } from '../../../src/insightsEngine';
 import { insightFixtureContexts } from './fixtures/insightContexts';
 import { WHATS_NEW_RELEASES } from '../../src/whatsNew/catalog';
 
@@ -1578,7 +1578,7 @@ test('insights l10n: the bundle carries no orphaned insight keys', () => {
 	// engine's source.
 	// Tests run compiled out of `out/`, so __dirname does not sit next to the
 	// real source tree — same hop the other source-reading tests use.
-	const source = readFileSync(join(__dirname, '../../../../src/insightsEngine.ts'), 'utf8');
+	const source = readFileSync(join(__dirname, '../../../../../src/insightsEngine.ts'), 'utf8');
 	const orphans = insightKeys().filter(key => {
 		const parts = key.split('.');
 		// Try the full key, then progressively shorter prefixes, down to the two

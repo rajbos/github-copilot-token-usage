@@ -154,6 +154,7 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 							{ id: 'usage.activity.sessions-summary', title: 'Sessions Summary', description: 'Session counts for today, the last 30 days, this month and last month.', nav: { anchor: 'section-sessions-summary' } },
 							{ id: 'usage.activity.interaction-modes', title: 'Interaction Modes', description: 'How often you use Ask, Edit, Agent, Plan and CLI modes, today and over the last 30 days.', keywords: ['ask', 'edit', 'agent', 'plan'], nav: { anchor: 'section-interaction-modes' } },
 							{ id: 'usage.activity.model-cost', title: 'Model Cost Usage', description: 'Share of requests on low, medium and high cost models for three periods.', keywords: ['tier', 'expensive'], nav: { anchor: 'section-model-cost' } },
+							{ id: 'usage.activity.multi-model', title: 'Multi-Model Usage', description: 'How many models you use and how often you switch between them within a conversation.', keywords: ['switching'], nav: { anchor: 'section-multi-model' } },
 							{ id: 'usage.activity.model-leaderboard', title: 'Local Model Leaderboard', description: 'Efficiency frontier and a per-model table: one-shot edit rate, cost, tokens and tool steps.', keywords: ['model efficiency', 'compare models'], nav: { anchor: 'section-model-efficiency' } },
 							{ id: 'usage.activity.thinking-effort', title: 'Thinking Effort (Reasoning)', description: 'Requests per reasoning-effort level for three periods.', keywords: ['reasoning'], nav: { anchor: 'section-thinking-effort' }, condition: 'When effort data exists' },
 							{ id: 'usage.activity.context-references', title: 'Context References', description: 'How often you attach #file, @workspace and other references, and which files you reference most.', keywords: ['#file', '@workspace'], nav: { anchor: 'section-context-references' } },
@@ -192,7 +193,6 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 							{ id: 'usage.tools.memory-files', title: 'Copilot Memory Files', description: 'Memory files per workspace with size, stale entries and last update.', keywords: ['memories', 'hygiene'], nav: { anchor: 'section-memory-files' }, condition: 'When memory files exist' },
 							{ id: 'usage.tools.server-memories', title: 'Copilot Repository Memories', description: 'Server-side agent memories for this repository and candidates to promote into instructions.', nav: { anchor: 'section-server-memories' }, condition: 'When the workspace is a GitHub repository' },
 							{ id: 'usage.tools.skill-suggestions', title: 'Skill Suggestions', description: 'Prompts you keep repeating that would make good reusable skills.', keywords: ['repeated prompts'], nav: { anchor: 'section-skill-suggestions' }, condition: 'When repeated prompts are found' },
-							{ id: 'usage.tools.multi-model', title: 'Multi-Model Usage', description: 'How many models you use and how often you switch between them within a conversation.', keywords: ['switching'], nav: { anchor: 'section-multi-model' } },
 						],
 					},
 					{

@@ -59,6 +59,7 @@ Run `ls -a` (or `git ls-files | cut -d/ -f1 | sort -u`) for the live top level.
 | `visualstudio-extension/` | `.github/instructions/visualstudio-extension.instructions.md` |
 | `jetbrains-plugin/` | `.github/instructions/jetbrains-plugin.instructions.md` |
 | `sharing-server/` | [sharing-server/AGENTS.md](sharing-server/AGENTS.md), `.github/instructions/sharing-server.instructions.md` |
+| `desktop/` | [desktop/README.md](desktop/README.md); checks in [docs/VALIDATION.md](docs/VALIDATION.md#desktop-app) |
 | `.github/workflows/` | `.github/instructions/workflows.instructions.md` |
 
 All sharing-server coding, testing, documentation and downstream customization
@@ -132,6 +133,18 @@ The CLI (`cli/`) is a thin consumer of the shared TypeScript modules in the repo
 | Token counts (total, actual, thinking) | `estimateTokensFromJsonlSession()` | `tokenEstimation.ts` |
 | Per-model cost attribution (model usage) | `getModelUsageFromSession()` | `usageAnalysis.ts` |
 | Debug-log token override | `extractAllTokensFromDebugLog()` | `tokenEstimation.ts` |
+| Per-day stats from a session (non-extension hosts) | `addSessionToDailyStats()` + `addSessionEfficiencyToDailyStats()` | `statsHelpers.ts`, `modelEfficiency.ts` |
+| Chart webview payload | `buildChartData()` | `chartDataBuilder.ts` |
+| Efficiency webview payload | `buildEfficiencyViewData()` | `efficiencyViewBuilder.ts` |
+| Usage Analysis webview payload | `buildUsageAnalysisViewData()` (+ `buildWorkspaceCustomization()`, `buildCurationAnalysis()`, `evaluateUsageInsights()` for its inputs) | `usageAnalysisViewBuilder.ts`, `customizationMatrix.ts`, `toolCuration.ts`, `insightsEngine.ts` |
+
+Webview payloads follow the same rule: one function in `src/` builds a payload and
+every host (extension, CLI, desktop) calls it, differing only in how it gathers inputs
+and in host settings. The Chart, Efficiency and Usage Analysis payloads (table above)
+do this today; the Diagnostics payload is still partly assembled per host and is being
+moved over (#2418). Never add a host-side copy of a payload builder,
+and move a payload's assembly to `src/` when you change it — otherwise a field a view
+starts requiring reaches one host and not the others.
 
 **Critical rule**: `estimateTokensFromJsonlSession().modelUsage` must **not** be used as the primary source for model attribution. It returns `{}` for delta-format sessions (VS Code Chat JSONL), causing $0 cost for those sessions. Always call `getModelUsageFromSession()` separately for model attribution — it handles all formats through a single code path.
 
@@ -268,7 +281,7 @@ When adding or changing runtime localization keys (entries in `vscode-extension/
 
 ## File-size ceiling (`max-lines`)
 
-`vscode-extension/eslint.config.mjs` enforces a `max-lines` ceiling (the threshold and severity live in that file) alongside the per-function complexity rules. Small functions alone don't stop a file from becoming unmanageable, so new code should not push any linted file past the ceiling — split instead. Run `cd vscode-extension && pnpm run lint` to see the current offenders; `vscode-extension/src/extension.ts` is by far the largest offender (other large files, such as the usage webview's `main.ts`, may also show up). Ratchet the threshold down as files shrink; don't raise it to accommodate growth.
+`vscode-extension/eslint.config.mjs` enforces a `max-lines` ceiling (the threshold and severity live in that file) alongside the per-function complexity rules. Small functions alone don't stop a file from becoming unmanageable, so new code should not push any linted file past the ceiling — split instead. Run `cd vscode-extension && pnpm run lint` to see the current offenders; `vscode-extension/src/extension.ts` is by far the largest offender (other large files, such as the usage webview's `main.ts`, may also show up). `max-lines` is an `error`, and a per-file override in that config pins `extension.ts` at its current size, so it cannot grow and no second file can cross the ceiling. Ratchet the threshold (and that pin) down as files shrink; don't raise either to accommodate growth.
 
 ### Where the `extension.ts` decomposition stands
 

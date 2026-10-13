@@ -1,4 +1,4 @@
-import type { ChartPeriodData, ChartTimeWindow } from '../../../../src/types';
+import type { ChartDataset, ChartPeriodData, ChartTimeWindow } from '../../../../src/types';
 import { getTimeWindowStartDate, getTimeWindowStartDayKey, getTimeWindowStartMonthKey } from '../../../../src/timeWindows';
 import type { ChartPeriod } from './projectionUtils';
 
@@ -11,12 +11,11 @@ function sliceNumbersByIndices(arr: number[] | undefined, indices: number[]): nu
 	return indices.map(i => arr[i] ?? 0);
 }
 
-function sliceDatasetsByIndices(datasets: object[] | undefined, indices: number[]): object[] | undefined {
+function sliceDatasetsByIndices(datasets: ChartDataset[], indices: number[]): ChartDataset[];
+function sliceDatasetsByIndices(datasets: ChartDataset[] | undefined, indices: number[]): ChartDataset[] | undefined;
+function sliceDatasetsByIndices(datasets: ChartDataset[] | undefined, indices: number[]): ChartDataset[] | undefined {
 	if (!datasets) { return undefined; }
-	return datasets.map(ds => {
-		const d = ds as { data: number[] };
-		return { ...d, data: indices.map(i => d.data[i]) };
-	});
+	return datasets.map(ds => ({ ...ds, data: indices.map(i => ds.data[i]) }));
 }
 
 /**
@@ -52,9 +51,9 @@ function buildCoreFilteredPeriod(period: ChartPeriodData, indices: number[]): Ch
 		periodKeys: indices.map(i => period.periodKeys[i]),
 		tokensData: indices.map(i => period.tokensData[i]),
 		sessionsData: indices.map(i => period.sessionsData[i]),
-		modelDatasets: sliceDatasetsByIndices(period.modelDatasets, indices) as object[],
-		editorDatasets: sliceDatasetsByIndices(period.editorDatasets, indices) as object[],
-		repositoryDatasets: sliceDatasetsByIndices(period.repositoryDatasets, indices) as object[],
+		modelDatasets: sliceDatasetsByIndices(period.modelDatasets, indices),
+		editorDatasets: sliceDatasetsByIndices(period.editorDatasets, indices),
+		repositoryDatasets: sliceDatasetsByIndices(period.repositoryDatasets, indices),
 		periodCount: indices.length,
 		totalTokens,
 		totalSessions,

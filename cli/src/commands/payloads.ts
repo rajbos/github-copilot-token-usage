@@ -6,6 +6,9 @@
  * response) and the individual commands stay in sync automatically.
  */
 import type { DetailedStats, UsageAnalysisStats, UsageAnalysisPeriod } from '../../../src/types';
+import { buildUsageAnalysisViewData } from '../../../src/usageAnalysisViewBuilder';
+import { standaloneUsageAnalysisViewInputs } from '../usageAnalysisView';
+import { createEmptyUsageAnalysisPeriod } from '../analysis';
 
 // ---------------------------------------------------------------------------
 // Empty-state payloads (returned when no session files are discovered)
@@ -19,23 +22,33 @@ export function createEmptyDetailsPayload(now = new Date()) {
 	};
 }
 
-/** Empty chart payload (no session files found). */
-export function createEmptyChartPayload(now = new Date()) {
-	return {
-		labels: [], tokensData: [], sessionsData: [], modelDatasets: [],
-		editorDatasets: [], editorTotalsMap: {}, repositoryDatasets: [],
-		repositoryTotalsMap: {}, dailyCount: 0, totalTokens: 0,
-		avgTokensPerDay: 0, totalSessions: 0,
-		lastUpdated: now.toISOString(), backendConfigured: false,
-	};
+/** Empty chart payload — built by the shared chart builder, see analysis.ts. */
+export { createEmptyChartPayload } from '../analysis';
+
+/**
+ * Empty usage-analysis payload (no session files found): the same shared builder over empty
+ * stats, so the zero-state response carries every field the view reads instead of a
+ * hand-written subset.
+ */
+export function createEmptyUsageAnalysisPayload(now = new Date()) {
+	return createUsageAnalysisPayload(createEmptyUsageAnalysisStats(now), now);
 }
 
-/** Empty usage-analysis payload (no session files found). */
-export function createEmptyUsageAnalysisPayload(now = new Date()) {
+/**
+ * Usage-analysis stats for "no session files". Commands that run in a workspace still pass
+ * these through `withUsageAnalysisViewStats()`, so configured MCP servers and skills reach the
+ * curation analysis even without session data (as the standalone `curation` command does).
+ */
+export function createEmptyUsageAnalysisStats(now = new Date()): UsageAnalysisStats {
 	return {
-		today: {}, last30Days: {}, month: {}, lastMonth: {},
-		locale: Intl.DateTimeFormat().resolvedOptions().locale,
-		lastUpdated: now.toISOString(), backendConfigured: false,
+		today: createEmptyUsageAnalysisPeriod(),
+		last30Days: createEmptyUsageAnalysisPeriod(),
+		month: createEmptyUsageAnalysisPeriod(),
+		lastMonth: createEmptyUsageAnalysisPeriod(),
+		// Empty buckets, as the populated path always has: without them the webview asks the
+		// host to load recent sessions, which hosts other than VS Code never answer.
+		recentSessions: { last7: [], last30: [], currentMonth: [] },
+		lastUpdated: now,
 	};
 }
 
@@ -61,16 +74,18 @@ export function createDetailsPayload(stats: DetailedStats) {
 }
 
 /**
- * Full usage-analysis payload built from computed stats.
+ * Full usage-analysis payload: the shared `buildUsageAnalysisViewData()` the extension and
+ * desktop app use, over stats from `withUsageAnalysisViewStats()`. Fields the view does not
+ * read but CLI consumers do (`recentSessions`, `agenticDailyTrend`, …) pass through from
+ * the stats.
  * Intentionally machine-readable: each period may carry an optional `autonomyUsage`
  * ({ autonomous, supervised, plan, other } prompt counts); it is absent when no session reported a mode.
  */
 export function createUsageAnalysisPayload(stats: UsageAnalysisStats, now = new Date()) {
+	const locale = Intl.DateTimeFormat().resolvedOptions().locale;
 	return {
 		...stats,
-		locale: Intl.DateTimeFormat().resolvedOptions().locale,
-		lastUpdated: now.toISOString(),
-		backendConfigured: false,
+		...buildUsageAnalysisViewData({ ...stats, lastUpdated: now }, standaloneUsageAnalysisViewInputs(locale)),
 	};
 }
 

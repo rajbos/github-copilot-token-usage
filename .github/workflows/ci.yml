@@ -35,7 +35,7 @@ jobs:
       duplication-relevant: ${{ github.event_name == 'push' || steps.filter.outputs.duplication-relevant == 'true' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
@@ -70,6 +70,12 @@ jobs:
               - 'docs/logFilesSchema/session-file-schema.json'
               - 'docs/logFilesSchema/session-file-schema-analysis.json'
               - '.nvmrc'
+              # Host build configs that name the localization sidecars. The unit test
+              # test/unit/localization-sidecars.test.ts reads both and fails when a
+              # host stops copying/packaging a generated locale, so a PR touching
+              # only one of them must still run the extension's unit tests.
+              - 'jetbrains-plugin/build.gradle.kts'
+              - 'visualstudio-extension/src/AIEngineeringFluency/AIEngineeringFluency.csproj'
               # Harnesses invoked by the build and ui-checks jobs.
               - '.github/skills/visual-view-diff/**'
               - '.github/skills/sync-host-views/**'
@@ -117,7 +123,7 @@ jobs:
     if: github.event_name == 'pull_request' && needs.check-changes.outputs.coverage-relevant == 'true'
     steps:
     - name: Harden the runner (Block all outbound calls except allowed)
-      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+      uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
       with:
         egress-policy: block
         allowed-endpoints: >
@@ -156,7 +162,7 @@ jobs:
     if: needs.check-changes.outputs.duplication-relevant == 'true'
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+      uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
       with:
         egress-policy: audit
 
@@ -186,7 +192,7 @@ jobs:
 
     steps:
     - name: Harden the runner (Block all outbound calls except allowed)
-      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+      uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
       with:
         egress-policy: block
         # Allowlist inferred from the harden-runner audit output of the 10 most
@@ -248,6 +254,10 @@ jobs:
       working-directory: vscode-extension
       run: pnpm run lint:hardcoded-colors
 
+    - name: Test lint-baseline ratchet
+      working-directory: vscode-extension
+      run: pnpm run test:lint-baseline
+
     - name: Run linting
       working-directory: vscode-extension
       run: pnpm run lint
@@ -295,7 +305,7 @@ jobs:
       run: |
         set -euo pipefail
         expected=(details chart usage diagnostics environmental maturity fluency-level-viewer)
-        expected_json=(tokenEstimators modelPricing toolNames automaticTools)
+        expected_json=(tokenEstimators modelPricing toolNames automaticTools localization.en localization.zh-cn)
         missing=()
         for name in "${expected[@]}"; do
           f="vscode-extension/dist/webview/${name}.js"
@@ -309,13 +319,13 @@ jobs:
           echo "::error::pnpm run package did not produce all expected webview bundle(s): ${missing[*]}"
           exit 1
         fi
-        echo "All 11 expected webview bundle/sidecar files were generated and non-empty."
+        echo "All $(( ${#expected[@]} + ${#expected_json[@]} )) expected webview bundle/sidecar files were generated and non-empty."
 
         # Simulate the Visual Studio Remove-Item/Copy-Item build step
         # (visualstudio-build.yml / visualstudio-publish.yml / release.yml) on a
         # scratch directory, to catch a copy-list mismatch without needing MSBuild.
         # dist/webview also holds bundles VS doesn't ship (dashboard, efficiency, ...);
-        # this only re-checks the same 11 names against the copy destination.
+        # this only re-checks the same names against the copy destination.
         rm -rf /tmp/vs-webview-check
         mkdir -p /tmp/vs-webview-check
         cp vscode-extension/dist/webview/*.js vscode-extension/dist/webview/*.json /tmp/vs-webview-check/
@@ -333,7 +343,7 @@ jobs:
           echo "::error::VS-style copy did not yield all expected webview file(s): ${missing[*]}"
           exit 1
         fi
-        echo "Simulated Visual Studio webview copy step: all 11 expected file(s) present and non-empty."
+        echo "Simulated Visual Studio webview copy step: all $(( ${#expected[@]} + ${#expected_json[@]} )) expected file(s) present and non-empty."
 
         # View-LIST drift (NEW/ORPHAN) is unrelated to bundle generation and is
         # informational only here — it's a human decision (see
@@ -385,7 +395,7 @@ jobs:
     # (loc-stats.test.js runs in its own loc-stats.yml workflow.)
     - name: Run repository script tests
       shell: bash
-      run: node --test scripts/release-changelog.test.js scripts/sync-changelog.test.js scripts/fetch-copilot-memories.test.js
+      run: node --test scripts/release-changelog.test.js scripts/sync-changelog.test.js scripts/fetch-copilot-memories.test.js scripts/bump-vscode-types.test.js
 
     - name: Verify build outputs exist
       shell: bash
@@ -447,7 +457,7 @@ jobs:
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+      uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
       with:
         egress-policy: audit
 
@@ -519,7 +529,7 @@ jobs:
     
     steps:
     - name: Harden the runner (Block all outbound calls except allowed)
-      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+      uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
       with:
         egress-policy: block
         # Allowlist inferred from the harden-runner audit output of the sampled
@@ -588,7 +598,7 @@ jobs:
       cancel-in-progress: true
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+      uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
       with:
         egress-policy: audit
 
@@ -706,7 +716,7 @@ jobs:
     if: always()
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 

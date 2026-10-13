@@ -14,8 +14,8 @@ import { getEcosystemDisplayName } from '../../../src/ecosystemAdapter';
 import type { ModelUsage, SessionFileDetails } from '../../../src/types';
 import { isJsonlContent, isUuidPointerFile, reconstructJsonlStateAsync } from '../../../src/tokenEstimation';
 import { analyzeContextReferences, analyzeRequestContext, getModelUsageFromSession } from '../../../src/usageAnalysis';
-import { getRepoNameFromWorkspacePath, resolveWorkspaceFolderWithFallback } from '../../../src/workspaceHelpers';
-import { extractWorkspaceRepository, requestContentReferences, toolArgumentPathReferences } from '../../../src/sessionRepository';
+import { resolveWorkspaceFolderWithFallback } from '../../../src/workspaceHelpers';
+import { extractWorkspaceRepository, repositoryFromEcosystemMeta, requestContentReferences, toolArgumentPathReferences } from '../../../src/sessionRepository';
 import { findEcosystem, findWorkspacePathForDiscoveredPath, toUsageAnalysisDeps, type SessionAnalyzerDeps } from './sessionFileAnalyzer';
 
 /** The two stat fields the details pass reads; plain data so it survives a worker round trip. */
@@ -59,14 +59,12 @@ async function processEcosystemSessionDetails(eco: IEcosystemAdapter, sessionFil
 	details.interactions = interactionCount;
 	details.editorRoot = eco.getEditorRoot(sessionFile);
 	details.editorName = getEcosystemDisplayName(eco, sessionFile);
-	if (meta.workspacePath) {
-		// Prefer the ecosystem's authoritative repository (e.g. Copilot CLI's DB "owner/repo"
-		// column). Only fall back to deriving a name from the path when it's absent, and use a
-		// worktree-aware derivation so app-store worktree paths resolve to the repo folder
-		// instead of the transient worktree name.
-		details.repository = meta.repository || getRepoNameFromWorkspacePath(meta.workspacePath);
-		details.workspacePath = meta.workspacePath;
-	}
+	// Shared with the CLI (src/sessionRepository.ts): the ecosystem's own repository id, which
+	// an adapter can record without a workspace, else a worktree-aware name derived from the
+	// workspace path. Only the workspace path itself depends on there being one.
+	const repository = repositoryFromEcosystemMeta(meta);
+	if (repository) { details.repository = repository; }
+	if (meta.workspacePath) { details.workspacePath = meta.workspacePath; }
 	return { details, cacheUpdate: { tokenResult, modelUsage } };
 }
 

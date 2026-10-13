@@ -1,7 +1,7 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
-import { INSIGHT_CATALOG, evaluateInsights } from '../../src/insightsEngine';
-import type { InsightContext } from '../../src/insightsEngine';
+import { INSIGHT_CATALOG, evaluateInsights } from '../../../src/insightsEngine';
+import type { InsightContext } from '../../../src/insightsEngine';
 import { createTranslator } from '../../src/l10nCore';
 import type { ToolCurationAnalysis, UsageAnalysisPeriod, MemoryFilesAnalysis } from '../../../src/types';
 

@@ -17,7 +17,13 @@ computeFallbackDailyRollup,
 type SessionAggregateInput,
 type UtcDateRanges,
 	preferActualTokens,
+	addSessionToDailyStats,
+	sortedDailyStats,
+	repositoryKey,
+	addLanguageUsage,
+	sessionLocFromUsageAnalysis,
 } from '../statsHelpers';
+import type { DailyTokenStats } from '../types';
 import type { ModelUsage, EditorUsage, SessionFileCache, DailyRollupEntry } from '../types';
 import { scaleModelUsage, preserveAutoRouting, reconcileDebugLogModelUsage } from '../statsHelpers';
 import { calculateEstimatedCost } from '../tokenEstimation';
@@ -1753,4 +1759,133 @@ test('aggregatePeriodStats: debug-log-only exact cost appears in period totals o
 	assert.ok(Math.abs(fixed.todayStats.exactCopilotCostDollars - 0.5) < 1e-12);
 	assert.ok(Math.abs(fixed.monthStats.exactCopilotCostDollars - 0.5) < 1e-12);
 	assert.ok(Math.abs(fixed.last30DaysStats.exactCopilotCostDollars - 0.5) < 1e-12);
+});
+
+test('addSessionToDailyStats splits a session across its days like the per-day rollups', () => {
+	const map = new Map<string, DailyTokenStats>();
+	addSessionToDailyStats(map, {
+		editorType: 'Copilot CLI',
+		repository: 'o/r',
+		tokens: 1000,
+		interactions: 4,
+		modelUsage: { 'gpt-4o': { inputTokens: 800, outputTokens: 200, sessions: 0 } },
+		dailyFractions: { '2026-05-02': 0.75, '2026-05-01': 0.25 },
+		taskCategory: 'Debugging',
+		linesAdded: 10,
+		linesRemoved: 2,
+		languageUsage: { ts: { linesAdded: 10, linesRemoved: 2 } },
+	});
+	const days = sortedDailyStats(map);
+	assert.deepEqual(days.map(d => d.date), ['2026-05-01', '2026-05-02']);
+	assert.deepEqual(days.map(d => d.tokens), [250, 750]);
+	assert.deepEqual(days.map(d => d.interactions), [1, 3]);
+	assert.deepEqual(days.map(d => d.sessions), [1, 1]);
+	assert.deepEqual(days.map(d => d.modelUsage['gpt-4o'].inputTokens), [200, 600]);
+	assert.deepEqual(days.map(d => d.repositoryUsage['o/r'].tokens), [250, 750]);
+	assert.deepEqual(days.map(d => d.taskCategoryTokens?.Debugging), [250, 750]);
+	// Session-level lines of code land on the last active day only.
+	assert.equal(days[0].linesAdded, undefined);
+	assert.equal(days[1].linesAdded, 10);
+	assert.equal(days[1].linesRemoved, 2);
+	assert.equal(days[1].editorUsage['Copilot CLI'].linesAdded, 10);
+	assert.deepEqual(days[1].languageUsage, { ts: { linesAdded: 10, linesRemoved: 2 } });
+});
+
+test('addSessionToDailyStats records a missing repository as Unknown and skips unsafe day keys', () => {
+	const map = new Map<string, DailyTokenStats>();
+	const fractions = JSON.parse('{"__proto__": 0.5, "2026-05-01": 0.5}') as Record<string, number>;
+	addSessionToDailyStats(map, { editorType: 'VS Code', tokens: 100, interactions: 0, modelUsage: {}, dailyFractions: fractions });
+	assert.deepEqual([...map.keys()], ['2026-05-01']);
+	const day = map.get('2026-05-01')!;
+	assert.equal(day.repositoryUsage.Unknown.tokens, 50);
+	assert.equal(day.interactions, 1, 'a day with activity counts at least one interaction');
+});
+
+test('sessionLocFromUsageAnalysis keeps lines of code whenever lines were added or removed', () => {
+	assert.deepEqual(sessionLocFromUsageAnalysis(undefined), {});
+	assert.deepEqual(sessionLocFromUsageAnalysis({ editScope: { singleFileEdits: 0, multiFileEdits: 0, totalEditedFiles: 0, avgFilesPerSession: 0, linesAdded: 0, linesRemoved: 0 } }), {}, 'no changed lines: nothing to store');
+	// Deletion-only (e.g. an edit with an empty new_str): the removals and their language count too.
+	assert.deepEqual(
+		sessionLocFromUsageAnalysis({ editScope: { singleFileEdits: 1, multiFileEdits: 0, totalEditedFiles: 1, avgFilesPerSession: 1, linesAdded: 0, linesRemoved: 4, languageUsage: { ts: { linesAdded: 0, linesRemoved: 4 } } } }),
+		{ linesAdded: 0, linesRemoved: 4, languageUsage: { ts: { linesAdded: 0, linesRemoved: 4 } } },
+	);
+	assert.deepEqual(
+		sessionLocFromUsageAnalysis({ editScope: { singleFileEdits: 1, multiFileEdits: 0, totalEditedFiles: 1, avgFilesPerSession: 1, linesAdded: 3, languageUsage: { py: { linesAdded: 3, linesRemoved: 0 } } } }),
+		{ linesAdded: 3, linesRemoved: 0, languageUsage: { py: { linesAdded: 3, linesRemoved: 0 } } },
+	);
+});
+
+test('addSessionToDailyStats lands LOC on the session\'s own last active day, not one another session created', () => {
+	const map = new Map<string, DailyTokenStats>();
+	// Another session is active on a later day...
+	addSessionToDailyStats(map, { editorType: 'VS Code', tokens: 10, interactions: 1, modelUsage: {}, dailyFractions: { '2026-05-03': 1 } });
+	// ...which this session lists with a zero share.
+	addSessionToDailyStats(map, {
+		editorType: 'VS Code', tokens: 100, interactions: 1, modelUsage: {},
+		dailyFractions: { '2026-05-01': 1, '2026-05-03': 0 },
+		linesAdded: 9, linesRemoved: 1,
+	});
+	assert.equal(map.get('2026-05-01')!.linesAdded, 9);
+	assert.equal(map.get('2026-05-03')!.linesAdded, undefined, 'a day this session had no share of must not get its LOC');
+});
+
+test('repositoryKey falls back to Unknown for a missing or unsafe repository name', () => {
+	assert.equal(repositoryKey(undefined), 'Unknown');
+	assert.equal(repositoryKey(''), 'Unknown');
+	for (const unsafe of ['__proto__', 'constructor', 'prototype']) {
+		assert.equal(repositoryKey(unsafe), 'Unknown', `${unsafe} must not become an object key`);
+	}
+	assert.equal(repositoryKey('https://github.com/o/r.git'), 'https://github.com/o/r.git');
+});
+
+test('addSessionToDailyStats records a __proto__ repository as Unknown without polluting Object.prototype', () => {
+	const map = new Map<string, DailyTokenStats>();
+	addSessionToDailyStats(map, {
+		editorType: 'VS Code', repository: '__proto__', tokens: 50, interactions: 1, modelUsage: {},
+		dailyFractions: { '2026-05-01': 1 }, linesAdded: 3, linesRemoved: 0,
+	});
+	const day = map.get('2026-05-01')!;
+	assert.equal(day.repositoryUsage.Unknown.tokens, 50);
+	assert.equal(day.repositoryUsage.Unknown.linesAdded, 3);
+	assert.equal(Object.prototype.hasOwnProperty.call(day.repositoryUsage, '__proto__'), false);
+	assert.equal(({} as Record<string, unknown>).tokens, undefined, 'Object.prototype must not gain a tokens field');
+});
+
+test('addLanguageUsage skips an own __proto__ extension key', () => {
+	const target: Record<string, { linesAdded: number; linesRemoved: number }> = {};
+	addLanguageUsage(target, JSON.parse('{"__proto__": {"linesAdded": 3, "linesRemoved": 1}, "py": {"linesAdded": 2, "linesRemoved": 0}}'));
+	assert.deepEqual(Object.keys(target), ['py']);
+	assert.equal((Object.prototype as Record<string, unknown>).linesAdded, undefined);
+});
+
+test('addSessionToDailyStats gives an inherited-name repository or language its own entry', () => {
+	// Repository and language names come from session data; "toString" must not resolve to the
+	// shared built-in (which would skip the initializer and write onto Object.prototype.toString).
+	const map = new Map<string, DailyTokenStats>();
+	addSessionToDailyStats(map, {
+		editorType: 'VS Code', repository: 'toString', tokens: 40, interactions: 1, modelUsage: {},
+		dailyFractions: { '2026-05-01': 1 }, linesAdded: 2, linesRemoved: 0,
+		languageUsage: JSON.parse('{"toString": {"linesAdded": 2, "linesRemoved": 0}}'),
+	});
+	const day = map.get('2026-05-01')!;
+	assert.equal(Object.hasOwn(day.repositoryUsage, 'toString'), true);
+	assert.equal(day.repositoryUsage['toString' as string].tokens, 40);
+	assert.equal(day.languageUsage?.['toString' as string].linesAdded, 2);
+	assert.equal((Object.prototype.toString as unknown as Record<string, unknown>).tokens, undefined);
+});
+
+test('addSessionToDailyStats: an inherited-name task category does not turn task totals into strings', () => {
+	// (map[cat] || 0) used to read Object.prototype.toString for a "toString" share key, and
+	// adding a number to it stored a string.
+	const map = new Map<string, DailyTokenStats>();
+	addSessionToDailyStats(map, {
+		editorType: 'VS Code', tokens: 100, interactions: 1, modelUsage: {},
+		dailyFractions: { '2026-05-01': 1 },
+		taskCategoryShares: JSON.parse('{"toString": 1}'),
+	});
+	const day = map.get('2026-05-01')!;
+	const tokens = (day.taskCategoryTokens as Record<string, unknown>)['toString'];
+	assert.equal(typeof tokens, 'number');
+	assert.equal(tokens, 100);
+	assert.equal((day.taskCategorySessions as Record<string, unknown>)['toString'], 1);
 });
