@@ -22,6 +22,7 @@
 	--vscode-widget-border: #0f4a85;
 	--vscode-focusBorder: #006bbd;
 	--vscode-contrastBorder: #0f4a85;
+	--vscode-contrastActiveBorder: #006bbd;
 	--vscode-button-background: #0f4a85;
 	--vscode-button-foreground: #ffffff;
 	--vscode-button-hoverBackground: #0f4a85;
@@ -35,6 +36,7 @@
 	--vscode-input-border: #0f4a85;
 	--vscode-dropdown-background: #ffffff;
 	--vscode-dropdown-foreground: #292929;
+	--vscode-dropdown-border: #0f4a85;
 	--vscode-badge-background: #0f4a85;
 	--vscode-badge-foreground: #ffffff;
 	--vscode-activityBarBadge-background: #0f4a85;
@@ -54,6 +56,8 @@
 	--vscode-inputValidation-infoBorder: #0f4a85;
 	--vscode-inputValidation-warningBackground: #ffffff;
 	--vscode-inputValidation-warningBorder: #0f4a85;
+	--vscode-inputValidation-errorBackground: #ffffff;
+	--vscode-inputValidation-errorBorder: #0f4a85;
 	--vscode-charts-blue: #0063d3;
 	--vscode-charts-green: #374e06;
 	--vscode-charts-orange: initial;
