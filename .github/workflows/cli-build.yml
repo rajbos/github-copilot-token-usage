@@ -6,6 +6,7 @@ on:
     paths:
       - 'cli/**'
       - 'src/**'
+      - 'docs/cli/README.md'
       - '.nvmrc'
       - 'vscode-extension/src/**'
       - 'vscode-extension/package.json'
@@ -40,6 +41,7 @@ jobs:
             cli-relevant:
               - 'cli/**'
               - 'src/**'
+              - 'docs/cli/README.md'
               - '.nvmrc'
               - 'vscode-extension/src/**'
               - 'vscode-extension/package.json'
