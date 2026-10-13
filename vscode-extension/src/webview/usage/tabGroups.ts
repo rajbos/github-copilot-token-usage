@@ -5,7 +5,7 @@
  * widths and offered no way to tell at a glance that "Repository PRs" and "Cloud Agent" are the
  * same kind of thing. This mirrors the two-level strip the Diagnostics view already uses.
  *
- * The count is ten because AI Readiness joined the view in #2194; the test against SWITCHABLE_TABS
+ * The count is eleven: AI Readiness joined the view in #2194 and Billing moved in from My Activity; the test against SWITCHABLE_TABS
  * is what actually keeps this list honest, so trust it over any number written in prose.
  *
  * **Leaf tab ids are unchanged and must stay that way.** They are the `viewTabOpened` telemetry

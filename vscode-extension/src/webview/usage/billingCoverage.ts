@@ -11,6 +11,7 @@
 
 import { renderDataTable } from '../shared/dataTable';
 import { escapeHtml, formatFixed } from '../shared/formatUtils';
+import { localize } from '../shared/localization';
 import type { CopilotApiBalance } from './billingStatsSanitizer';
 
 /** Cost of Copilot usage the API reports but the extension has no local session data for
@@ -60,5 +61,22 @@ export function billingExtGroupCostsHtml(groupCosts: Record<string, number>, api
 		<div style="margin-bottom:12px;">
 			<div style="font-size:12px; font-weight:600; color:var(--text-secondary); margin-bottom:6px;">${escapeHtml(title)}</div>
 			${table}
+		</div>`;
+}
+
+/**
+ * Body of the GitHub › Billing tab. `sectionHtml` is the data-gated AI Billing Coverage section;
+ * it is empty when there is no API balance, no multi-account budgets and no month group costs,
+ * in which case the tab shows the same sign-in hint as the Repository PRs and Cloud Agent tabs.
+ */
+export function billingTabBodyHtml(sectionHtml: string): string {
+	if (sectionHtml) { return sectionHtml; }
+	return `
+		<div class="section" id="section-billing-coverage">
+			<div class="section-title"><span>💳</span><span>${escapeHtml(localize('usage.billing.title'))}</span></div>
+			<div style="margin-top:12px; padding:12px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:6px; font-size:12px; color:var(--text-secondary);">
+				<strong>🔒 ${escapeHtml(localize('usage.billing.signInRequired'))}</strong><br/>
+				${escapeHtml(localize('usage.billing.signInHint'))}
+			</div>
 		</div>`;
 }

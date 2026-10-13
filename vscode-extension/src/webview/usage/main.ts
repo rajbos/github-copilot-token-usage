@@ -51,7 +51,7 @@ import { sanitizeToolOutcomeMaps, sanitizeMcpOutcomeMaps } from './toolOutcomeSa
 import { renderContextRefTable } from './contextRefTableHtml';
 import { shouldListAccountBudgets } from '../../githubAccountBudgets';
 import { applyBillingFields, sanitizeAccountBudgets, sanitizeCopilotApiBalance, type AccountBudgetView, type CopilotApiBalance } from './billingStatsSanitizer';
-import { billingExtGroupCostsHtml } from './billingCoverage';
+import { billingExtGroupCostsHtml, billingTabBodyHtml } from './billingCoverage';
 import { type ContextRefRow } from './contextRefRows';
 import { sanitizeAgentSessionsData, toSafeNumber, toSafeHttpUrl, type AgentRepoSummary, type AgentSessionsResult } from './agentSessionsSanitizer';
 import { isSwitchableTab } from './switchableTabs';
@@ -4438,14 +4438,7 @@ function billingSectionHasContent(stats: UsageAnalysisStats): boolean {
  */
 function buildBillingTabPanelHtml(stats: UsageAnalysisStats): string {
 	const sectionHtml = safeSectionHtml('AI Billing Coverage', () => buildBillingComparisonSectionHtml(stats));
-	const body = sectionHtml || `
-		<div class="section" id="section-billing-coverage">
-			<div class="section-title"><span>💳</span><span>${escapeHtml(localize('usage.billing.title'))}</span></div>
-			<div style="margin-top:12px; padding:12px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:6px; font-size:12px; color:var(--text-secondary);">
-				<strong>🔒 ${escapeHtml(localize('usage.billing.signInRequired'))}</strong><br/>
-				${escapeHtml(localize('usage.billing.signInHint'))}
-			</div>
-		</div>`;
+	const body = billingTabBodyHtml(sectionHtml);
 	return `<div id="tab-panel-billing" class="tab-panel"${activeTab !== 'billing' ? ' style="display:none"' : ''}>${body}</div>`;
 }
 
