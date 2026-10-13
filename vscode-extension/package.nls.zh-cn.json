@@ -521,7 +521,7 @@
   "diagnostics.teamServer.never": "从不",
   "diagnostics.cache.tab": "会话缓存",
   "diagnostics.cache.infoTitle": "会话缓存信息",
-  "diagnostics.cache.infoBody": "扩展会缓存已解析的会话文件数据（令牌数、模型使用、分析结果），以避免重复读取文件。这是扩展自身的会话缓存，而不是 LLM 提示缓存（请参见效率 › 提示缓存）。它存储在 VS Code 全局状态中，并在会话之间保留。",
+  "diagnostics.cache.infoBody": "扩展会缓存已解析的会话文件数据（令牌数、模型使用、分析结果），以避免重复读取文件。这是扩展自身的会话缓存，而不是 LLM 提示缓存（请参见效率 › 提示缓存）。它以磁盘快照的形式存储在扩展的全局存储文件夹中，并在会话之间保留。",
   "diagnostics.cache.management": "会话缓存管理",
   "serverMemories.sectionTitle": "Copilot 仓库记忆",
   "serverMemories.sectionSubtitle": "Copilot 编码代理为本仓库存储在服务端的事实（GitHub 设置 → Copilot → 记忆）",

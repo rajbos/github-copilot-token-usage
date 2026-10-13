@@ -90,7 +90,7 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 				id: 'details.key-metrics',
 				title: 'Key Metrics',
 				description: 'A Tokens, Cost and Activity table across Today, Last 30 Days, Current Month, Previous Month and Projected Year.',
-				keywords: ['tokens', 'cost', 'co2', 'projection'],
+				keywords: ['tokens', 'cost', 'activity', 'projection'],
 				nav: { anchor: 'section-key-metrics' },
 			},
 			{
