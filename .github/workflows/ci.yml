@@ -69,6 +69,12 @@ jobs:
               - 'docs/logFilesSchema/session-file-schema.json'
               - 'docs/logFilesSchema/session-file-schema-analysis.json'
               - '.nvmrc'
+              # Host build configs that name the localization sidecars. The unit test
+              # test/unit/localization-sidecars.test.ts reads both and fails when a
+              # host stops copying/packaging a generated locale, so a PR touching
+              # only one of them must still run the extension's unit tests.
+              - 'jetbrains-plugin/build.gradle.kts'
+              - 'visualstudio-extension/src/AIEngineeringFluency/AIEngineeringFluency.csproj'
               # Harnesses invoked by the build and ui-checks jobs.
               - '.github/skills/visual-view-diff/**'
               - '.github/skills/sync-host-views/**'
@@ -286,7 +292,7 @@ jobs:
       run: |
         set -euo pipefail
         expected=(details chart usage diagnostics environmental maturity fluency-level-viewer)
-        expected_json=(tokenEstimators modelPricing toolNames automaticTools)
+        expected_json=(tokenEstimators modelPricing toolNames automaticTools localization.en localization.zh-cn)
         missing=()
         for name in "${expected[@]}"; do
           f="vscode-extension/dist/webview/${name}.js"
@@ -300,7 +306,7 @@ jobs:
           echo "::error::pnpm run package did not produce all expected webview bundle(s): ${missing[*]}"
           exit 1
         fi
-        echo "All 11 expected webview bundle/sidecar files were generated and non-empty."
+        echo "All 13 expected webview bundle/sidecar files were generated and non-empty."
 
         # Simulate the Visual Studio Remove-Item/Copy-Item build step
         # (visualstudio-build.yml / visualstudio-publish.yml / release.yml) on a

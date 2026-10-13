@@ -39,7 +39,7 @@ object WebviewResources {
         // Escape JSON for safe inline <script> embedding:
         // "</script>" in a JSON value would prematurely close the tag.
         val safeInitialData = initialStatsJson
-            ?.replace("</", "<\\/")
+            ?.let(::escapeForInlineScript)
             ?: "undefined"
 
         // The webview bundles localize themselves from `initialData.localization`.
@@ -364,6 +364,16 @@ object WebviewResources {
             .replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
 
     /**
+     * Makes JSON safe to embed in an inline `<script>`. Every `<` and `>` becomes a
+     * `<`/`>` escape, which JSON and JavaScript both read back as the same
+     * character inside a string. Escaping only a lowercase `</` is not enough: HTML
+     * end-tag matching is case-insensitive (`</SCRIPT>`), and `<!--` can also change
+     * how the parser treats the script. Mirrors the Visual Studio host.
+     */
+    internal fun escapeForInlineScript(json: String): String =
+        json.replace("<", "\\u003c").replace(">", "\\u003e")
+
+    /**
      * The inline script that attaches [dictionary] to the `window.[globalKey]` payload,
      * or a comment placeholder when the sidecar was missing (an unlocalized panel
      * beats a broken one).
@@ -374,7 +384,7 @@ object WebviewResources {
                 """
                 (function () {
                     var data = window.$globalKey;
-                    if (data && typeof data === 'object') { data.localization = ${it.replace("</", "<\\/")}; }
+                    if (data && typeof data === 'object') { data.localization = ${escapeForInlineScript(it)}; }
                 })();
                 """.trimIndent()
             }

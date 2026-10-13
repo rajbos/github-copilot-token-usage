@@ -88,9 +88,25 @@ class WebviewResourcesLocalizationTest {
 
     @Test
     fun dictionaryCannotCloseTheScriptTag() {
-        val script = WebviewResources.buildLocalizationScript("__INITIAL_DETAILS__", """{"k":"</script>"}""")
-        assertFalse(script.contains("</script>"))
-        assertTrue(script.contains("<\\/script>"))
+        // HTML end-tag matching is case-insensitive, so every casing must be neutralised.
+        for (closing in listOf("</script>", "</SCRIPT>", "</ScRiPt >", "<!--")) {
+            val script = WebviewResources.buildLocalizationScript("__INITIAL_DETAILS__", """{"k":"$closing"}""")
+            // The script's own code contains no angle brackets, so any left is unescaped data.
+            assertFalse(script.contains("<"), "unescaped '<' for $closing")
+            assertFalse(script.contains(">"), "unescaped '>' for $closing")
+        }
+        val script = WebviewResources.buildLocalizationScript("__INITIAL_DETAILS__", """{"k":"</SCRIPT>"}""")
+        assertTrue(script.contains("\\u003c/SCRIPT\\u003e"))
+    }
+
+    @Test
+    fun initialDataCannotCloseTheScriptTagEither() {
+        val html = WebviewResources.buildHtml(
+            "details", "bridge()", """{"title":"</Script><img src=x>"}""",
+            Locale.ENGLISH, fakeClasspath("en" to en),
+        )
+        assertTrue(html.contains("window.__INITIAL_DETAILS__ = {\"title\":\"\\u003c/Script\\u003e\\u003cimg src=x\\u003e\"};"))
+        assertFalse(html.contains("</Script>"))
     }
 
     @Test
