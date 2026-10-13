@@ -4190,7 +4190,10 @@ function renderWorktreeCleanupLog(): string {
 function getCleanupRecoveredBytes(): number {
 	let total = 0;
 	for (const e of worktreeCleanupLog) {
-		total += worktreeDeletedBytes.get(e.path) ?? 0;
+		// Only rows this run actually deleted (or the user retried successfully) free space; a late
+		// delete from an earlier run or an unrelated manual delete must not inflate the total.
+		const deleted = e.status === "deleted" || worktreeRetryState.get(e.path)?.status === "deleted";
+		if (deleted) { total += worktreeDeletedBytes.get(e.path) ?? 0; }
 	}
 	return total;
 }

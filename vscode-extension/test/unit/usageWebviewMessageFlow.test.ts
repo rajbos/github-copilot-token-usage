@@ -775,6 +775,17 @@ test('recovered space counts the bulk-deleted and retried worktrees, and resets 
 	harness.post({ command: 'worktreeDeleteResult', path: retried, status: 'deleted' });
 	assert.ok(harness.window.document.body.textContent?.includes('3.00 MB recovered'), 'a later retry adds its size');
 
+	// A stray delete of a row this run did not delete (e.g. a late event from an earlier run) adds nothing.
+	const stray = 'C:\wt\stray';
+	harness.post(row(stray, 5 * 1024 * 1024));
+	harness.post({ command: 'cleanupStarted', total: 1 });
+	harness.post({ command: 'worktreeDeleted', path: stray });
+	harness.post({
+		command: 'cleanupWorktreeResult', path: stray, branch: 'b', repoLabel: 'repo', status: 'error',
+		reason: 'Could not delete worktree.', diagnostics: { modifiedFiles: 0, untrackedFiles: 0 }, processed: 1, total: 1,
+	});
+	harness.post({ command: 'cleanupComplete' });
+	assert.ok(harness.window.document.body.textContent?.includes('0 B recovered'), 'a failed row never counts as recovered');
 	harness.post({ command: 'cleanupStarted', total: 1 });
 	assert.ok(harness.window.document.body.textContent?.includes('0 B recovered'), 'a new run starts from zero');
 });
