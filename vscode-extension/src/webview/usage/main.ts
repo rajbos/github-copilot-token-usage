@@ -2036,11 +2036,7 @@ function _handleWorktreeRowLinkClick(event: MouseEvent, target: HTMLElement): bo
 	if (copyPromptBtn) {
 		event.preventDefault();
 		const prompt = buildWorktreeDiffPrompt(decodeURIComponent(copyPromptBtn.getAttribute("data-branch") || ""));
-		navigator.clipboard.writeText(prompt).then(() => {
-			const original = copyPromptBtn.textContent;
-			copyPromptBtn.textContent = localize("usage.worktreeCleanup.copied");
-			setTimeout(() => { copyPromptBtn.textContent = original; }, 2000);
-		}).catch(() => { /* clipboard unavailable: leave the button as is */ });
+		copyWorktreePrompt(copyPromptBtn, prompt);
 		return true;
 	}
 	const revealLink = target.closest(".worktree-reveal-link, .worktree-reveal-btn") as HTMLElement | null;
@@ -4111,6 +4107,27 @@ function buildWorktreeCleanupDetailChips(d: WorktreeCleanupDiagnostics | undefin
 	if (!d) { return ""; }
 	const chips = [...buildWorktreeAgeChips(d), ...buildWorktreeRemoteChips(d), ...buildWorktreeDirtyChips(d)];
 	return chips.length === 0 ? "" : `<div class="worktree-cleanup-chips">${chips.join("")}</div>`;
+}
+
+const worktreePromptResetTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
+
+/** Copies the prompt and flashes "Copied!"; always restores the stable localized label, never whatever is showing. */
+function copyWorktreePrompt(button: HTMLElement, prompt: string): void {
+	let write: Promise<void>;
+	try {
+		if (typeof navigator.clipboard?.writeText !== "function") { return; }
+		write = navigator.clipboard.writeText(prompt);
+	} catch {
+		return;
+	}
+	write.then(() => {
+		button.textContent = localize("usage.worktreeCleanup.copied");
+		clearTimeout(worktreePromptResetTimers.get(button));
+		worktreePromptResetTimers.set(button, setTimeout(() => {
+			worktreePromptResetTimers.delete(button);
+			button.textContent = localize("usage.worktreeCleanup.copyPrompt");
+		}, 2000));
+	}).catch(() => { /* clipboard unavailable: leave the label unchanged */ });
 }
 
 /** Starter prompt for a chat session opened in a worktree that could not be deleted, to understand what its diff holds. */
