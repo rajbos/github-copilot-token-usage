@@ -18,80 +18,33 @@
  * `createTranslator('en')` / `createTranslator('zh-cn')` from this module — so
  * unit tests assert against the real shipped bundles rather than a stub.
  *
- * This module is the single source of truth for bundle lookup; `l10n.ts` is a
- * thin VS Code-aware wrapper over it and must not duplicate the logic here.
+ * The lookup itself is host-neutral and lives in `src/localization.ts`; this module
+ * binds it to the extension's inlined bundles (the CLI binds the same bundles in
+ * `cli/src/l10n.ts`). `l10n.ts` is a thin VS Code-aware wrapper over it and must
+ * not duplicate the logic here.
  */
 import englishBundleData from '../package.nls.json';
 import zhCnBundleData from '../package.nls.zh-cn.json';
 import type { Translate } from '../../src/types';
+import { createLocalization } from '../../src/localization';
 
 /** The English bundle — also the final fallback for every other locale. */
 export const ENGLISH_BUNDLE = englishBundleData as Record<string, string>;
 
-/** Locale id (lowercase, from the package.nls.<locale>.json filename) → bundle. */
-const LOCALE_BUNDLES: Record<string, Record<string, string>> = {
-	'zh-cn': zhCnBundleData as Record<string, string>
-};
-
-const missingKeyWarnings = new Set<string>();
+const localization = createLocalization({
+	english: ENGLISH_BUNDLE,
+	// Locale id (lowercase, from the package.nls.<locale>.json filename) → bundle.
+	locales: { 'zh-cn': zhCnBundleData as Record<string, string> },
+});
 
 /** A key-based translation function: the shape pure modules are handed. Declared in src/types.ts. */
 export type { Translate };
 
 /** Replace {0}, {1}, ... placeholders, mirroring vscode.l10n.t() formatting. */
-export function formatMessage(template: string, args: Array<string | number | boolean>): string {
-	return template.replace(/\{(\d+)\}/g, (match, index) => {
-		const i = Number(index);
-		return i < args.length ? String(args[i]) : match;
-	});
-}
+export { formatMessage } from '../../src/localization';
 
 /** The id of the inlined bundle that serves `language`, or undefined when none does. */
-export function resolveLocaleId(language: string): string | undefined {
-	const lang = (language || '').toLowerCase();
-	// Own-property check, not a bare lookup: LOCALE_BUNDLES is a plain object, so a lowercase
-	// prototype key ('constructor', '__proto__') reads back truthy and would be reported as a
-	// shipped locale — which for `<html lang>` means emitting lang="constructor".
-	if (Object.prototype.hasOwnProperty.call(LOCALE_BUNDLES, lang)) {
-		return lang;
-	}
-	// Otherwise match on language + script, after asking Intl to fill in what the
-	// tag left implicit. Comparing raw tags is not enough: `zh-Hans`, `zh-Hans-CN`
-	// and a bare `zh` are all Simplified Chinese and should get `zh-cn`, but none
-	// of them is a prefix match for it.
-	//
-	// Script, not region, is the deciding part. `zh-SG` is Simplified Chinese in
-	// Singapore — closer to our `zh-cn` bundle than English is — while `zh-TW`
-	// and `zh-HK` are Traditional and must never get it, which comparing full
-	// maximized tags would get right by luck and comparing languages would get
-	// wrong.
-	const wanted = languageAndScript(lang);
-	if (wanted === undefined) {
-		return undefined;
-	}
-	for (const locale of Object.keys(LOCALE_BUNDLES)) {
-		if (languageAndScript(locale) === wanted) {
-			return locale;
-		}
-	}
-	return undefined;
-}
-
-/**
- * `zh-Hans` for any Simplified Chinese tag, `en-Latn` for any English one, and
- * so on — or undefined for a tag Intl cannot parse.
- *
- * `Intl.Locale` throws on a malformed tag, which is also what keeps a hostile
- * value like `constructor` from reaching the comparison above.
- */
-function languageAndScript(tag: string): string | undefined {
-	try {
-		const maximized = new Intl.Locale(tag).maximize();
-		return `${maximized.language}-${maximized.script}`;
-	} catch {
-		return undefined;
-	}
-}
+export const resolveLocaleId = localization.resolveLocaleId;
 
 /**
  * The locale the runtime strings are actually rendered in.
@@ -109,17 +62,12 @@ function languageAndScript(tag: string): string | undefined {
  * Studio hosts — which cannot import `vscode` — can declare `<html lang>`
  * correctly too. `l10n.ts` re-exports it for existing callers.
  *
- * The result is always either an id from LOCALE_BUNDLES or `en`, so it is safe
+ * The result is always either a shipped locale id or `en`, so it is safe
  * to interpolate.
  */
-export function resolvedLocale(language: string): string {
-	return resolveLocaleId(language) ?? 'en';
-}
+export const resolvedLocale = localization.resolvedLocale;
 
-export function resolveLocaleBundle(language: string): Record<string, string> | undefined {
-	const id = resolveLocaleId(language);
-	return id === undefined ? undefined : LOCALE_BUNDLES[id];
-}
+export const resolveLocaleBundle = localization.resolveLocaleBundle;
 
 /**
  * Resolve `key` against the bundle serving `language`, falling back to English
@@ -128,17 +76,7 @@ export function resolveLocaleBundle(language: string): Record<string, string> | 
  * This is the whole of the lookup; `l10n.ts`'s `t()` adds only the VS Code
  * `l10n.t()` precedence check and the `vscode.env.language` argument.
  */
-export function translate(language: string, key: string, ...args: Array<string | number | boolean>): string {
-	const template = resolveLocaleBundle(language)?.[key] ?? ENGLISH_BUNDLE[key];
-	if (template === undefined) {
-		if (!missingKeyWarnings.has(key)) {
-			missingKeyWarnings.add(key);
-			console.warn(`[ai-engineering-fluency] No localization found for key "${key}" — add it to package.nls.json.`);
-		}
-		return key;
-	}
-	return formatMessage(template, args);
-}
+export const translate = localization.translate;
 
 /**
  * A {@link Translate} bound to one language — what pure modules are injected with.
@@ -149,8 +87,6 @@ export function translate(language: string, key: string, ...args: Array<string |
  * today); until then `t()` and a translator bound to `vscode.env.language`
  * resolve identically. `extension.ts` injects the real `t()` rather than a
  * translator from here, so it keeps the full resolution order; tests and the
- * hosts without VS Code (the CLI and desktop app) use this.
+ * extension-side callers use this (the CLI and desktop app use the binding in `cli/src/l10n.ts`).
  */
-export function createTranslator(language: string): Translate {
-	return (key, ...args) => translate(language, key, ...args);
-}
+export const createTranslator = localization.createTranslator;

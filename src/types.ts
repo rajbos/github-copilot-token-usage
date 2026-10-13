@@ -1284,7 +1284,8 @@ export const CONTEXT_NEAR_LIMIT_RATIO = 0.8;
 /**
  * A key-based translation function, injected into pure modules (insightsEngine.ts) that
  * render localized text without importing the bundles. Hosts build one with
- * `createTranslator()` from `vscode-extension/src/l10nCore.ts` (or pass `l10n.ts`'s `t()`).
+ * `createLocalization(bundles).createTranslator()` from `src/localization.ts` (bound to the
+ * shipped bundles in `vscode-extension/src/l10nCore.ts` and `cli/src/l10n.ts`), or pass `l10n.ts`'s `t()`.
  */
 export type Translate = (key: string, ...args: Array<string | number | boolean>) => string;
 

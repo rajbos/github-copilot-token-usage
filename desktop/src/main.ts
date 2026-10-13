@@ -40,7 +40,7 @@ import {
 import { detectEditorSource } from '../../src/workspaceHelpers';
 import { getEditorIconByName } from '../../src/editorIcons';
 import { buildWebviewLocalization } from '../../vscode-extension/src/webviewLocalization';
-import { createTranslator, resolvedLocale } from '../../vscode-extension/src/l10nCore';
+import { createTranslator, resolvedLocale } from '../../cli/src/l10n';
 
 // JSON config data embedded into every panel HTML (mirrors extension's getJsonConfigScript)
 import tokenEstimatorsData from '../../src/tokenEstimators.json';

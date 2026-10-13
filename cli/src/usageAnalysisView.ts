@@ -12,7 +12,7 @@ import type { UsageAnalysisStats } from '../../src/types';
 import { buildCurationAnalysis, buildMcpEntriesFromJson, discoverSkillEntries } from '../../src/toolCuration';
 import type { WorkspaceCustomization } from '../../src/customizationMatrix';
 import type { UsageAnalysisViewInputs } from '../../src/usageAnalysisViewBuilder';
-import { createTranslator } from '../../vscode-extension/src/l10nCore';
+import { createTranslator } from './l10n';
 import { buildWorkspaceCustomizationForSessions } from './helpers';
 
 /** Look-back window for tool curation; the extension's `curation.timeWindowDays` default. */
