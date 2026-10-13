@@ -1801,9 +1801,14 @@ test('addSessionToDailyStats records a missing repository as Unknown and skips u
 	assert.equal(day.interactions, 1, 'a day with activity counts at least one interaction');
 });
 
-test('sessionLocFromUsageAnalysis keeps lines of code only when lines were added', () => {
+test('sessionLocFromUsageAnalysis keeps lines of code whenever lines were added or removed', () => {
 	assert.deepEqual(sessionLocFromUsageAnalysis(undefined), {});
-	assert.deepEqual(sessionLocFromUsageAnalysis({ editScope: { singleFileEdits: 0, multiFileEdits: 0, totalEditedFiles: 0, avgFilesPerSession: 0, linesAdded: 0, linesRemoved: 4 } }), {});
+	assert.deepEqual(sessionLocFromUsageAnalysis({ editScope: { singleFileEdits: 0, multiFileEdits: 0, totalEditedFiles: 0, avgFilesPerSession: 0, linesAdded: 0, linesRemoved: 0 } }), {}, 'no changed lines: nothing to store');
+	// Deletion-only (e.g. an edit with an empty new_str): the removals and their language count too.
+	assert.deepEqual(
+		sessionLocFromUsageAnalysis({ editScope: { singleFileEdits: 1, multiFileEdits: 0, totalEditedFiles: 1, avgFilesPerSession: 1, linesAdded: 0, linesRemoved: 4, languageUsage: { ts: { linesAdded: 0, linesRemoved: 4 } } } }),
+		{ linesAdded: 0, linesRemoved: 4, languageUsage: { ts: { linesAdded: 0, linesRemoved: 4 } } },
+	);
 	assert.deepEqual(
 		sessionLocFromUsageAnalysis({ editScope: { singleFileEdits: 1, multiFileEdits: 0, totalEditedFiles: 1, avgFilesPerSession: 1, linesAdded: 3, languageUsage: { py: { linesAdded: 3, linesRemoved: 0 } } } }),
 		{ linesAdded: 3, linesRemoved: 0, languageUsage: { py: { linesAdded: 3, linesRemoved: 0 } } },

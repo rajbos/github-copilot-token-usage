@@ -1,6 +1,6 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
-import { createUsageAnalysisPayload } from '../commands/payloads';
+import { createEmptyUsageAnalysisPayload, createUsageAnalysisPayload } from '../commands/payloads';
 import { createEmptyUsageAnalysisPeriod } from '../analysis';
 import { USAGE_ANALYSIS_VIEW_KEYS } from '../../../src/usageAnalysisViewBuilder';
 import type { UsageAnalysisStats } from '../../../src/types';
@@ -52,4 +52,15 @@ test('usage-analysis payload keeps CLI-only stats fields such as recentSessions'
 	const recentSessions = { last7: [], last30: [], currentMonth: [] };
 	const payload = createUsageAnalysisPayload(stats({ recentSessions }), new Date()) as Record<string, unknown>;
 	assert.equal(payload.recentSessions, recentSessions);
+});
+
+test('the empty (no sessions) usage-analysis payload comes from the same shared builder', () => {
+	// usage-analysis --json and all --json return this when no session files exist; it used to be
+	// a hand-written subset missing insights, curationAnalysis, settings and the arrays.
+	const payload = createEmptyUsageAnalysisPayload(new Date('2026-10-07T00:00:00Z')) as Record<string, unknown>;
+	for (const key of USAGE_ANALYSIS_VIEW_KEYS) {
+		assert.ok(key in payload, `missing ${key}`);
+	}
+	assert.equal(payload.lastUpdated, '2026-10-07T00:00:00.000Z');
+	assert.deepEqual(Object.keys(payload).sort(), Object.keys(createUsageAnalysisPayload(stats(), new Date('2026-10-07T00:00:00Z'))).sort());
 });

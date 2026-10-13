@@ -372,15 +372,19 @@ function updateLocUsage(usage: { linesAdded?: number; linesRemoved?: number }, l
 }
 
 /**
- * The session-level lines-of-code fields a host stores from a usage analysis: present only when
- * the session actually added lines. Shared by the extension's session analyzer and the CLI.
+ * The session-level lines-of-code fields a host stores from a usage analysis: present when the
+ * session changed any lines — added or removed. A deletion-only session (e.g. an `edit` with an
+ * empty `new_str`) counts too, or Chart / Efficiency undercount changed lines and per-language
+ * activity. Shared by the extension's session analyzer and the CLI.
  */
 export function sessionLocFromUsageAnalysis(usageAnalysis: Pick<SessionUsageAnalysis, 'editScope'> | undefined): Pick<SessionFileCache, 'linesAdded' | 'linesRemoved' | 'languageUsage'> {
 	const editScope = usageAnalysis?.editScope;
-	if (!editScope?.linesAdded || editScope.linesAdded <= 0) { return {}; }
+	const linesAdded = Math.max(0, editScope?.linesAdded ?? 0);
+	const linesRemoved = Math.max(0, editScope?.linesRemoved ?? 0);
+	if (!editScope || (linesAdded === 0 && linesRemoved === 0)) { return {}; }
 	return {
-		linesAdded: editScope.linesAdded,
-		linesRemoved: editScope.linesRemoved ?? 0,
+		linesAdded,
+		linesRemoved,
 		...(editScope.languageUsage ? { languageUsage: editScope.languageUsage } : {}),
 	};
 }

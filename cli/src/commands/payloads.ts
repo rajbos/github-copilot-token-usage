@@ -8,6 +8,7 @@
 import type { DetailedStats, UsageAnalysisStats, UsageAnalysisPeriod } from '../../../src/types';
 import { buildUsageAnalysisViewData } from '../../../src/usageAnalysisViewBuilder';
 import { standaloneUsageAnalysisViewInputs } from '../usageAnalysisView';
+import { createEmptyUsageAnalysisPeriod } from '../analysis';
 
 // ---------------------------------------------------------------------------
 // Empty-state payloads (returned when no session files are discovered)
@@ -24,13 +25,19 @@ export function createEmptyDetailsPayload(now = new Date()) {
 /** Empty chart payload — built by the shared chart builder, see analysis.ts. */
 export { createEmptyChartPayload } from '../analysis';
 
-/** Empty usage-analysis payload (no session files found). */
+/**
+ * Empty usage-analysis payload (no session files found): the same shared builder over empty
+ * stats, so the zero-state response carries every field the view reads instead of a
+ * hand-written subset.
+ */
 export function createEmptyUsageAnalysisPayload(now = new Date()) {
-	return {
-		today: {}, last30Days: {}, month: {}, lastMonth: {},
-		locale: Intl.DateTimeFormat().resolvedOptions().locale,
-		lastUpdated: now.toISOString(), backendConfigured: false,
-	};
+	return createUsageAnalysisPayload({
+		today: createEmptyUsageAnalysisPeriod(),
+		last30Days: createEmptyUsageAnalysisPeriod(),
+		month: createEmptyUsageAnalysisPeriod(),
+		lastMonth: createEmptyUsageAnalysisPeriod(),
+		lastUpdated: now,
+	}, now);
 }
 
 /** Empty fluency/maturity payload (no session files found). */

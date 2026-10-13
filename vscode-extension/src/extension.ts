@@ -1171,7 +1171,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// v82: Task attribution falls back to the tool heuristic when the analysis' classification is
 	// the empty placeholder, and the per-day rollups use the same resolved attribution (#2316):
 	// cache hits skip re-analysis, so existing entries would keep "Conversation" until they changed.
-	private static readonly CACHE_VERSION = 82;
+	// v83: Deletion-only sessions keep their lines of code (sessionLocFromUsageAnalysis, #2316):
+	// existing entries dropped them, so Chart/Efficiency would undercount until the file changed.
+	private static readonly CACHE_VERSION = 83;
 	/** Initial stats should not wait indefinitely for one inaccessible or stalled session. */
 	private static readonly SESSION_PRELOAD_TIMEOUT_MS = 15_000;
 	/**
