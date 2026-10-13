@@ -57,6 +57,12 @@ test('usage-analysis payload keeps CLI-only stats fields such as recentSessions'
 	assert.equal(payload.recentSessions, recentSessions);
 });
 
+test('the serialized empty usage-analysis payload carries empty recent-session buckets', () => {
+	// Hosts without a loadRecentSessions handler (Visual Studio, JetBrains) rely on them.
+	const serialized = JSON.parse(JSON.stringify(createEmptyUsageAnalysisPayload(new Date())));
+	assert.deepEqual(serialized.recentSessions, { last7: [], last30: [], currentMonth: [] });
+});
+
 test('the empty (no sessions) usage-analysis payload comes from the same shared builder', () => {
 	// usage-analysis --json and all --json return this when no session files exist; it used to be
 	// a hand-written subset missing insights, curationAnalysis, settings and the arrays.

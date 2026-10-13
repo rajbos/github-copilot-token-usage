@@ -45,6 +45,9 @@ export function createEmptyUsageAnalysisStats(now = new Date()): UsageAnalysisSt
 		last30Days: createEmptyUsageAnalysisPeriod(),
 		month: createEmptyUsageAnalysisPeriod(),
 		lastMonth: createEmptyUsageAnalysisPeriod(),
+		// Empty buckets, as the populated path always has: without them the webview asks the
+		// host to load recent sessions, which hosts other than VS Code never answer.
+		recentSessions: { last7: [], last30: [], currentMonth: [] },
 		lastUpdated: now,
 	};
 }
