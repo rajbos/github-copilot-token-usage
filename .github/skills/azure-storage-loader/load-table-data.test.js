@@ -247,10 +247,16 @@ test('normalizeEntity keeps schemaVersion only when it is a finite integer', () 
 
 test('normalizeEntity validates counts and the shareWithTeam flag by type', () => {
 	const norm = (fields) => loader.normalizeEntity(fields, 'pk', 'default', '2026-01-01');
-	for (const bad of ['10', NaN, Infinity, -1, 1.5, null, true]) {
+	// 2 ** 53 and above are integers but not safe ones: they would pass
+	// Number.isInteger yet corrupt summed totals, so they must be rejected.
+	for (const bad of ['10', NaN, Infinity, -1, 1.5, null, true, 2 ** 53, Number.MAX_SAFE_INTEGER + 2, 1e300]) {
 		const e = norm({ inputTokens: bad, outputTokens: bad, interactions: bad });
 		assert.deepEqual([e.inputTokens, e.outputTokens, e.interactions], [0, 0, 0], String(bad));
 	}
+	// The upper safe boundary itself is still a valid count
+	const max = Number.MAX_SAFE_INTEGER;
+	const atMax = norm({ inputTokens: max, outputTokens: max, interactions: max });
+	assert.deepEqual([atMax.inputTokens, atMax.outputTokens, atMax.interactions], [max, max, max]);
 	assert.deepEqual(
 		(({ inputTokens, outputTokens, interactions }) => [inputTokens, outputTokens, interactions])(norm({ inputTokens: 7, outputTokens: 0, interactions: 2 })),
 		[7, 0, 2]
