@@ -61,10 +61,10 @@ git diff --name-only <last-cli-tag>...HEAD -- cli/
 git diff --name-only <last-vs-tag>...HEAD -- visualstudio-extension/
 
 # JetBrains plugin (its own code plus everything the webview bundles and CLI it packages are built from)
-git diff --name-only <last-jetbrains-tag>...HEAD -- jetbrains-plugin/ vscode-extension/src/ vscode-extension/esbuild.js vscode-extension/package.json vscode-extension/package-lock.json vscode-extension/package.nls.json vscode-extension/package.nls.zh-cn.json assets/tool-logos/ cli/ src/
+git diff --name-only <last-jetbrains-tag>...HEAD -- jetbrains-plugin/ vscode-extension/src/ vscode-extension/esbuild.js vscode-extension/package.json vscode-extension/pnpm-lock.yaml vscode-extension/package.nls.json vscode-extension/package.nls.zh-cn.json assets/tool-logos/ cli/ src/
 
 # Desktop app (its own code plus everything it bundles or imports — see note below)
-git diff --name-only <last-desktop-tag>...HEAD -- desktop/ vscode-extension/src/ vscode-extension/esbuild.js vscode-extension/package.json vscode-extension/package-lock.json vscode-extension/package.nls.json vscode-extension/package.nls.zh-cn.json assets/tool-logos/ cli/src/ cli/package.json cli/package-lock.json src/
+git diff --name-only <last-desktop-tag>...HEAD -- desktop/ vscode-extension/src/ vscode-extension/esbuild.js vscode-extension/package.json vscode-extension/pnpm-lock.yaml vscode-extension/package.nls.json vscode-extension/package.nls.zh-cn.json assets/tool-logos/ cli/src/ cli/package.json cli/pnpm-lock.yaml src/
 ```
 
 If **no tag** exists, use:
@@ -77,9 +77,9 @@ A component **has changes** if the diff output is non-empty.
 
 Also note: changes to shared `src/` files (e.g. `tokenEstimators.json`, `modelPricing.json`, `toolNames.json`) are relevant to the VS Code extension. The VS extension build also depends on changes to `cli/` and shared `src/*.ts` files — if those changed since the last VS tag, include the VS extension in the bump.
 
-The JetBrains plugin packages the VS Code extension's webview bundles and the CLI binaries (see `jetbrains-publish.yml`). The bundles are not self-contained under `vscode-extension/src/webview/`: they import extension modules beside it (`editorIcons.ts`, `githubAccountBudgets.ts`, `insightAnchors.ts`, `maturity/`), inline the logos under `assets/tool-logos/`, and ship localization sidecars generated from `package.nls*.json`. The bundles are also shaped by the extension's build script and dependencies (`esbuild.js`, `package.json`, `package-lock.json` — a bumped `chart.js` or `@vscode/codicons` changes what ships without touching any source file). So the plugin's diff covers the whole extension source tree plus those inputs — the same set as the desktop app below, for the same reason. It also packages CLI *binaries* built from the whole `cli/` tree (`esbuild.js`, `sea-config.json`, the dependency manifests), so its CLI path is `cli/`, not just `cli/src/`; the desktop app imports CLI sources and copies the CLI-installed `sql-wasm.wasm`, so it adds `cli/package.json` and `cli/package-lock.json` to `cli/src/`.
+The JetBrains plugin packages the VS Code extension's webview bundles and the CLI binaries (see `jetbrains-publish.yml`). The bundles are not self-contained under `vscode-extension/src/webview/`: they import extension modules beside it (`githubAccountBudgets.ts`, `insightAnchors.ts`, `maturity/`), inline the logos under `assets/tool-logos/`, and ship localization sidecars generated from `package.nls*.json`. The bundles are also shaped by the extension's build script and dependencies (`esbuild.js`, `package.json`, `pnpm-lock.yaml` — a bumped `chart.js` or `@vscode/codicons` changes what ships without touching any source file). So the plugin's diff covers the whole extension source tree plus those inputs — the same set as the desktop app below, for the same reason. It also packages CLI *binaries* built from the whole `cli/` tree (`esbuild.js`, `sea-config.json`, the dependency manifests), so its CLI path is `cli/`, not just `cli/src/`; the desktop app imports CLI sources and copies the CLI-installed `sql-wasm.wasm`, so it adds `cli/package.json` and `cli/pnpm-lock.yaml` to `cli/src/`.
 
-The desktop app ships the VS Code extension's webview bundles and imports the CLI's stats logic and the shared `src/` modules from source, so a change to any of those changes what the desktop app shows. It also imports non-webview extension modules directly (`desktop/src/main.ts` pulls in `toolFamilies.ts`, `loadingHtml.ts`, `editorIcons.ts`, `webviewLocalization.ts`, `l10nCore.ts` from `vscode-extension/src/`, and `l10nCore.ts` in turn loads the `package.nls*.json` string tables; the webview bundles themselves inline `assets/tool-logos/`), which is why its diff above covers all of `vscode-extension/src/` plus the extension's build script, dependency manifests, the two `package.nls*.json` files and the logos rather than only `webview/` — that over-reports slightly (an `extension.ts`-only change is a false positive), but a missed input ships stale code, which is worse. Whenever the VS Code extension is bumped for a webview change, the desktop app normally needs a bump too, or its users stay on the old views.
+The desktop app ships the VS Code extension's webview bundles and imports the CLI's stats logic and the shared `src/` modules from source, so a change to any of those changes what the desktop app shows. It also imports non-webview extension modules directly (`desktop/src/main.ts` pulls in `webviewLocalization.ts` and `l10nCore.ts` from `vscode-extension/src/` — `toolFamilies.ts`, `loadingHtml.ts` and `editorIcons.ts` now live in the shared `src/` — and `l10nCore.ts` in turn loads the `package.nls*.json` string tables; the webview bundles themselves inline `assets/tool-logos/`), which is why its diff above covers all of `vscode-extension/src/` plus the extension's build script, dependency manifests, the two `package.nls*.json` files and the logos rather than only `webview/` — that over-reports slightly (an `extension.ts`-only change is a false positive), but a missed input ships stale code, which is worse. Whenever the VS Code extension is bumped for a webview change, the desktop app normally needs a bump too, or its users stay on the old views.
 
 If no `desktop/v` tag exists yet, the desktop app has never been released: release the version already in `desktop/package.json` as-is (do not bump it), and list it in the plan as a first release.
 
@@ -126,14 +126,14 @@ Ask the user to confirm before proceeding.
 For VS Code extension (if changed):
 ```bash
 cd vscode-extension
-npm version <bump-type> --no-git-tag-version
+pnpm version <bump-type> --no-git-tag-version
 cd ..
 ```
 
 For CLI (if changed):
 ```bash
 cd cli
-npm version <bump-type> --no-git-tag-version
+pnpm version <bump-type> --no-git-tag-version
 cd ..
 ```
 
@@ -145,7 +145,7 @@ For JetBrains plugin (if changed), edit two files with the `edit` tool:
 For Desktop app (if changed):
 ```bash
 cd desktop
-npm version <bump-type> --no-git-tag-version
+pnpm version <bump-type> --no-git-tag-version
 cd ..
 ```
 
@@ -182,11 +182,11 @@ Use today's date. If the branch already exists, append a short suffix (e.g. `-2`
 
 Stage only the version and changelog files:
 ```bash
-git add vscode-extension/package.json vscode-extension/package-lock.json   # if VS Code changed
-git add cli/package.json cli/package-lock.json                              # if CLI changed
+git add vscode-extension/package.json vscode-extension/pnpm-lock.yaml   # if VS Code changed
+git add cli/package.json cli/pnpm-lock.yaml                              # if CLI changed
 git add visualstudio-extension/src/AIEngineeringFluency/source.extension.vsixmanifest  # if VS changed
 git add jetbrains-plugin/gradle.properties jetbrains-plugin/src/main/resources/META-INF/plugin.xml  # if JetBrains changed
-git add desktop/package.json desktop/package-lock.json                      # if Desktop changed
+git add desktop/package.json desktop/pnpm-lock.yaml                      # if Desktop changed
 git add <component>/CHANGELOG.md   # for each component promoted in Step 6b
 ```
 
@@ -270,7 +270,7 @@ Once the release-prep PR is merged, trigger the actual publish workflows. Do not
 
 #### CLI — push a tag, don't use `workflow_dispatch`
 
-`cli-publish.yml`'s `workflow_dispatch` path (`version_bump` input) **re-bumps `cli/package.json` itself** via `npm version <bump-type>` before publishing. Since the release-prep PR already bumped and merged the version, running `workflow_dispatch` (e.g. with `patch`) bumps it *again* (0.2.12 → 0.2.13) and publishes a version nobody reviewed — the merged 0.2.12 never gets published.
+`cli-publish.yml`'s `workflow_dispatch` path (`version_bump` input) **re-bumps `cli/package.json` itself** via `pnpm version <bump-type>` before publishing. Since the release-prep PR already bumped and merged the version, running `workflow_dispatch` (e.g. with `patch`) bumps it *again* (0.2.12 → 0.2.13) and publishes a version nobody reviewed — the merged 0.2.12 never gets published.
 
 Instead, push a git tag matching the already-merged version to trigger the workflow's tag-push path. That path publishes the current `package.json` version as-is and verifies it matches the tag (fails loudly if not) — no re-bump:
 
@@ -330,9 +330,9 @@ This creates the **Desktop App vX.Y.Z** GitHub release with the installer and th
 - **Dry-run mode**: If the user says "preview", "dry run", or "check only", stop after Step 5 without making any changes.
 - **Only stage version and changelog files** in the commit — do not stage other changes.
 - **Never release without a changelog section.** `release.yml` fails when `vscode-extension/CHANGELOG.md` has no `## [<version>]` section, and the CLI and Visual Studio releases fall back to a bare PR list; write each bumped component's section in this PR (Step 6b), not after the release.
-- **Use `--no-git-tag-version`** with `npm version` to prevent npm from creating a git tag automatically.
+- **Use `--no-git-tag-version`** with `pnpm version` to prevent pnpm from creating a git tag automatically.
 - The VS extension's `<Identity Version="...">` is on a different line than `<PackageManifest Version="2.0.0">` — make sure to update only the `<Identity>` element.
-- After `npm version`, also stage the `package-lock.json` — npm updates both files.
+- After `pnpm version`, also stage the `pnpm-lock.yaml` — pnpm updates both files.
 - **Never trigger the CLI publish workflow via `workflow_dispatch` right after merging a release-prep PR** — it re-bumps the version itself and will publish a version one patch ahead of the one just merged. Push a `cli/vX.Y.Z` tag instead (see Step 11).
 - **Release the desktop app by tag push only** (`desktop/vX.Y.Z`, see Step 11) — a manual run of `desktop-publish.yml` never publishes.
 - **Bump the desktop app and the JetBrains plugin when what they bundle changed**, not only when `desktop/` or `jetbrains-plugin/` did: webview, `cli/src/` and shared `src/` changes reach their users only through a new release of each.

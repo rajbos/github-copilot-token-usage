@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import * as assert from 'node:assert/strict';
 
-import { buildDarkFactoryChatPrompt, buildDarkFactorySectionHtml } from '../../src/webview/maturity/darkFactorySection';
+import { buildDarkFactoryChatPrompt, buildDarkFactorySectionHtml } from '../../src/webview/usage/darkFactorySection';
 import { buildDarkFactoryReport, scoreDarkFactoryReadiness, type DarkFactoryObservation } from '../../../src/darkFactoryReadiness';
 import type { DarkFactoryReport } from '../../../src/types';
 

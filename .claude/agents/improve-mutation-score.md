@@ -29,8 +29,8 @@ The artifact contains:
 If the CI artifact is unavailable, run Stryker locally instead:
 ```bash
 cd vscode-extension
-npm run compile-tests
-npx stryker run
+pnpm run compile-tests
+pnpm exec stryker run
 # Report is written to: vscode-extension/reports/mutation/mutation.json
 ```
 
@@ -123,12 +123,12 @@ For each mutant classified as worth killing:
 
 | Source file | Test file |
 |---|---|
-| `src/tokenEstimation.ts` | `test/unit/tokenEstimation.test.ts` |
-| `src/sessionParser.ts` | `test/unit/sessionParser.test.ts` |
+| `src/tokenEstimation.ts` | `src/test/tokenEstimation.test.ts` |
+| `src/sessionParser.ts` | `src/test/sessionParser.test.ts` |
 | `src/workspaceHelpers.ts` | `test/unit/workspaceHelpers.test.ts` |
 | `src/claudecode.ts` | `test/unit/claudecode.test.ts` |
-| `src/utils/dayKeys.ts` | `test/unit/utils-dayKeys.test.ts` |
-| `src/utils/errors.ts` | `test/unit/utils-errors.test.ts` |
+| `src/utils/dayKeys.ts` | `src/test/utils-dayKeys.test.ts` |
+| `src/utils/errors.ts` | `src/test/utils-errors.test.ts` |
 | `src/utils/html.ts` | `test/unit/utils-html.test.ts` |
 
 ### Writing effective mutation-killing tests
@@ -162,13 +162,13 @@ After adding tests:
 
 ```bash
 cd vscode-extension
-npm run test:node
+pnpm run test:node
 ```
 
 All tests must pass. Then optionally re-run Stryker on the affected files to confirm the new tests actually kill the targeted mutants:
 
 ```bash
-npx stryker run
+pnpm exec stryker run
 ```
 
 Compare the new score to the baseline.

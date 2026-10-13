@@ -20,7 +20,7 @@ plugins {
     // Pinned below CodeQL's current Kotlin version ceiling: the CodeQL analysis
     // job fails on 2.4.20 with "Kotlin version 2.4.20 is too recent". Keep the
     // last known-good Kotlin line until CodeQL adds support for 2.4.20+.
-    kotlin("jvm") version "2.4.20"
+    kotlin("jvm") version "2.4.21"
     id("org.jetbrains.intellij.platform") version "2.19.0"
 }
 
@@ -73,6 +73,10 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("org.opentest4j:opentest4j:1.3.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // The IntelliJ test framework's JUnit 5 session listener references
+    // junit.framework.TestCase, so the JUnit 4 jar must be on the test classpath or
+    // Gradle cannot even start the test executor. Used by no test directly.
+    testRuntimeOnly("junit:junit:4.13.2")
 }
 
 intellijPlatform {

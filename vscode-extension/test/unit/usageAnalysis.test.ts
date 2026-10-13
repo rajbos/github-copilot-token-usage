@@ -990,6 +990,33 @@ test('getModelUsageFromSession: CLI session without cache fields leaves cachedRe
     assert.equal(usage.cacheCreationTokens, undefined);
 });
 
+test('getModelUsageFromSession: CLI cumulative shutdowns after resume use the latest snapshot', async () => {
+    // Copilot CLI shutdown modelMetrics are running totals for the whole session: after a
+    // resume the next shutdown repeats every earlier model, and a no-op resume repeats it verbatim.
+    const shutdown = (ts: string, sol: [number, number, number], luna?: [number, number]) => JSON.stringify({
+        type: 'session.shutdown',
+        timestamp: ts,
+        data: {
+            modelMetrics: {
+                'gpt-5.6-sol': { usage: { inputTokens: sol[0], outputTokens: sol[1], cacheReadTokens: sol[2], cacheWriteTokens: 0 } },
+                ...(luna ? { 'gpt-5.6-luna': { usage: { inputTokens: luna[0], outputTokens: luna[1], cacheReadTokens: 0, cacheWriteTokens: 0 } } } : {}),
+            },
+        },
+    });
+    const content = [
+        shutdown('2026-10-01T12:00:00.000Z', [1000, 100, 800]),
+        JSON.stringify({ type: 'session.resume', timestamp: '2026-10-02T08:00:00.000Z', data: {} }),
+        shutdown('2026-10-02T12:00:00.000Z', [1500, 150, 1200], [300, 30]),
+        shutdown('2026-10-02T12:00:00.000Z', [1500, 150, 1200], [300, 30]),
+    ].join('\n') + '\n';
+    const result = await getModelUsageFromSession(makeMockDeps(), 'fake/path/events.jsonl', content);
+    assert.equal(result['gpt-5.6-sol'].inputTokens, 1500);
+    assert.equal(result['gpt-5.6-sol'].outputTokens, 150);
+    assert.equal(result['gpt-5.6-sol'].cachedReadTokens, 1200);
+    assert.equal(result['gpt-5.6-luna'].inputTokens, 300);
+    assert.equal(result['gpt-5.6-luna'].outputTokens, 30);
+});
+
 // ---------------------------------------------------------------------------
 // CLI live session (no session.shutdown) — content-based estimation
 // ---------------------------------------------------------------------------
@@ -3806,4 +3833,27 @@ test('analyzeSessionUsage: an untagged MCP start (name-recognised, no mcpServerN
     assert.equal(result.toolCalls.completedByTool, undefined, 'nothing leaks into the per-tool maps');
     assert.equal(result.toolCalls.failuresByTool, undefined);
     assert.equal(result.toolCalls.latencyByTool, undefined);
+});
+
+test('analyzeSessionUsage: onAnalysisError fires only when the session could not be analyzed', async () => {
+	const warnings: string[] = [];
+	const errors: unknown[] = [];
+	const deps: UsageAnalysisDeps = {
+		warn: (msg) => { warnings.push(msg); },
+		onAnalysisError: (error) => { errors.push(error); },
+		ecosystems: [], tokenEstimators: {}, modelPricing: {}, toolNameMap: {},
+	};
+
+	// A non-fatal notice: the format is unexpected, the (empty) analysis is still the answer.
+	await analyzeSessionUsage(deps, 'unexpected-format.json', JSON.stringify({ requests: 'not-an-array' }));
+	assert.equal(warnings.length, 1, 'the unexpected format is reported as a warning');
+	assert.equal(errors.length, 0, 'a warning alone is not an analysis failure');
+
+	// A real failure: the file cannot be read, so the empty analysis stands in for one that failed.
+	// A path that does not exist next to this test, not one under os.tmpdir(): the OS temp dir
+	// is shared and attacker-writable, and nothing here needs it.
+	const missing = path.join(__dirname, 'no-such-dir', 'missing-session.json');
+	const result = await analyzeSessionUsage(deps, missing);
+	assert.equal(errors.length, 1, 'an unreadable session signals onAnalysisError');
+	assert.ok(result.taskClassification, 'callers still get a well-formed empty analysis');
 });

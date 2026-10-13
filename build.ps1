@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env pwsh
+#!/usr/bin/env pwsh
 <#
 .SYNOPSIS
     Root build orchestrator for the AI Engineering Fluency mono-repo.
@@ -11,9 +11,10 @@
       sharing           – Self-hosted sharing server (TypeScript / Node.js)
       visualstudio-extension – Visual Studio extension (C# / .NET)
       jetbrains-plugin  – JetBrains IDE plugin (Kotlin / Gradle / IntelliJ Platform)
+      desktop           – Electron desktop app (reuses the extension's webview bundles)
 
 .PARAMETER Project
-    Which project(s) to build.  Accepts: all | vscode | cli | sharing | visualstudio | jetbrains
+    Which project(s) to build.  Accepts: all | vscode | cli | sharing | visualstudio | jetbrains | desktop
     Default: all
 
 .PARAMETER Target
@@ -21,7 +22,7 @@
     Default: build
 
 .PARAMETER SkipInstall
-    Skip all `npm ci` dependency installs (assumes node_modules is already
+    Skip all `pnpm install --frozen-lockfile` dependency installs (assumes node_modules is already
     current in each project).  Useful for fast local iteration.
 
 .EXAMPLE
@@ -34,11 +35,11 @@
 
 .EXAMPLE
     ./build.ps1 -Project cli -SkipInstall
-    # builds the CLI without re-running npm ci (node_modules must be current)
+    # builds the CLI without re-running pnpm install --frozen-lockfile (node_modules must be current)
 #>
 
 param(
-    [ValidateSet('all', 'vscode', 'cli', 'visualstudio', 'sharing', 'jetbrains')]
+    [ValidateSet('all', 'vscode', 'cli', 'visualstudio', 'sharing', 'jetbrains', 'desktop')]
     [string] $Project = 'all',
 
     [ValidateSet('build', 'package', 'test', 'clean')]
@@ -55,18 +56,18 @@ function Write-Ok([string]$msg)   { Write-Host "    $msg" -ForegroundColor Green
 function Write-Err([string]$msg)  { Write-Host "    ERROR: $msg" -ForegroundColor Red }
 
 # Tracks directories whose npm dependencies were already installed during this
-# invocation, so a full build doesn't re-run `npm ci` (which wipes
+# invocation, so a full build doesn't re-run `pnpm install --frozen-lockfile` (which wipes
 # node_modules) for the same project multiple times.
 $script:npmInstalled = @{}
 
-function Ensure-NpmDeps([string]$dir) {
+function Ensure-PnpmDeps([string]$dir) {
     if ($SkipInstall) { return }
     $key = (Resolve-Path $dir).Path
     if ($script:npmInstalled.ContainsKey($key)) { return }
     Push-Location $key
     try {
-        npm ci
-        if ($LASTEXITCODE -ne 0) { throw "npm ci failed in $key" }
+        pnpm install --frozen-lockfile
+        if ($LASTEXITCODE -ne 0) { throw "pnpm install --frozen-lockfile failed in $key" }
     }
     finally { Pop-Location }
     $script:npmInstalled[$key] = $true
@@ -80,9 +81,9 @@ function Build-VsCode {
     Push-Location "$PSScriptRoot/vscode-extension"
     try {
         switch ($Target) {
-            'build'   { Ensure-NpmDeps .; npm run validate }
-            'package' { Ensure-NpmDeps .; npm run package; npx vsce package }
-            'test'    { Ensure-NpmDeps .; npm run test:node }
+            'build'   { Ensure-PnpmDeps .; pnpm run validate }
+            'package' { Ensure-PnpmDeps .; pnpm run package; pnpm exec vsce package }
+            'test'    { Ensure-PnpmDeps .; pnpm run test:node }
             'clean'   { Remove-Item -Recurse -Force dist, out -ErrorAction SilentlyContinue }
         }
         Write-Ok "vscode-extension done."
@@ -98,9 +99,16 @@ function Build-Cli {
     Push-Location "$PSScriptRoot/cli"
     try {
         switch ($Target) {
-            'build'   { Ensure-NpmDeps .; npm run build }
-            'package' { Ensure-NpmDeps .; npm run build:production; & pwsh -NoProfile -File bundle-exe.ps1 -SkipBuild }
-            'test'    { Write-Host "    (no CLI tests yet)" }
+            'build'   { Ensure-PnpmDeps .; pnpm run build }
+            'package' { Ensure-PnpmDeps .; pnpm run build:production; & pwsh -NoProfile -File bundle-exe.ps1 -SkipBuild }
+            'test'    {
+                # test:unit imports the built library from dist/lib, so build first (same order as CI).
+                Ensure-PnpmDeps .
+                pnpm run build
+                if ($LASTEXITCODE -ne 0) { throw "CLI build failed" }
+                pnpm run test:unit
+                if ($LASTEXITCODE -ne 0) { throw "CLI tests failed" }
+            }
             'clean'   { Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue }
         }
         Write-Ok "cli done."
@@ -115,7 +123,7 @@ function Build-CliExe {
     Write-Step "cli: bundle-exe"
     Push-Location "$PSScriptRoot/cli"
     try {
-        Ensure-NpmDeps .
+        Ensure-PnpmDeps .
         & pwsh -NoProfile -File bundle-exe.ps1
         if ($LASTEXITCODE -ne 0) { throw "CLI exe bundling failed" }
         Write-Ok "cli exe bundled."
@@ -139,8 +147,8 @@ function Build-VisualStudio {
     Write-Step "vscode-extension: compile (for VS webview bundles)"
     Push-Location "$PSScriptRoot/vscode-extension"
     try {
-        Ensure-NpmDeps .
-        npm run compile
+        Ensure-PnpmDeps .
+        pnpm run compile
         if ($LASTEXITCODE -ne 0) { throw "vscode-extension compile failed" }
         Write-Ok "vscode-extension compiled."
     }
@@ -259,8 +267,8 @@ function Build-Jetbrains {
     Write-Step "vscode-extension: compile (for JetBrains webview bundles)"
     Push-Location "$PSScriptRoot/vscode-extension"
     try {
-        Ensure-NpmDeps .
-        npm run compile
+        Ensure-PnpmDeps .
+        pnpm run compile
         if ($LASTEXITCODE -ne 0) { throw "vscode-extension compile failed" }
     }
     finally { Pop-Location }
@@ -291,11 +299,11 @@ function Build-Sharing {
     Push-Location "$PSScriptRoot/sharing-server"
     try {
         switch ($Target) {
-            'build'   { Ensure-NpmDeps .; npm run build }
-            'package' { Ensure-NpmDeps .; npm run build:production }
+            'build'   { Ensure-PnpmDeps .; pnpm run build }
+            'package' { Ensure-PnpmDeps .; pnpm run build:production }
             'test'    {
-                Ensure-NpmDeps .
-                npm test
+                Ensure-PnpmDeps .
+                pnpm test
                 if ($LASTEXITCODE -ne 0) { throw "Sharing-server tests failed" }
             }
             'clean'   { Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue }
@@ -305,6 +313,54 @@ function Build-Sharing {
     finally { Pop-Location }
 }
 
+# ---------------------------------------------------------------------------
+# Desktop App
+# ---------------------------------------------------------------------------
+function Build-Desktop {
+    Write-Step "desktop: $Target"
+    if ($Target -ne 'clean') {
+        # The app copies the extension's webview bundles and imports the CLI's
+        # stats logic from source, so both siblings need their dependencies.
+        Ensure-PnpmDeps "$PSScriptRoot/vscode-extension"
+        Ensure-PnpmDeps "$PSScriptRoot/cli"
+    }
+    if ($Target -in 'build', 'package') {
+        # Rebuild the webview bundles the app copies. desktop/esbuild.js only
+        # builds them when they are missing, so without this a standalone
+        # desktop build would ship whatever stale bundles dist/webview holds.
+        # Production (minified) for 'package', matching desktop-publish.yml.
+        Write-Step "vscode-extension: webview bundles (for desktop)"
+        Push-Location "$PSScriptRoot/vscode-extension"
+        try {
+            if ($Target -eq 'package') { node esbuild.js --production } else { node esbuild.js }
+            if ($LASTEXITCODE -ne 0) { throw "vscode-extension webview build failed" }
+        }
+        finally { Pop-Location }
+    }
+    Push-Location "$PSScriptRoot/desktop"
+    try {
+        # $LASTEXITCODE is only meaningful right after a native command: 'clean'
+        # runs none, and under StrictMode an unset one would throw. So each pnpm
+        # target checks its own exit code.
+        $npmScript = switch ($Target) {
+            'build'   { 'build' }
+            'package' { 'dist' }
+            # No unit tests yet: type-check plus the checks that keep the app in
+            # step with the extension's views (message contract, theme tokens).
+            'test'    { 'check' }
+            default   { $null }
+        }
+        if ($npmScript) {
+            Ensure-PnpmDeps .
+            pnpm run $npmScript
+            if ($LASTEXITCODE -ne 0) { throw "Desktop target '$Target' failed (pnpm run $npmScript)" }
+        } else {
+            Remove-Item -Recurse -Force dist, release -ErrorAction SilentlyContinue
+        }
+        Write-Ok "desktop done."
+    }
+    finally { Pop-Location }
+}
 
 switch ($Project) {
     'all' {
@@ -313,12 +369,14 @@ switch ($Project) {
         Build-Sharing
         Build-VisualStudio
         Build-Jetbrains
+        Build-Desktop
     }
     'vscode'      { Build-VsCode }
     'cli'         { Build-Cli }
     'sharing'     { Build-Sharing }
     'visualstudio'{ Build-VisualStudio }
     'jetbrains'   { Build-Jetbrains }
+    'desktop'     { Build-Desktop }
 }
 
 Write-Host "`nBuild complete." -ForegroundColor Green

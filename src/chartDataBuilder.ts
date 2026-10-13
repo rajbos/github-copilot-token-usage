@@ -3,6 +3,7 @@ import { addModelUsage, COPILOT_EDITOR_NAMES } from './statsHelpers';
 import { mergeDailyModelEfficiency } from './modelEfficiency';
 import { getModelDisplayName, getCustomProviderGroup, getModelLookupCandidates } from './webview/shared/modelUtils';
 import { TASK_CATEGORIES, type TaskCategory } from './taskClassification';
+import { isUnsafeObjectKey } from './utils/protoGuard';
 
 // Re-exported for existing consumers; the set lives in statsHelpers so the
 // period accumulator can use it without a circular import.
@@ -118,7 +119,10 @@ function mergeUsageGroup(
 	src: Record<string, { tokens: number; sessions: number; linesAdded?: number; linesRemoved?: number }>
 ): void {
 	for (const [k, u] of Object.entries(src)) {
-		if (!target[k]) { target[k] = { tokens: 0, sessions: 0 }; }
+		// Keys are editor, repository and task names, and daily stats can come back from a
+		// JSON cache, where JSON.parse creates an own "__proto__" key — see protoGuard.ts.
+		if (isUnsafeObjectKey(k)) { continue; }
+		if (!Object.hasOwn(target, k) || !target[k]) { target[k] = { tokens: 0, sessions: 0 }; }
 		target[k].tokens += u.tokens;
 		target[k].sessions += u.sessions;
 		if (u.linesAdded !== undefined) { target[k].linesAdded = (target[k].linesAdded ?? 0) + u.linesAdded; }
@@ -130,7 +134,8 @@ function mergeLanguageUsage(target: DailyTokenStats, src: DailyTokenStats): void
 	if (!src.languageUsage) { return; }
 	if (!target.languageUsage) { target.languageUsage = {}; }
 	for (const [ext, usage] of Object.entries(src.languageUsage)) {
-		if (!target.languageUsage[ext]) { target.languageUsage[ext] = { linesAdded: 0, linesRemoved: 0 }; }
+		if (isUnsafeObjectKey(ext)) { continue; }
+		if (!Object.hasOwn(target.languageUsage, ext) || !target.languageUsage[ext]) { target.languageUsage[ext] = { linesAdded: 0, linesRemoved: 0 }; }
 		target.languageUsage[ext].linesAdded += usage.linesAdded;
 		target.languageUsage[ext].linesRemoved += usage.linesRemoved;
 	}
@@ -140,29 +145,36 @@ function mergeEditorModelUsage(target: DailyTokenStats, src: DailyTokenStats): v
 	if (!src.editorModelUsage) { return; }
 	if (!target.editorModelUsage) { target.editorModelUsage = {}; }
 	for (const [editor, modelUsage] of Object.entries(src.editorModelUsage)) {
-		if (!target.editorModelUsage[editor]) { target.editorModelUsage[editor] = {}; }
+		if (isUnsafeObjectKey(editor)) { continue; }
+		if (!Object.hasOwn(target.editorModelUsage, editor) || !target.editorModelUsage[editor]) { target.editorModelUsage[editor] = {}; }
 		addModelUsage(target.editorModelUsage[editor], modelUsage);
+	}
+}
+
+/** Adds per-category counters from `src` into `target`, skipping prototype keys. */
+function addCategoryCounts(target: Partial<Record<TaskCategory, number>>, src: Partial<Record<TaskCategory, number>>): void {
+	for (const [category, value] of Object.entries(src)) {
+		if (isUnsafeObjectKey(category)) { continue; }
+		const key = category as TaskCategory;
+		target[key] = ((Object.hasOwn(target, key) && target[key]) || 0) + (value ?? 0);
 	}
 }
 
 function mergeTaskCategoryUsage(target: DailyTokenStats, src: DailyTokenStats): void {
 	if (src.taskCategoryTokens) {
 		target.taskCategoryTokens = target.taskCategoryTokens ?? {};
-		for (const [category, value] of Object.entries(src.taskCategoryTokens)) {
-			target.taskCategoryTokens[category as TaskCategory] = (target.taskCategoryTokens[category as TaskCategory] || 0) + value;
-		}
+		addCategoryCounts(target.taskCategoryTokens, src.taskCategoryTokens);
 	}
 	if (src.taskCategorySessions) {
 		target.taskCategorySessions = target.taskCategorySessions ?? {};
-		for (const [category, value] of Object.entries(src.taskCategorySessions)) {
-			target.taskCategorySessions[category as TaskCategory] = (target.taskCategorySessions[category as TaskCategory] || 0) + value;
-		}
+		addCategoryCounts(target.taskCategorySessions, src.taskCategorySessions);
 	}
 	if (!src.taskCategoryModelUsage) { return; }
 	target.taskCategoryModelUsage = target.taskCategoryModelUsage ?? {};
 	for (const [category, usage] of Object.entries(src.taskCategoryModelUsage)) {
+		if (isUnsafeObjectKey(category)) { continue; }
 		const key = category as TaskCategory;
-		target.taskCategoryModelUsage[key] = target.taskCategoryModelUsage[key] ?? {};
+		target.taskCategoryModelUsage[key] = (Object.hasOwn(target.taskCategoryModelUsage, key) && target.taskCategoryModelUsage[key]) || {};
 		addModelUsage(target.taskCategoryModelUsage[key]!, usage);
 	}
 }
@@ -447,7 +459,7 @@ function aggregateBillingGroupModelUsage(entry: DailyTokenStats): Record<string,
 	for (const [editor, modelUsage] of Object.entries(editorModelUsage)) {
 		for (const [modelId, usage] of Object.entries(modelUsage)) {
 			const group = getBillingGroup(editor, modelId);
-			if (!result[group]) { result[group] = {}; }
+			if (!Object.hasOwn(result, group) || !result[group]) { result[group] = {}; }
 			addModelUsage(result[group], { [modelId]: usage });
 		}
 	}
@@ -674,14 +686,17 @@ function computeSummaryTotals(dailyBuckets: BucketEntry[], deps: ChartDataBuilde
 	const editorTotalsMap: Record<string, number> = {};
 	dailyBuckets.forEach(b => {
 		Object.entries(b.stats.editorUsage).forEach(([editor, usage]) => {
-			editorTotalsMap[editor] = (editorTotalsMap[editor] || 0) + usage.tokens;
+			if (isUnsafeObjectKey(editor)) { return; }
+			editorTotalsMap[editor] = ((Object.hasOwn(editorTotalsMap, editor) && editorTotalsMap[editor]) || 0) + usage.tokens;
 		});
 	});
 	const repositoryTotalsMap: Record<string, number> = {};
 	dailyBuckets.forEach(b => {
 		Object.entries(b.stats.repositoryUsage).filter(([repo]) => repo !== 'Unknown').forEach(([repo, usage]) => {
 			const displayName = deps.getRepoDisplayName(repo);
-			repositoryTotalsMap[displayName] = (repositoryTotalsMap[displayName] || 0) + usage.tokens;
+			// A display name is derived from the repository string (e.g. "host:__proto__").
+			if (isUnsafeObjectKey(displayName)) { return; }
+			repositoryTotalsMap[displayName] = ((Object.hasOwn(repositoryTotalsMap, displayName) && repositoryTotalsMap[displayName]) || 0) + usage.tokens;
 		});
 	});
 	return { editorTotalsMap, repositoryTotalsMap };

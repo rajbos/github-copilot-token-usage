@@ -19,19 +19,19 @@ Update it in the same PR as any change that adds or alters a trigger surface (se
 - Default: `DefaultAzureCredential` (Entra ID: whatever the `@azure/identity` chain finds,
   such as environment variables, `az login` or a managed identity).
 - Optional: an account key read from the `AZURE_STORAGE_KEY` environment variable
-  (`main`, line 461) and passed to `AzureNamedKeyCredential`. The old `--sharedKey`
+  (`main`, line 487) and passed to `AzureNamedKeyCredential`. The old `--sharedKey`
   argument is rejected, in both `--sharedKey <key>` and `--sharedKey=<key>` form, with an error that does not echo the value (line 74). The CI step
   in `.github/workflows/copilot-setup-steps.yml` maps `secrets.COPILOT_STORAGE_KEY` to that
   environment variable and no longer puts it on the command line.
 - The script itself never prints the key; stderr only says which auth mode is used (the
-  error handler does print `error.message` and the stack, lines 530-534).
+  error handler does print `error.message` and the stack, lines 548-552).
 
 ## Untrusted inputs parsed
 
 - Table entities returned by the storage account. Rows are written by every team member's
   client, so string fields (`model`, `workspaceName`, `machineName`, `userId`, ...) are
   attacker-influenceable text by anyone allowed to upload. They pass through
-  `normalizeEntity` / `sanitizeEntityString` (lines 235-281) before output.
+  `normalizeEntity` / `sanitizeEntityString` (lines 235-307) before output.
 - Command-line arguments (`--storageAccount`, `--tableName`, `--datasetId`, `--model`,
   `--workspaceId`, `--userId`, `--output`), which end up in the endpoint host, an OData
   filter and the output file path.
@@ -39,7 +39,7 @@ Update it in the same PR as any change that adds or alters a trigger surface (se
 ## What it writes and where
 
 - With `--output <path>`: that file only (parent directories created, new files created
-  with mode `0600`; `writeOutputFile`, lines 394-399). Nothing per-row goes to stdout.
+  with mode `0600`; `writeOutputFile`, lines 420-425). Nothing per-row goes to stdout.
 - Without `--output`: the result goes to stdout, for interactive use.
 - In both cases the result is also kept in `module.exports.tresult`.
 - The payload contains `userId`, `machineName`, `workspaceName` and `workspaceId` per row.
@@ -50,7 +50,7 @@ Update it in the same PR as any change that adds or alters a trigger surface (se
 
 - `load-table-data.js`: none.
 - `example-usage.js`: `node load-table-data.js ...` through `execFileSync` with an argument
-  array and no shell (line 65).
+  array and no shell (line 66).
 
 ## Mitigations in the code
 
@@ -73,14 +73,22 @@ Update it in the same PR as any change that adds or alters a trigger surface (se
   visible instead of hidden. Whitespace is then collapsed and the length
   capped at 256 characters (`sanitizeEntityString`). The source uses escapes only, so
   the ranges stay reviewable. `SKILL.md` tells agents to treat row values as data.
+- Non-string entity fields are validated by type in `normalizeEntity`: `schemaVersion`
+  must be a safe integer (otherwise omitted), token and interaction counts must be
+  non-negative safe integers (otherwise `0`), and `shareWithTeam` is kept only when it is
+  the boolean `true`. Text fields are not type-checked: they are coerced with `String()`
+  and then sanitized (an object becomes `"[object Object]"`), never passed through raw.
+- Totals (the loader's stderr summary and `example-usage.js`'s reports) are summed with
+  BigInt in `sumCounts` (lines 269-278), so many individually safe per-row counts cannot
+  overflow Number precision and produce an inexact total.
 - CSV cells that are strings starting with `=`, `+`, `-`, `@`, tab or CR are prefixed with
-  `'`; cells with commas, quotes or line breaks are quoted (`formatCsvCell`, lines 347-359).
+  `'`; cells with commas, quotes or line breaks are quoted (`formatCsvCell`, lines 373-385).
 - OData filter values are rejected if they contain `and`/`or`/`not` or newlines and have
   single quotes doubled; partition keys go through `sanitizeTableKey`.
 - Dates must match `YYYY-MM-DD`; `--format` is restricted to `json`/`csv`.
 - `example-usage.js` applies the same account-name pattern and ISO dates before they reach
-  a subprocess (lines 40-49), and uses `mkdtemp`.
-- `copilot-setup-steps.yml` installs the dependencies with `npm ci --ignore-scripts --production`.
+  a subprocess (lines 41-50), and uses `mkdtemp`.
+- `copilot-setup-steps.yml` installs the dependencies with `pnpm install --frozen-lockfile --ignore-scripts --prod`.
 - `load-table-data.test.js` covers the validation and output hardening above and runs in
   `validate-skills.yml`.
 

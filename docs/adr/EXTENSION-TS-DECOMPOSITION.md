@@ -1,5 +1,9 @@
 # extension.ts Decomposition Plan
 
+> **Status:** Proposed (plan only; nothing in this document has been executed) · **Added:** 2026-09-12 · **Verified against code on:** 2026-10-11
+>
+> The "Verified numbers" below were measured on 2026-09-12. `vscode-extension/src/extension.ts` has since grown to ~15,990 lines (it was 12,332), so the per-cluster method and line counts are out of date. Re-measure before using them to size a PR: `wc -l vscode-extension/src/extension.ts`.
+
 ## Problem Statement
 
 `vscode-extension/src/extension.ts` has grown into a single god-object file that

@@ -2,6 +2,17 @@
 
 This directory contains the TypeScript sources and JSON configuration files shared between the VS Code extension (`vscode-extension/`) and the CLI npm package (`cli/`).
 
+## Boundary rules (enforced)
+
+`src/` is the editor-neutral core shared by the VS Code extension, the CLI and the desktop app.
+
+1. **No `vscode` imports in `src/`.** Host services (extension lookup, settings, app name, ...) are passed in through `deps` objects instead, e.g. `SessionDiscoveryDeps` (`getExtensionStatus`, `getConfiguredSampleDataDirectory`) and `WindsurfHost`. The VS Code implementations live in `vscode-extension/src/srcHostAdapters.ts`.
+2. **`src/` never imports from its consumers** — nothing from `vscode-extension/`, `cli/` or `desktop/`. If a consumer owns code that `src/` or another consumer needs, move it into `src/` (as was done for `loadingHtml.ts`, `editorIcons.ts` and `toolFamilies.ts`).
+3. **Both rules are ESLint errors.** The root `eslint.config.mjs` (the config ESLint resolves for `src/**`) sets `no-restricted-imports` with `paths: ['vscode']` and `patterns: ['**/vscode-extension/**', '**/cli/**', '**/desktop/**']` for `src/**/*.ts`; it runs with `pnpm run lint` in `vscode-extension/`. The CLI and desktop bundles do not alias `vscode` any more, so a stray import also breaks their builds.
+4. **Tests for shared modules live in `src/test/`** and need no VS Code harness: run them from `vscode-extension/` with `pnpm run test:src`. They also run as part of `test:node`, `test:coverage` and CI through `vscode-extension/test/unit/sharedSrcTests.test.ts`. A test that needs the extension (imports from `vscode-extension/` or the `vscode` shim) stays in `vscode-extension/test/unit/`. `src/test` is outside the lint scope but inside the code-duplication gate.
+
+Background/proposal only (not applied): [docs/adr/SHARED-SRC-API-BOUNDARY.md](../docs/adr/SHARED-SRC-API-BOUNDARY.md) analyses a consumer-facing `src/index.ts` barrel and a deep-import lint rule; the rules above are what is actually enforced today.
+
 > Note: `copilotPlans.json` is only used by the VS Code extension and lives in `vscode-extension/src/copilotPlans.json`; it is documented here alongside the other data files.
 
 ## copilotPlans.json

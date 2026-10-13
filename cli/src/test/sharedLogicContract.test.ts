@@ -22,13 +22,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { calculateEstimatedCost, estimateTokensFromJsonlSession } from '../../../src/tokenEstimation';
-import type { ModelUsage } from '../../../src/types';
+import type { ChartDataPayload, DailyTokenStats, ModelUsage } from '../../../src/types';
+import { buildChartData } from '../../../src/chartDataBuilder';
+import { addSessionToDailyStats, sortedDailyStats } from '../../../src/statsHelpers';
+import { getRepoDisplayName } from '../../../src/workspaceHelpers';
 import { getModelUsageFromSession } from '../../../src/usageAnalysis';
 import tokenEstimatorsData from '../../../src/tokenEstimators.json';
 import modelPricingData from '../../../src/modelPricing.json';
 
-import { calculateDailyStats, calculateUsageAnalysisStats, processSessionFile } from '../helpers';
-import { aggregateIntoPeriod, buildChartPayload, createEmptyPeriodStats, type DailyEntry } from '../analysis';
+import { calculateDailyStats, calculateEfficiencySessionInputs, calculateUsageAnalysisStats, processSessionFile, processSessionFileForViews } from '../helpers';
+import { aggregateIntoPeriod, buildChartPayload, buildEfficiencyPayload, createEmptyChartPayload, createEmptyPeriodStats } from '../analysis';
 import { disableCache } from '../cliCache';
 
 const tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
@@ -229,14 +232,27 @@ interface CostPeriod {
 	billingGroupCostDatasets: Array<{ label: string; data: number[] }>;
 }
 
+function localDayKey(d: Date): string {
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** A single day in the `DailyTokenStats` shape the shared chart builder takes. */
+function dayStats(date: string, editor: string, usage: ModelUsage, tokens: number): DailyTokenStats {
+	return {
+		date, tokens, sessions: 1, interactions: 1, modelUsage: usage,
+		editorUsage: { [editor]: { tokens, sessions: 1 } },
+		repositoryUsage: { Unknown: { tokens, sessions: 1 } },
+		editorModelUsage: { [editor]: usage },
+	};
+}
+
 test('CLI daily, history, weekly, monthly and billing aggregates retain Auto discounts', async t => {
-	const { labels, days, allDaysMap } = await calculateDailyStats([mockAutoSession(t, 'jsonl')]);
-	assert.equal(allDaysMap.size, 2);
-	const populatedDays = days.filter(day => day.sessions > 0);
-	assert.equal(populatedDays.length, 2);
-	for (const entry of [...populatedDays, ...allDaysMap.values()]) {
+	const days = await calculateDailyStats([mockAutoSession(t, 'jsonl')]);
+	assert.equal(days.length, 2);
+	assert.deepEqual(days.map(d => d.date), [...days.map(d => d.date)].sort(), 'days must be oldest first');
+	for (const entry of days) {
 		assert.deepEqual(entry.modelUsage[AUTO_MODEL], {
-			inputTokens: 2000, outputTokens: 400, sessions: 0,
+			inputTokens: 2000, outputTokens: 400, sessions: 1,
 			autoRouting: { inputTokens: 500, outputTokens: 100 },
 		});
 		assert.deepEqual(entry.editorModelUsage?.['VS Code'], entry.modelUsage);
@@ -244,9 +260,9 @@ test('CLI daily, history, weekly, monthly and billing aggregates retain Auto dis
 		assertAutoDiscount(entry.modelUsage);
 	}
 	const originalDays = structuredClone(days);
-	const payload = buildChartPayload(labels, days, allDaysMap) as { periods: Record<string, CostPeriod> };
-	const expectedCost = populatedDays.reduce((sum, day) => sum + calculateEstimatedCost(day.modelUsage, modelPricing, 'copilot'), 0);
-	for (const period of Object.values(payload.periods)) {
+	const payload = buildChartPayload(days);
+	const expectedCost = days.reduce((sum, day) => sum + calculateEstimatedCost(day.modelUsage, modelPricing, 'copilot'), 0);
+	for (const period of Object.values(payload.periods) as unknown as CostPeriod[]) {
 		assert.ok(Math.abs(period.totalCost - expectedCost) < 1e-12);
 		assert.equal(period.totalSessions, 2);
 		assert.equal(period.editorCostDatasets.length, 1);
@@ -256,39 +272,141 @@ test('CLI daily, history, weekly, monthly and billing aggregates retain Auto dis
 		assert.equal(period.billingGroupCostDatasets[0].label, 'GitHub Copilot');
 		assert.ok(Math.abs(period.billingGroupCostDatasets[0].data.reduce((sum, cost) => sum + cost, 0) - expectedCost) < 1e-12);
 	}
-	assert.deepEqual(days, originalDays);
+	assert.deepEqual(days, originalDays, 'building the payload must not mutate its input');
 });
 
-test('CLI chart payload carries sortable period keys for every period', () => {
-	// The chart webview filters each period by time window on `periodKeys` and throws
-	// on load without them, which left the desktop app's Chart view blank.
-	const now = new Date();
-	const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-	const entry: DailyEntry = { tokens: 10, sessions: 1, modelUsage: {}, editorUsage: {} };
-	const payload = buildChartPayload([key], [entry]) as unknown as { periods: Record<string, { labels: string[]; periodKeys: string[] }> };
-	for (const period of Object.values(payload.periods)) {
+test('CLI chart payload is exactly the shared buildChartData() payload for the same days', () => {
+	// The CLI used to keep its own builder, which drifted from the extension's more than once
+	// (#2304: missing periodKeys blanked the desktop Chart view). It must now only supply host
+	// dependencies, so for the same input days the two payloads are identical.
+	const now = new Date(2026, 4, 20, 12);
+	const usage: ModelUsage = { 'gpt-4o': { inputTokens: 900, outputTokens: 100, sessions: 1 } };
+	const days: DailyTokenStats[] = [
+		{
+			...dayStats('2026-03-02', 'VS Code', usage, 1000),
+			repositoryUsage: { 'https://github.com/o/r': { tokens: 1000, sessions: 1, linesAdded: 5, linesRemoved: 1 } },
+			linesAdded: 5, linesRemoved: 1, languageUsage: { ts: { linesAdded: 5, linesRemoved: 1 } },
+		},
+		dayStats('2026-05-19', 'Claude Code', { 'claude-sonnet-4.5': { inputTokens: 400, outputTokens: 50, sessions: 1 } }, 450),
+	];
+	const extensionPayload = buildChartData(days, {
+		getRepoDisplayName,
+		calculateEstimatedCost: (mu, source) => calculateEstimatedCost(mu, modelPricing, source),
+		backendConfigured: false,
+		compactNumbers: false,
+		now,
+	});
+	assert.deepEqual(buildChartPayload(days, { now }), extensionPayload);
+});
+
+/** Top-level and per-period fields the chart webview reads (vscode-extension/src/webview/chart/main.ts). */
+const CHART_PAYLOAD_KEYS = [
+	'labels', 'tokensData', 'sessionsData', 'modelDatasets', 'editorDatasets', 'repositoryDatasets',
+	'editorTotalsMap', 'repositoryTotalsMap', 'dailyCount', 'totalTokens', 'avgTokensPerDay',
+	'totalSessions', 'lastUpdated', 'backendConfigured', 'compactNumbers', 'periods', 'hasLocData',
+];
+const CHART_PERIOD_KEYS = [
+	'labels', 'periodKeys', 'tokensData', 'sessionsData', 'modelDatasets', 'editorDatasets',
+	'repositoryDatasets', 'periodCount', 'totalTokens', 'totalSessions', 'avgPerPeriod', 'costData',
+	'totalCost', 'avgCostPerPeriod', 'locData', 'linesAddedData', 'linesRemovedData', 'languageDatasets',
+	'locEditorDatasets', 'locRepositoryDatasets', 'editorCostDatasets', 'billingGroupCostDatasets',
+	'modelCostDatasets', 'modelSessionsDatasets', 'editorSessionsDatasets', 'providerSessionsDatasets',
+	'providerTokensDatasets', 'taskCategoryDatasets', 'taskCategoryTokenDatasets',
+	'taskCategorySessionDatasets', 'taskCategoryCostDatasets',
+];
+
+function assertChartPayloadShape(payload: ChartDataPayload): void {
+	for (const key of CHART_PAYLOAD_KEYS) {
+		assert.ok(key in payload, `chart payload is missing "${key}"`);
+	}
+	for (const name of ['day', 'week', 'month'] as const) {
+		const period = payload.periods[name];
+		for (const key of CHART_PERIOD_KEYS) {
+			assert.ok(key in period, `chart period "${name}" is missing "${key}"`);
+		}
+		// The chart webview filters each period by time window on `periodKeys` and throws
+		// on load without them, which left the desktop app's Chart view blank (#2304).
 		assert.equal(period.periodKeys.length, period.labels.length);
 		assert.deepEqual(period.periodKeys, [...period.periodKeys].sort());
+		assert.equal(period.tokensData.length, period.labels.length);
+		assert.equal(period.costData.length, period.labels.length);
 	}
-	assert.deepEqual(payload.periods.day.periodKeys, [key]);
+}
+
+test('CLI chart payload carries every field the chart webview reads, including periodKeys', () => {
+	const key = localDayKey(new Date());
+	const payload = buildChartPayload([dayStats(key, 'VS Code', {}, 10)]);
+	assertChartPayloadShape(payload);
+	assert.equal(payload.periods.day.periodKeys.at(-1), key);
 	assert.match(payload.periods.week.periodKeys[0], /^\d{4}-\d{2}-\d{2}$/);
 	assert.equal(payload.periods.month.periodKeys.at(-1), key.slice(0, 7));
 });
 
+test('CLI empty chart payload has the same shape as a populated one', () => {
+	// The zero-state payload used to be a hand-written object without `periods`, so the
+	// webview's period filter had nothing to read when no sessions were found.
+	const payload = createEmptyChartPayload(new Date(2026, 4, 20, 12));
+	assertChartPayloadShape(payload);
+	assert.equal(payload.totalTokens, 0);
+	assert.equal(payload.periods.day.periodCount, 31);
+	assert.equal(payload.periods.week.periodCount, 6);
+	assert.equal(payload.periods.month.periodCount, 12);
+});
+
+test('CLI daily stats carry task category and lines of code into the chart payload', async t => {
+	// The CLI builder used to emit no task / language / lines-of-code data at all, so
+	// "By Task" and "By Language" were empty outside the extension (#2316).
+	const dailyStatsMap = new Map<string, DailyTokenStats>();
+	const today = localDayKey(new Date());
+	addSessionToDailyStats(dailyStatsMap, {
+		editorType: 'Claude Code',
+		tokens: 1000,
+		interactions: 4,
+		modelUsage: { 'claude-sonnet-4.5': { inputTokens: 900, outputTokens: 100, sessions: 0 } },
+		dailyFractions: { [today]: 1 },
+		taskCategory: 'Testing',
+		linesAdded: 12,
+		linesRemoved: 3,
+		languageUsage: { ts: { linesAdded: 12, linesRemoved: 3 } },
+	});
+	const payload = buildChartPayload(sortedDailyStats(dailyStatsMap));
+	const day = payload.periods.day;
+	assert.equal(payload.hasLocData, true);
+	assert.equal(day.totalLinesAdded, 12);
+	assert.equal(day.totalLinesRemoved, 3);
+	assert.deepEqual((day.languageDatasets as Array<{ label: string }>).map(d => d.label), ['ts']);
+	const taskTokens = day.taskCategoryTokenDatasets as Array<{ label: string; data: number[] }>;
+	const testing = taskTokens.find(d => d.label === 'Testing');
+	assert.ok(testing, 'the session task category must reach the "By Task" datasets');
+	assert.equal(testing.data.reduce((a, b) => a + b, 0), 1000);
+});
+
+test('CLI view parse attributes a task category; the base parse stays lean', async t => {
+	// The usage-analysis pass behind these attributes is only for the Chart and Efficiency
+	// payloads, so token-only commands must not pay for it on every cold session.
+	const lean = await processSessionFile(mockAutoSession(t, 'jsonl'));
+	assert.ok(lean);
+	assert.equal(lean.taskCategory, undefined, 'processSessionFile must not run the usage analysis');
+	assert.equal(lean.viewAttributesResolved, undefined);
+	t.mock.restoreAll();
+	const data = await processSessionFileForViews(mockAutoSession(t, 'jsonl'));
+	assert.ok(data?.taskCategory, 'processSessionFileForViews must attribute a task category');
+	assert.equal(data.viewAttributesResolved, true);
+	t.mock.restoreAll();
+	const days = await calculateDailyStats([mockAutoSession(t, 'jsonl')]);
+	assert.equal(days.length, 2);
+	for (const day of days) {
+		assert.ok(Object.keys(day.taskCategoryTokens ?? {}).length > 0, `day ${day.date} has no task-category tokens`);
+	}
+});
+
 test('CLI groups GLM sessions under Z.ai, matching the shared billing helper', () => {
 	// The CLI used to keep its own copy of chartDataBuilder's provider-prefix table, which
-	// never gained `glm` — so a Mistral Vibe session routed to GLM billed to "Other" here
+	// never gained `glm`, so a Mistral Vibe session routed to GLM billed to "Other" here
 	// while the extension showed Z.ai. Guards against that copy reappearing.
 	const usage: ModelUsage = { 'glm-5-2': { inputTokens: 4000, outputTokens: 800, sessions: 0 } };
-	const entry: DailyEntry = {
-		tokens: 4800, sessions: 1, modelUsage: usage,
-		editorUsage: { 'Mistral Vibe': { tokens: 4800, sessions: 1 } },
-		editorModelUsage: { 'Mistral Vibe': usage },
-	};
-	const today = new Date();
-	const key = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-	const payload = buildChartPayload([key], [entry]) as { periods: Record<string, CostPeriod> };
-	for (const period of Object.values(payload.periods)) {
+	const payload = buildChartPayload([dayStats(localDayKey(new Date()), 'Mistral Vibe', usage, 4800)]);
+	for (const period of Object.values(payload.periods) as unknown as CostPeriod[]) {
 		assert.equal(period.billingGroupCostDatasets[0].label, 'Z.ai', 'GLM must not fall into the "Other" bucket');
 		assert.ok(
 			period.billingGroupCostDatasets[0].data.reduce((sum, cost) => sum + cost, 0) > 0,
@@ -301,19 +419,52 @@ test('CLI provider editor and billing costs remain undiscounted with Auto metada
 	const usage: ModelUsage = {
 		[AUTO_MODEL]: { inputTokens: 4000, outputTokens: 800, sessions: 0, autoRouting: { inputTokens: 1000, outputTokens: 200 } },
 	};
-	const entry: DailyEntry = {
-		tokens: 4800, sessions: 1, modelUsage: usage,
-		editorUsage: { 'Claude Code': { tokens: 4800, sessions: 1 } },
-		editorModelUsage: { 'Claude Code': usage },
-	};
-	const today = new Date();
-	const key = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-	const payload = buildChartPayload([key], [entry]) as { periods: Record<string, CostPeriod> };
+	const payload = buildChartPayload([dayStats(localDayKey(new Date()), 'Claude Code', usage, 4800)]);
 	const expectedCost = calculateEstimatedCost({ [AUTO_MODEL]: { inputTokens: 4000, outputTokens: 800, sessions: 0 } }, modelPricing, 'provider');
-	for (const period of Object.values(payload.periods)) {
+	for (const period of Object.values(payload.periods) as unknown as CostPeriod[]) {
 		assert.equal(period.editorCostDatasets[0].label, 'Claude Code');
 		assert.equal(period.editorCostDatasets[0].data.reduce((sum, cost) => sum + cost, 0), expectedCost);
 		assert.equal(period.billingGroupCostDatasets[0].label, 'Anthropic');
 		assert.equal(period.billingGroupCostDatasets[0].data.reduce((sum, cost) => sum + cost, 0), expectedCost);
 	}
+});
+
+/** Fields the Efficiency webview reads from `window.__INITIAL_EFFICIENCY__` (EfficiencyViewData). */
+const EFFICIENCY_PAYLOAD_KEYS = [
+	'weekly', 'hasLoc', 'hasDuration', 'hasRetry', 'hasApply', 'attribution', 'attributionWindows',
+	'deltas', 'deltaWindows', 'value', 'skillTrends', 'skillImpact', 'hasSkills', 'modelDaily',
+	'hasModelComparison', 'dailyVolume', 'sessionSamples', 'editors', 'behaviorWindowDays',
+	'cacheBreakage', 'lastUpdated', 'backendConfigured', 'compactNumbers', 'isDebugMode',
+];
+
+test('CLI efficiency payload comes from the shared builder with the fields the webview reads', async t => {
+	// The Efficiency view used to be assembled only inside the extension class, so the
+	// desktop app could not show it at all (#2316). The CLI now gathers the same inputs.
+	const file = mockAutoSession(t, 'jsonl');
+	const [dailyStats, usage, sessionInputs] = await Promise.all([
+		calculateDailyStats([file]),
+		calculateUsageAnalysisStats([file]),
+		calculateEfficiencySessionInputs([file]),
+	]);
+	assert.equal(sessionInputs.length, 1);
+	assert.equal(sessionInputs[0].editor, 'VS Code');
+	assert.equal(sessionInputs[0].interactions, 2);
+	assert.equal(sessionInputs[0].dayKey, localDayKey(new Date()), 'a session is dated by its last active day');
+
+	const payload = buildEfficiencyPayload({ dailyStats, usage, sessionInputs });
+	for (const key of EFFICIENCY_PAYLOAD_KEYS) {
+		assert.ok(key in payload, `efficiency payload is missing "${key}"`);
+	}
+	assert.deepEqual(payload.sessionSamples, sessionInputs);
+	assert.deepEqual(payload.editors, ['VS Code']);
+	assert.equal(payload.backendConfigured, false);
+	assert.equal(payload.compactNumbers, false);
+	assert.equal(payload.behaviorWindowDays, 12 * 7);
+	assert.match(payload.attributionWindows.curRange, /^[A-Z][a-z]{2} \d{1,2}, \d{4}–[A-Z][a-z]{2} \d{1,2}, \d{4}$/);
+	// No PR data in the CLI: the Value tab must get its "never loaded" nulls, not zeroes.
+	assert.equal(payload.value.userPrs, null);
+	const volumeTokens = (payload.dailyVolume ?? []).reduce((sum, d) => sum + d.tokens, 0);
+	assert.equal(volumeTokens, dailyStats.reduce((sum, d) => sum + d.tokens, 0));
+	// Per-model counters reach the Models tab through the shared daily accumulation.
+	assert.ok(dailyStats.some(d => d.modelEfficiency && Object.keys(d.modelEfficiency).length > 0));
 });

@@ -60,7 +60,7 @@ this is meant to prevent.
 | Check | Command | Catches |
 |---|---|---|
 | `types` | `npm run check-types` | type errors |
-| `lint` | `npm run lint` | lint errors |
+| `lint` | `pnpm run lint` | lint errors, and ESLint warnings growing past `lint-baseline.json` |
 | `json` | `npm run lint:json` | malformed data files |
 | `l10n` | `npm run lint:l10n` | localization keys out of sync |
 | `compile` | `npm run compile` | build failures |
@@ -112,8 +112,8 @@ comparison, and the keys of a `Record<string, Handler>` map (whether that map is
 a typed variable or returned from a method like `_getAnalysisMessageHandlers`).
 
 The *handled* side is additionally widened by a plain-text scan, which reaches
-handlers living inside inline `<script>` template literals (`loadingHtml.ts`,
-`backend/configPanel.ts`) that the AST sees as one opaque string. Widening the
+handlers living inside inline `<script>` template literals (the repo-root `src/loadingHtml.ts`,
+`vscode-extension/src/backend/configPanel.ts`) that the AST sees as one opaque string. Widening the
 handled set can only ever hide a finding, never invent one. That asymmetry is
 deliberate: a checker that cries wolf gets switched off, so precision on
 findings is worth more than exhaustiveness.
@@ -232,6 +232,8 @@ rule out machine load.
 |---|---|
 | `build` | types, lint, json, l10n, compile, **contract**, unit tests |
 | `ui-checks` (PRs only) | **interaction smoke**, **visual view diff vs the merge base** |
+| `ui-checks-comment.yml` (`workflow_run`, same-repo PRs) | posts the screenshots as a PR comment (holds `GH_PAT`; runs from the default branch) |
+| `desktop-build` (`desktop-build.yml`) | desktop type-check, **desktop message contract**, **webview page shell**, production build, build-output check; host view sync (informational) |
 | `validate-skills` / `security-classification` | **every skill that ships scripts has a `SECURITY.md` or an exempt/pending entry** (`node scripts/validate-skill-security.js`, over all skills) |
 
 `ui-checks` renders every view in its initial state and in each tab/mode it
@@ -251,9 +253,21 @@ Two things to know about that comment:
   installation token is refused. The job uses the repository's `GH_PAT` secret
   for the upload, so the comment is authored by that user. Without the secret
   the comment still posts, minus the inline images, linking to the artifact.
-  On a `pull_request` run the workflow file and the publisher script both come
-  from the PR head, so any same-repository contributor can already change what
-  runs next to that secret — the same trust the risk-review workflow extends.
+  The secret is deliberately kept away from PR code. `ui-checks` compiles,
+  clicks and renders with read-only permissions and no secrets, then uploads
+  `webview-screenshots`. A separate `workflow_run` workflow,
+  `ui-checks-comment.yml`, holds `GH_PAT`. For a same-repository `pull_request`
+  GitHub runs the workflow definition from the PR, so a secret-holding job
+  inside `ci.yml` could be edited by the PR author; a `workflow_run` workflow
+  always runs from the default branch, so it cannot. It checks out the default
+  branch, takes the PR number, base commit and run URL from the triggering
+  event, downloads the artifact and treats it as untrusted data (never executed,
+  never interpolated into a shell command; the renderer allowlists every field
+  and each image is checked for type, size and PNG signature before it is
+  attached). Consequences: a change to that workflow or to the publisher script
+  only takes effect once merged, the comment appears after CI finishes, and a
+  failure to post fails that workflow rather than the required "CI result"
+  check.
   Keep `GH_PAT` narrow, but not narrower than the upload: attaching files
   [needs push access](https://docs.github.com/en/github-cli/github-cli/attaching-files-with-github-cli),
   so a fine-grained token limited to this repository needs *Contents: write*
@@ -274,8 +288,8 @@ Two things to know about that comment:
   were due and a configured `GH_PAT` could not deliver them (rejected token,
   failed upload): the comment is still posted without images, then the step
   exits non-zero so an expired or under-scoped token is a red check instead of
-  a silent gap. Only an unset `GH_PAT` stays a notice. Dependabot runs skip the
-  step entirely (no secrets and a read-only `GITHUB_TOKEN`, so not even the
+  a silent gap. Only an unset `GH_PAT` stays a notice, and so does a GitHub API rate limit (the upload is retried once, then the comment is posted without images and a warning is raised). Dependabot runs skip the
+  workflow entirely (no secrets and a read-only `GITHUB_TOKEN`, so not even the
   image-free comment can post); their screenshots stay in the artifact.
 - Fork PRs get a read-only token and no secrets, so they only get the artifact.
 - Only a comment authored by one of the workflow's own identities (the Actions
@@ -297,6 +311,72 @@ Two things to know about that comment:
 - **A dead control that is already the selected option** is reported as
   `noop-selected`, not as a finding. That is the trade for not carrying three
   standing false positives on the chart view's segmented controls.
+
+## Desktop app
+
+The desktop app (`desktop/`) renders the extension's webview bundles in Electron
+with its own host code in `desktop/src/main.ts`. Nothing about that wiring fails
+to compile when it drifts, so three checks compare the desktop app with the
+extension it borrows from. From `desktop/`:
+
+```bash
+pnpm run check           # check-types + check:contract + check:shell
+pnpm run check:views     # which extension views the desktop does not ship (report)
+```
+
+or from the repo root, `./build.ps1 -Project desktop -Target test`.
+
+- **`check:contract`** (`scripts/validate-desktop-contract.js`) — for every view
+  in `WEBVIEW_BUNDLES` (`desktop/esbuild.js`) it follows the view's imports from
+  `vscode-extension/src/webview/<view>/main.ts`, collects every `command` the view
+  can post, and requires each one to be handled in `registerIpcHandlers` (a branch
+  that does nothing, such as a bare `case 'x': break;`, does not count) or listed
+  in `desktop/src/unsupportedWebviewCommands.json` as `hidden` (with the CSS
+  selectors that hide its controls — `main.ts` builds its hidden-controls CSS from
+  this list), `gap` (still visible and dead; recorded, not decided) or `no-op`
+  (background notices such as telemetry or preferences). A new button in a shared
+  view therefore fails the desktop check until someone decides what the desktop
+  does with it. Commands whose name is computed at runtime are covered too: a
+  `{ command: x }` with `x` read from a `data-*` attribute is resolved from the
+  view's markup (scoped to the class the click handler is attached through), and
+  a parameter typed as a union of string literals resolves to those literals. A
+  computed name that resolves to neither fails unless it is listed under
+  `unresolvedComputedCommands` with a reason. Message objects built by a helper
+  and forwarded (`postMessage(msg)` with `msg` returned by a function in the
+  view) are traced to the helper's returned literals, and a relay lambda passed
+  to a helper whose parameter is named `postMessage` is followed into it.
+  `hidden` is checked per control, not per command: for every place a hidden
+  command is posted, the check works out which control the click handler is
+  attached to (`getElementById` / `querySelector(All)` / an `if` on `.id` or
+  `classList`, following helpers to their callers) and fails if that control is
+  not in the entry's `hiddenBy`, so a new button posting an already-hidden
+  command cannot ship visible and dead. A site whose control cannot be
+  determined fails unless listed under the entry's `unresolvedControlSites`. Stale entries fail too: a command that is now handled or no longer
+  posted, or a hidden selector whose id/class is gone from the views. A hidden
+  selector must also be specific to its command: one whose id/class appears in
+  another view that does not post that command fails, because the desktop CSS
+  applies to every panel and would hide that view's controls too.
+- **`check:shell`** (`scripts/validate-webview-shell.js`) — every `--vscode-*`
+  token used under `vscode-extension/src/webview/` and `src/webview/` must be
+  defined in the visual-view-diff harness's `lib/theme-dark.css` and
+  `lib/theme-light.css`, and every used colour token also in the high-contrast
+  overlays `lib/theme-hc.css` / `lib/theme-hc-light.css` (the desktop app does
+  not load those, but the visual diff renders with them, and a missing colour
+  falls back to the Modern value). The desktop app inlines the two base files rather than
+  keeping its own copy, and the check fails if `main.ts` starts defining tokens
+  itself. It also checks the codicon stylesheet and font are copied and linked.
+- **`check:views`** — the `sync-host-views` skill, which reports extension views
+  the desktop (like Visual Studio and JetBrains) does not ship, and desktop views
+  that are bundled but not in `PANEL_MENU` or the other way round.
+
+The contract and shell checks also run as unit tests in the extension suite
+(`vscode-extension/test/unit/desktopSyncChecks.test.ts`), so an extension change
+that would break the desktop fails there too.
+
+Not covered yet: rendering each desktop view headlessly from the desktop's own
+payload builders (the check that would have caught the blank Chart and
+Diagnostics views). It needs the panel-building code moved out of the
+Electron-only `main.ts`, which waits on the shared payload builder work.
 
 ## VS Code extension release provenance
 
@@ -369,3 +449,12 @@ private/no-store caching, and the contract's UTC-window, activity, ties, quartil
 and no-peer edge cases. New exports and downstream route overrides need the same
 checks. A chart screenshot or a helper-only unit test cannot establish separation.
 All automated verification is non-interactive; never launch a GUI editor/IDE.
+
+## ESLint ratchet
+
+`pnpm run lint` (in `vscode-extension/`) runs `scripts/check-lint-baseline.mjs`, which runs ESLint over `src` and `../src`:
+
+- `@typescript-eslint` recommended (non type-aware) is enabled. Rules with legacy violations (`no-unused-vars`, `no-require-imports`, ...) stay `warn`; the rest are `error`.
+- `no-explicit-any` is `error` everywhere except files listed in `lint-baseline.json` (legacy, `warn`), `cli/` and tests (off). New files cannot introduce `any`.
+- `max-lines` (6000) is `error`; `extension.ts` is pinned at its current size in `eslint.config.mjs` (`oversizedFiles`). Lower that number as it shrinks; never raise it.
+- Warnings are counted per rule and per file against `lint-baseline.json`. A count may shrink, never grow, and a new rule/file pair fails. After paying warnings down run `pnpm run lint:baseline:update` and commit the baseline so the ratchet tightens.
