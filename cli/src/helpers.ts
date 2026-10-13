@@ -12,7 +12,7 @@ import { findRepositoryRemoteForFolder, resolveExactWorkspacePath } from '../../
 import { resolveFileUri } from '../../src/workspacePathResolver';
 import { calculateEstimatedCost } from '../../src/tokenEstimation';
 import { toLocalDayKey } from '../../src/utils/dayKeys';
-import type { DailyTokenStats, DetailedStats, SessionUsageAnalysis, UsageAnalysisStats, WorkspaceCustomizationMatrix, WorkspaceCustomizationRow, TodaySessionSummary } from '../../src/types';
+import type { CustomizationFileEntry, DailyTokenStats, DetailedStats, SessionUsageAnalysis, UsageAnalysisStats, WorkspaceCustomizationMatrix, TodaySessionSummary } from '../../src/types';
 import { analyzeSessionUsage, mergeUsageAnalysis } from '../../src/usageAnalysis';
 import { activeSessionDays, addSessionToDailyStats, sortedDailyStats, sessionLocFromUsageAnalysis } from '../../src/statsHelpers';
 import { resolveSessionTaskAttribution } from '../../src/taskClassification';
@@ -23,7 +23,8 @@ import type { EfficiencySessionInput } from '../../src/efficiencyAnalysis';
 import { calculateEnvironmentalImpact } from '../../src/environmentalImpact';
 import { withErrorRecovery, withErrorRecoverySync } from '../../src/utils/errors';
 import { buildRecentSessionBuckets, type RecentSessionBucketItem } from '../../src/recentSessions';
-import { groupWorkspaces, groupFolders, detectArtefactWorkspaceNames, type WorkspaceGroupingProbes, type WorkspaceUsageEntry } from '../../src/workspaceGrouping';
+import { groupWorkspaces, groupFolders, type WorkspaceGroup, type WorkspaceGroupingProbes, type WorkspaceUsageEntry } from '../../src/workspaceGrouping';
+import { buildWorkspaceCustomization, type WorkspaceCustomization } from '../../src/customizationMatrix';
 import { prefetchWorkspaceGroupingProbes } from '../../src/workspaceGroupingProbes';
 import { getTimeWindowStartDate } from '../../src/timeWindows';
 import { buildRepeatedTaskReport, type RepeatedTaskSessionSource } from '../../src/repeatedTasks';
@@ -208,8 +209,28 @@ async function resolveSessionWorkspacePath(sessionFile: string, claudeBasePath: 
 	return resolveFileUri(folderUri) || undefined;
 }
 
+/** The CLI's customization files for one folder: the instruction files that exist in it. */
+function instructionFilesIn(folder: string): CustomizationFileEntry[] {
+	return withErrorRecoverySync(
+		// Same case-insensitive resolution as the shared customization scanner, so the CLI
+		// accepts every spelling the extension does (including on case-sensitive filesystems).
+		() => INSTRUCTION_PATHS.flatMap(rel => {
+			const found = resolveExactWorkspacePath(folder, rel, true);
+			return found === undefined ? [] : [{
+				path: found, relativePath: rel, type: CLI_INSTRUCTIONS_TYPE.id, icon: CLI_INSTRUCTIONS_TYPE.icon,
+				label: CLI_INSTRUCTIONS_TYPE.label, name: path.basename(found), lastModified: null, isStale: false,
+				category: 'copilot' as const,
+			}];
+		}),
+		[],
+		`buildWorkspaceCustomization workspace check(${folder})`
+	);
+}
+
 /**
- * Builds a WorkspaceCustomizationMatrix from session file paths.
+ * The Usage Analysis view's `customizationMatrix` and `missedPotential` for these sessions,
+ * assembled by the shared `buildWorkspaceCustomization()` (src/customizationMatrix.ts) the
+ * extension uses.
  *
  * - For VS Code sessions: derives workspace folder from workspaceStorage/<hash>/workspace.json.
  * - For Claude Code sessions (~/.claude/projects/<hash>/): reads the JSONL to extract the
@@ -217,14 +238,17 @@ async function resolveSessionWorkspacePath(sessionFile: string, claudeBasePath: 
  *
  * Folders are then grouped with the shared `groupWorkspaces()` (src/workspaceGrouping.ts) — the
  * same rules the VS Code extension uses — so worktrees and clones of one repository count once.
- * A group has an issue when none of its folders has AGENTS.md, CLAUDE.md, or
- * .github/copilot-instructions.md.
+ *
+ * Only the inputs differ from the extension: instead of the full customization-pattern scan (a
+ * recursive directory walk per workspace, too slow for hosts that wait on the CLI with a
+ * timeout) the CLI checks for AGENTS.md, CLAUDE.md and .github/copilot-instructions.md, as one
+ * "Instructions" column. It does not look for non-Copilot files, so `missedPotential` is empty.
  */
-export async function buildCustomizationMatrix(
+export async function buildWorkspaceCustomizationForSessions(
 	sessionFiles: string[],
 	probes?: WorkspaceGroupingProbes,
 	now: Date = new Date(),
-): Promise<WorkspaceCustomizationMatrix | undefined> {
+): Promise<WorkspaceCustomization | undefined> {
 	const claudeBasePath = path.join(os.homedir(), '.claude', 'projects');
 	// The extension's last-30-days window (30 calendar dates including today), from the shared helper.
 	const cutoff = getTimeWindowStartDate('last30', now)!;
@@ -243,39 +267,25 @@ export async function buildCustomizationMatrix(
 	if (entries.length === 0) { return undefined; }
 
 	const groups = groupWorkspaces(entries, probes ?? await prefetchWorkspaceGroupingProbes(entries));
-	const hasInstructions = (wsPath: string): boolean => withErrorRecoverySync(
-		// Same case-insensitive resolution as the shared customization scanner, so the CLI
-		// accepts every spelling the extension does (including on case-sensitive filesystems).
-		() => INSTRUCTION_PATHS.some(p => resolveExactWorkspacePath(wsPath, p, true) !== undefined),
-		false,
-		`buildCustomizationMatrix workspace check(${wsPath})`
-	);
-
-	let workspacesWithIssues = 0;
-	const workspaces: WorkspaceCustomizationRow[] = groups.map(group => {
-		const folders = groupFolders(group);
-		const customized = folders.some(hasInstructions);
-		if (!customized) { workspacesWithIssues++; }
-		return {
-			workspacePath: group.canonicalPath,
-			workspaceName: group.displayName,
-			sessionCount: group.sessionCount,
-			interactionCount: group.interactionCount,
-			// The one type the CLI checks, from the same group-wide test as workspacesWithIssues, so
-			// the shared scorer never mistakes a customized repository for a missing one.
-			typeStatuses: { [CLI_INSTRUCTIONS_TYPE.id]: customized ? '✅' : '❌' },
-			...(folders.length > 1 ? { memberPaths: folders } : {}),
-		};
-	});
-	const ungrouped = detectArtefactWorkspaceNames(groups).map(a => a.displayName);
-
-	return {
+	const byPath = new Map<string, WorkspaceGroup>(groups.map(g => [g.canonicalPath, g]));
+	return buildWorkspaceCustomization({
 		customizationTypes: [CLI_INSTRUCTIONS_TYPE],
-		workspaces,
-		totalWorkspaces: workspaces.length,
-		workspacesWithIssues,
-		...(ungrouped.length > 0 ? { ungroupedWorkspaceNames: ungrouped } : {}),
-	};
+		workspaces: groups.map(group => ({ path: group.canonicalPath, sessionCount: group.sessionCount, interactionCount: group.interactionCount, group })),
+		// A group is customized when any of its folders is, like the extension's merged group scan.
+		filesFor: (workspacePath) => {
+			const group = byPath.get(workspacePath);
+			return group ? groupFolders(group).flatMap(instructionFilesIn) : [];
+		},
+	});
+}
+
+/** The customization matrix alone, for fluency scoring. See {@link buildWorkspaceCustomizationForSessions}. */
+export async function buildCustomizationMatrix(
+	sessionFiles: string[],
+	probes?: WorkspaceGroupingProbes,
+	now: Date = new Date(),
+): Promise<WorkspaceCustomizationMatrix | undefined> {
+	return (await buildWorkspaceCustomizationForSessions(sessionFiles, probes, now))?.customizationMatrix;
 }
 
 /** Get diagnostic candidate paths info */

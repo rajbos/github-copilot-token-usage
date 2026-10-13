@@ -11,8 +11,9 @@ import {
 	recentAnalysisCutoff,
 	buildChartPayload,
 	calculateUsageAnalysisStats,
-	buildCustomizationMatrix,
+	buildWorkspaceCustomizationForSessions,
 } from '../helpers';
+import { withUsageAnalysisViewStats } from '../usageAnalysisView';
 import { calculateMaturityScores } from '../../../src/maturityScoring';
 import { shouldOutputJson } from '../commandUtils';
 import {
@@ -28,11 +29,6 @@ import {
 	createEmptyCurationPayload,
 	createCurationPayload,
 } from './curation';
-import {
-	buildMcpEntriesFromJson,
-	discoverSkillEntries,
-	analyzeToolCuration,
-} from '../../../src/toolCuration';
 
 export const allCommand = new Command('all')
 	.description('Output all view data in a single JSON response (for Visual Studio extension)')
@@ -76,25 +72,24 @@ export const allCommand = new Command('all')
 		// Build details payload (mirrors the `usage --json` output)
 		const detailsPayload = createDetailsPayload(detailedStats);
 
+		// Customization and curation (mcp.json + skills from cwd; no vscode.lm.tools in the CLI),
+		// gathered once for the usage-analysis, fluency and curation payloads.
+		const customization = await buildWorkspaceCustomizationForSessions(files);
+		const viewStats = await withUsageAnalysisViewStats(files, usageStats, { workspaceFolderPaths: [process.cwd()], customization });
+
 		// Build usage-analysis payload (mirrors the `usage-analysis --json` output)
-		const usagePayload = createUsageAnalysisPayload(usageStats, now);
+		const usagePayload = createUsageAnalysisPayload(viewStats, now);
 
 		// Build fluency/maturity payload (mirrors the `fluency --json` output)
-		const customizationMatrix = await buildCustomizationMatrix(files);
 		const scores = await calculateMaturityScores(
-			customizationMatrix,
+			customization?.customizationMatrix,
 			async () => usageStats,
 			false
 		);
 		const fluencyPayload = createFluencyPayload(scores);
 
-		// Build curation payload — uses mcp.json + skills from cwd (no vscode.lm.tools in CLI).
-		const cwd = process.cwd();
-		const mcpEntries = buildMcpEntriesFromJson([cwd]);
-		const skillEntries = discoverSkillEntries([cwd]);
-		const availableTools = [...mcpEntries, ...skillEntries];
-		const curationPayload = availableTools.length > 0
-			? createCurationPayload(analyzeToolCuration(availableTools, usageStats.last30Days, 30))
+		const curationPayload = viewStats.curationAnalysis
+			? createCurationPayload(viewStats.curationAnalysis)
 			: createEmptyCurationPayload();
 
 		const payload = {

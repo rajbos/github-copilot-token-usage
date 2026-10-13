@@ -5,6 +5,7 @@ import { Command } from 'commander';
 import { discoverSessionFiles, calculateUsageAnalysisStats } from '../helpers';
 import { shouldOutputJson } from '../commandUtils';
 import { createEmptyUsageAnalysisPayload, createUsageAnalysisPayload } from './payloads';
+import { withUsageAnalysisViewStats } from '../usageAnalysisView';
 
 export const usageAnalysisCommand = new Command('usage-analysis')
 	.description('Output usage analysis stats for the usage analysis webview')
@@ -23,7 +24,8 @@ export const usageAnalysisCommand = new Command('usage-analysis')
 			return;
 		}
 
-		const stats = await calculateUsageAnalysisStats(files, { includeRepeatedTasks: Boolean(options.repeatedTasks) });
+		const sessionStats = await calculateUsageAnalysisStats(files, { includeRepeatedTasks: Boolean(options.repeatedTasks) });
+		const stats = await withUsageAnalysisViewStats(files, sessionStats, { workspaceFolderPaths: [process.cwd()] });
 		const payload = createUsageAnalysisPayload(stats, now);
 		process.stdout.write(JSON.stringify(payload));
 	});

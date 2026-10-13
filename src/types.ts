@@ -1282,6 +1282,13 @@ export interface ContextWindowStats {
 export const CONTEXT_NEAR_LIMIT_RATIO = 0.8;
 
 /**
+ * A key-based translation function, injected into pure modules (insightsEngine.ts) that
+ * render localized text without importing the bundles. Hosts build one with
+ * `createTranslator()` from `vscode-extension/src/l10nCore.ts` (or pass `l10n.ts`'s `t()`).
+ */
+export type Translate = (key: string, ...args: Array<string | number | boolean>) => string;
+
+/**
  * How often a period's sessions ran out of context window, counted per
  * *session* rather than per compaction event. Absent when no session in the
  * period carried a usable context signal.

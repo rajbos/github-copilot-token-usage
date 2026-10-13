@@ -6,6 +6,8 @@
  * response) and the individual commands stay in sync automatically.
  */
 import type { DetailedStats, UsageAnalysisStats, UsageAnalysisPeriod } from '../../../src/types';
+import { buildUsageAnalysisViewData } from '../../../src/usageAnalysisViewBuilder';
+import { standaloneUsageAnalysisViewInputs } from '../usageAnalysisView';
 
 // ---------------------------------------------------------------------------
 // Empty-state payloads (returned when no session files are discovered)
@@ -53,16 +55,18 @@ export function createDetailsPayload(stats: DetailedStats) {
 }
 
 /**
- * Full usage-analysis payload built from computed stats.
+ * Full usage-analysis payload: the shared `buildUsageAnalysisViewData()` the extension and
+ * desktop app use, over stats from `withUsageAnalysisViewStats()`. Fields the view does not
+ * read but CLI consumers do (`recentSessions`, `agenticDailyTrend`, …) pass through from
+ * the stats.
  * Intentionally machine-readable: each period may carry an optional `autonomyUsage`
  * ({ autonomous, supervised, plan, other } prompt counts); it is absent when no session reported a mode.
  */
 export function createUsageAnalysisPayload(stats: UsageAnalysisStats, now = new Date()) {
+	const locale = Intl.DateTimeFormat().resolvedOptions().locale;
 	return {
 		...stats,
-		locale: Intl.DateTimeFormat().resolvedOptions().locale,
-		lastUpdated: now.toISOString(),
-		backendConfigured: false,
+		...buildUsageAnalysisViewData({ ...stats, lastUpdated: now }, standaloneUsageAnalysisViewInputs(locale)),
 	};
 }
 

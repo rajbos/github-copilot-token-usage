@@ -923,3 +923,52 @@ export function analyzeToolCuration(
 		recommendations,
 	};
 }
+
+// ---------------------------------------------------------------------------
+// Assembly shared by every host (extension, CLI, desktop)
+// ---------------------------------------------------------------------------
+
+/**
+ * The tool sources a host gathered. Only the extension can enumerate `runtime` tools
+ * (`vscode.lm.tools`), extension-contributed and settings-configured MCP servers; the
+ * CLI and desktop app pass what they can read from disk and leave the rest out.
+ */
+export interface AvailableToolSources {
+	runtime?: AvailableToolEntry[];
+	mcpJson?: AvailableToolEntry[];
+	extensionMcp?: AvailableToolEntry[];
+	settingsMcp?: AvailableToolEntry[];
+	skills?: AvailableToolEntry[];
+}
+
+/**
+ * Merges the gathered sources into one available-tool list. An MCP server is listed once,
+ * from the most authoritative source that has it: runtime, then mcp.json, then
+ * extension-contributed, then settings.
+ */
+export function mergeAvailableToolEntries(sources: AvailableToolSources): AvailableToolEntry[] {
+	const runtime = sources.runtime ?? [];
+	const claimed = new Set(runtime.filter(e => e.source === 'mcp').map(e => e.server));
+	const unclaimed = (entries: AvailableToolEntry[] | undefined): AvailableToolEntry[] => {
+		const kept = (entries ?? []).filter(e => !claimed.has(e.server));
+		for (const e of kept) { claimed.add(e.server); }
+		return kept;
+	};
+	const mcpJson = unclaimed(sources.mcpJson);
+	const extensionMcp = unclaimed(sources.extensionMcp);
+	const settingsMcp = unclaimed(sources.settingsMcp);
+	return [...runtime, ...mcpJson, ...extensionMcp, ...settingsMcp, ...(sources.skills ?? [])];
+}
+
+/**
+ * The Usage Analysis view's `curationAnalysis`: the merged sources analysed against the
+ * window's usage, or `null` when the host found no tools to analyse.
+ */
+export function buildCurationAnalysis(
+	sources: AvailableToolSources,
+	usagePeriod: UsageAnalysisPeriod,
+	windowDays: number,
+): ToolCurationAnalysis | null {
+	const availableTools = mergeAvailableToolEntries(sources);
+	return availableTools.length > 0 ? analyzeToolCuration(availableTools, usagePeriod, windowDays) : null;
+}

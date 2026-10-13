@@ -19,6 +19,8 @@ import {
     loadCache,
     saveCache,
 } from '../../cli/src/helpers';
+import { standaloneUsageAnalysisViewInputs, withUsageAnalysisViewStats } from '../../cli/src/usageAnalysisView';
+import { buildUsageAnalysisViewData } from '../../src/usageAnalysisViewBuilder';
 import { getEditorSourceFromPath, runWithConcurrency } from '../../cli/src/analysis';
 import type { DailyTokenStats, DetailedStats, UsageAnalysisStats } from '../../src/types';
 import type { EfficiencySessionInput } from '../../src/efficiencyAnalysis';
@@ -416,7 +418,9 @@ async function loadUsageStats(): Promise<UsageAnalysisStats> {
     // this function resuming; the next pass then computes against the new data.
     while (!cachedUsageStats) {
         await computeForCurrentFiles(
-            files => calculateUsageAnalysisStats(files),
+            // The CLI's collectors fill customization and curation the way `usage-analysis`
+            // does; with no open workspace only user-level skills count as available tools.
+            async files => withUsageAnalysisViewStats(files, await calculateUsageAnalysisStats(files), { workspaceFolderPaths: [] }),
             (usageStats) => { cachedUsageStats ??= usageStats; },
         );
     }
@@ -795,23 +799,13 @@ async function buildPanelHtml(panel: PanelId): Promise<string> {
         title = 'Usage Analysis';
         const usageStats = await getUsageStats();
         const locale = Intl.DateTimeFormat().resolvedOptions().locale;
-        const usageData = {
-            today: usageStats.today,
-            last30Days: usageStats.last30Days,
-            month: usageStats.month,
-            lastMonth: usageStats.lastMonth,
-            locale,
-            customizationMatrix: null,
-            missedPotential: [],
-            lastUpdated: usageStats.lastUpdated.toISOString(),
-            backendConfigured: false,
-            currentWorkspacePaths: [],
-            suppressedUnknownTools: [],
-            todaySessions: usageStats.todaySessions || [],
-            use24HourTime: false,
-            insights: [],
-            curationAnalysis: null,
-        };
+        // The shared builder the extension and CLI use. This host keeps no insight state:
+        // every applicable insight shows as new, and the cards' dismiss/snooze messages
+        // (`insightAction`) are not handled here yet.
+        const usageData = buildUsageAnalysisViewData(
+            usageStats,
+            standaloneUsageAnalysisViewInputs(locale, resolvedLocale(app.getLocale())),
+        );
         initialDataScript = panelPayloadScript('__INITIAL_USAGE__', usageData);
 
     } else if (panel === 'diagnostics') {
