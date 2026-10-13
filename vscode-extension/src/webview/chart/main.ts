@@ -29,8 +29,6 @@ type ChartConfig = import('chart.js', { with: { 'resolution-mode': 'import' } })
  * compile error in every host, not a blank Chart view (#2304, #2316).
  */
 type ModelDataset = ChartDataset;
-type EditorDataset = ChartDataset;
-type RepositoryDataset = ChartDataset;
 
 type ChartPeriod = import('./projectionUtils').ChartPeriod;
 

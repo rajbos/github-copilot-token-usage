@@ -151,20 +151,23 @@ function mergeEditorModelUsage(target: DailyTokenStats, src: DailyTokenStats): v
 	}
 }
 
+/** Adds per-category counters from `src` into `target`, skipping prototype keys. */
+function addCategoryCounts(target: Partial<Record<TaskCategory, number>>, src: Partial<Record<TaskCategory, number>>): void {
+	for (const [category, value] of Object.entries(src)) {
+		if (isUnsafeObjectKey(category)) { continue; }
+		const key = category as TaskCategory;
+		target[key] = ((Object.hasOwn(target, key) && target[key]) || 0) + (value ?? 0);
+	}
+}
+
 function mergeTaskCategoryUsage(target: DailyTokenStats, src: DailyTokenStats): void {
 	if (src.taskCategoryTokens) {
 		target.taskCategoryTokens = target.taskCategoryTokens ?? {};
-		for (const [category, value] of Object.entries(src.taskCategoryTokens)) {
-			if (isUnsafeObjectKey(category)) { continue; }
-			target.taskCategoryTokens[category as TaskCategory] = ((Object.hasOwn(target.taskCategoryTokens, category) && target.taskCategoryTokens[category as TaskCategory]) || 0) + value;
-		}
+		addCategoryCounts(target.taskCategoryTokens, src.taskCategoryTokens);
 	}
 	if (src.taskCategorySessions) {
 		target.taskCategorySessions = target.taskCategorySessions ?? {};
-		for (const [category, value] of Object.entries(src.taskCategorySessions)) {
-			if (isUnsafeObjectKey(category)) { continue; }
-			target.taskCategorySessions[category as TaskCategory] = ((Object.hasOwn(target.taskCategorySessions, category) && target.taskCategorySessions[category as TaskCategory]) || 0) + value;
-		}
+		addCategoryCounts(target.taskCategorySessions, src.taskCategorySessions);
 	}
 	if (!src.taskCategoryModelUsage) { return; }
 	target.taskCategoryModelUsage = target.taskCategoryModelUsage ?? {};
