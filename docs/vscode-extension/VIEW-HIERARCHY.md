@@ -64,7 +64,7 @@ not user settings.
 |---|---|---|
 | 📊 **Usage** | **My Activity** | *(three bands — see below)* |
 | | **Recent Sessions** | Lookback selector · filter pills · sessions table (sortable, configurable columns) |
-| 📁 **Workspace** | **Tools & Integrations** | Tool Usage (3 periods) · Multi-Model Usage · MCP Tools · Tool Curation · unknown-tool banner |
+| 📁 **Workspace** | **Tools & Integrations** | Tool Usage (3 periods) · MCP Tools · Tool Curation · unknown-tool banner |
 | | **Workspace Health** | Copilot Customization Files table (20 per page, sortable, filter to workspaces with no customization files; path on hover) |
 | | **AI Readiness** | Per-repo readiness overview (collapsible) · Copilot Chat drafts |
 | | **Worktrees** | scan controls · roots list · progress · results table |

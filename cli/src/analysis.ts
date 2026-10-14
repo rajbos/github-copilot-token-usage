@@ -7,16 +7,19 @@
  */
 import { calculateEstimatedCost } from '../../src/tokenEstimation';
 import { addModelUsage, scaleModelUsage } from '../../src/statsHelpers';
-import { normalizePathForComparison, detectClaudeCodeEditorVariant, detectRelocatedAgentHomeFromPath } from '../../src/workspaceHelpers';
-import { getPricingSourceForEditor, getBillingGroup } from '../../src/chartDataBuilder';
+import { normalizePathForComparison, detectClaudeCodeEditorVariant, detectRelocatedAgentHomeFromPath, getRepoDisplayName } from '../../src/workspaceHelpers';
+import { buildChartData } from '../../src/chartDataBuilder';
+import { buildEfficiencyViewData, formatAttributionDateEnUs, NO_PR_VALUE_INPUTS, type EfficiencySessionAnalysis } from '../../src/efficiencyViewBuilder';
+import type { EfficiencySessionInput, EfficiencyViewData } from '../../src/efficiencyAnalysis';
 import { createEmptyContextRefs } from '../../src/tokenEstimation';
-import type { ModelUsage, ModelPricing, PeriodStats, UsageAnalysisPeriod } from '../../src/types';
+import type { ChartDataPayload, DailyTokenStats, LanguageUsage, ModelUsage, ModelPricing, PeriodStats, UsageAnalysisPeriod, UsageAnalysisStats } from '../../src/types';
+import type { TaskCategory, TaskCategoryBreakdown } from '../../src/taskClassification';
 export type { PeriodStats, UsageAnalysisPeriod } from '../../src/types';
 
 /** Type alias for a single model pricing entry from modelPricing.json. */
 export type ModelPricingEntry = ModelPricing;
 
-// Import JSON data file used by buildChartPayload
+// Import JSON data file used for chart cost estimation
 import modelPricingData from '../../src/modelPricing.json';
 const modelPricing = modelPricingData.pricing as Record<string, ModelPricingEntry>;
 
@@ -52,15 +55,33 @@ export interface SessionData {
 	 *  - Ecosystem adapters: mtime fallback (until adapter implements getDailyFractions)
 	 */
 	dailyFractions: Record<string, number>;
-}
-
-/** A single day's aggregated token data for the chart view. */
-export interface DailyEntry {
-	tokens: number;
-	sessions: number;
-	modelUsage: ModelUsage;
-	editorUsage: { [editor: string]: { tokens: number; sessions: number } };
-	editorModelUsage?: { [editor: string]: ModelUsage };
+	/** Repository the session worked in, via the shared resolveSessionRepository(); absent when none. */
+	repository?: string;
+	/** Task attribution, via the shared resolveSessionTaskAttribution(). */
+	taskCategory?: TaskCategory;
+	taskCategoryShares?: TaskCategoryBreakdown;
+	/** Session-level lines of code, via the shared sessionLocFromUsageAnalysis(). */
+	linesAdded?: number;
+	linesRemoved?: number;
+	languageUsage?: LanguageUsage;
+	/**
+	 * The slice of the session's usage analysis the Efficiency view reads (per-model turn
+	 * counters, active duration, apply usage, skill calls). Kept slim because it is cached.
+	 */
+	usageAnalysis?: EfficiencySessionAnalysis;
+	/** Set once the view attributes above were derived (see processSessionFileForViews in helpers.ts). */
+	viewAttributesResolved?: true;
+	/**
+	 * DB-backed sessions: the session's own last-activity time the view attributes were derived
+	 * for. The entry is keyed by the shared database's stat, so a different value means they are
+	 * outdated (see sessionVersion in helpers.ts).
+	 */
+	viewActivityMs?: number;
+	/**
+	 * DB-backed sessions: the session's own last-activity time this base parse (tokens,
+	 * interactions, model usage, day split) was made at; see processSessionFileAtVersion.
+	 */
+	baseActivityMs?: number;
 }
 
 // ── Billing group helpers ────────────────────────────────────────────────────────────────────
@@ -278,226 +299,63 @@ export function createEmptyUsageAnalysisPeriod(): UsageAnalysisPeriod {
 	};
 }
 
-// ── Chart helpers ─────────────────────────────────────────────────────────────────────────────────────────────
+// ── Chart payload ─────────────────────────────────────────────────────────────────────────────────────────
 
-const CHART_COLORS = [
-	{ bg: 'rgba(54, 162, 235, 0.6)',  border: 'rgba(54, 162, 235, 1)' },
-	{ bg: 'rgba(255, 99, 132, 0.6)',  border: 'rgba(255, 99, 132, 1)' },
-	{ bg: 'rgba(75, 192, 192, 0.6)',  border: 'rgba(75, 192, 192, 1)' },
-	{ bg: 'rgba(153, 102, 255, 0.6)', border: 'rgba(153, 102, 255, 1)' },
-	{ bg: 'rgba(255, 159, 64, 0.6)',  border: 'rgba(255, 159, 64, 1)' },
-	{ bg: 'rgba(255, 205, 86, 0.6)',  border: 'rgba(255, 205, 86, 1)' },
-	{ bg: 'rgba(201, 203, 207, 0.6)', border: 'rgba(201, 203, 207, 1)' },
-	{ bg: 'rgba(100, 181, 246, 0.6)', border: 'rgba(100, 181, 246, 1)' },
-];
+/** Host settings the CLI passes to the shared chart builder; the extension reads these from its config. */
+export interface CliChartOptions {
+	backendConfigured?: boolean;
+	compactNumbers?: boolean;
+	/** Injectable for tests. */
+	now?: Date;
+}
 
 /**
- * Build the JSON payload consumed by the chart webview from the daily stats arrays
- * returned by `calculateDailyStats`. Includes weekly and monthly period aggregations.
+ * The chart webview's payload, built by the same shared `buildChartData()` the extension uses —
+ * the CLI only supplies its host dependencies. There is deliberately no CLI-side copy of the
+ * period/bucket/dataset logic: a field the webview starts requiring (e.g. `periodKeys`, #2304)
+ * reaches every host at once. See #2316 and AGENTS.md, "CLI Must Reuse Shared Functions".
  */
-export function buildChartPayload(labels: string[], days: DailyEntry[], allDaysMap?: Map<string, DailyEntry>): object {
-	if (!labels || !days) {
-		throw new Error('buildChartPayload: labels and days are required');
-	}
-	if (labels.length !== days.length) {
-		throw new Error(`buildChartPayload: labels.length (${labels.length}) !== days.length (${days.length})`);
-	}
-	const fmtKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-	const buildPeriodFromEntries = (buckets: Array<{ label: string; key: string; entry: DailyEntry }>) => {
-		const entries = buckets.map(b => b.entry);
-		const bLabels = buckets.map(b => b.label);
-		// Sortable bucket keys (YYYY-MM-DD day / week-start, YYYY-MM month). The chart webview
-		// filters each period by time window on these, and throws without them.
-		const periodKeys = buckets.map(b => b.key);
-		const tokensData = entries.map(e => e.tokens);
-		const sessionsData = entries.map(e => e.sessions);
-
-		const allModels = new Set<string>();
-		entries.forEach(e => Object.keys(e.modelUsage).forEach(m => allModels.add(m)));
-		const modelDatasets = Array.from(allModels).map((model, idx) => {
-			const color = CHART_COLORS[idx % CHART_COLORS.length];
-			return { label: model, data: entries.map(e => { const u = e.modelUsage[model]; return u ? u.inputTokens + u.outputTokens : 0; }), backgroundColor: color.bg, borderColor: color.border, borderWidth: 1 };
-		});
-
-		const allEditors = new Set<string>();
-		entries.forEach(e => Object.keys(e.editorUsage).forEach(ed => allEditors.add(ed)));
-		const editorDatasets = Array.from(allEditors).map((editor, idx) => {
-			const color = CHART_COLORS[idx % CHART_COLORS.length];
-			return { label: editor, data: entries.map(e => e.editorUsage[editor]?.tokens || 0), backgroundColor: color.bg, borderColor: color.border, borderWidth: 1 };
-		});
-
-		const totalTokens = tokensData.reduce((a, b) => a + b, 0);
-		const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
-		const periodCount = buckets.length;
-		const costData = entries.map(e => calculateEstimatedCost(e.modelUsage, modelPricing, 'copilot'));
-		const totalCost = costData.reduce((a, b) => a + b, 0);
-		const avgCostPerPeriod = periodCount > 0 ? totalCost / periodCount : 0;
-
-		// Editor cost datasets (cost per editor using per-editor model breakdown)
-		const allEditorsForCost = new Set<string>();
-		entries.forEach(e => { if (e.editorModelUsage) { Object.keys(e.editorModelUsage).forEach(ed => allEditorsForCost.add(ed)); } });
-		const editorCostTotals = new Map<string, number>();
-		for (const editor of allEditorsForCost) {
-			const total = entries.reduce((sum, e) => sum + calculateEstimatedCost(e.editorModelUsage?.[editor] ?? {}, modelPricing, getPricingSourceForEditor(editor)), 0);
-			editorCostTotals.set(editor, total);
-		}
-		const sortedCostEditors = Array.from(allEditorsForCost).sort((a, b) => (editorCostTotals.get(b) || 0) - (editorCostTotals.get(a) || 0));
-		const editorCostDatasets = sortedCostEditors.map((editor, idx) => {
-			const color = CHART_COLORS[idx % CHART_COLORS.length];
-			return { label: editor, data: entries.map(e => calculateEstimatedCost(e.editorModelUsage?.[editor] ?? {}, modelPricing, getPricingSourceForEditor(editor))), backgroundColor: color.bg, borderColor: color.border, borderWidth: 1 };
-		});
-
-		// Billing group cost datasets (cost per provider: "GitHub Copilot", "Anthropic", etc.)
-		const allGroups = new Set<string>();
-		entries.forEach(e => {
-			if (!e.editorModelUsage) { return; }
-			for (const [editor, mu] of Object.entries(e.editorModelUsage)) {
-				for (const modelId of Object.keys(mu)) { allGroups.add(getBillingGroup(editor, modelId)); }
-			}
-		});
-		const groupTotals = new Map<string, number>();
-		for (const group of allGroups) {
-			groupTotals.set(group, entries.reduce((sum, e) => {
-				if (!e.editorModelUsage) { return sum; }
-				const grouped: ModelUsage = {};
-				for (const [editor, mu] of Object.entries(e.editorModelUsage)) {
-					for (const [modelId, usage] of Object.entries(mu)) {
-						if (getBillingGroup(editor, modelId) !== group) { continue; }
-						addModelUsage(grouped, { [modelId]: { ...usage, sessions: 0 } });
-					}
-				}
-				const pricingSource = group === 'GitHub Copilot' ? 'copilot' : 'provider';
-				return sum + calculateEstimatedCost(grouped, modelPricing, pricingSource);
-			}, 0));
-		}
-		const sortedGroups = Array.from(allGroups).sort((a, b) => (groupTotals.get(b) || 0) - (groupTotals.get(a) || 0));
-		const billingGroupCostDatasets = sortedGroups.map((group, idx) => {
-			const color = CHART_COLORS[idx % CHART_COLORS.length];
-			const pricingSource = group === 'GitHub Copilot' ? 'copilot' : 'provider';
-			return {
-				label: group,
-				data: entries.map(e => {
-					if (!e.editorModelUsage) { return 0; }
-					const grouped: ModelUsage = {};
-					for (const [editor, mu] of Object.entries(e.editorModelUsage)) {
-						for (const [modelId, usage] of Object.entries(mu)) {
-							if (getBillingGroup(editor, modelId) !== group) { continue; }
-							addModelUsage(grouped, { [modelId]: { ...usage, sessions: 0 } });
-						}
-					}
-					return calculateEstimatedCost(grouped, modelPricing, pricingSource);
-				}),
-				backgroundColor: color.bg, borderColor: color.border, borderWidth: 1,
-			};
-		});
-
-		return { labels: bLabels, periodKeys, tokensData, sessionsData, modelDatasets, editorDatasets, repositoryDatasets: [], periodCount, totalTokens, totalSessions, avgPerPeriod: periodCount > 0 ? Math.round(totalTokens / periodCount) : 0, costData, totalCost, avgCostPerPeriod, editorCostDatasets, billingGroupCostDatasets };
-	};
-
-	const mergeEntry = (target: DailyEntry, src: DailyEntry) => {
-		target.tokens += src.tokens;
-		target.sessions += src.sessions;
-		addModelUsage(target.modelUsage, scaleModelUsage(src.modelUsage, 1));
-		for (const [e, u] of Object.entries(src.editorUsage)) {
-			if (!target.editorUsage[e]) { target.editorUsage[e] = { tokens: 0, sessions: 0 }; }
-			target.editorUsage[e].tokens += u.tokens;
-			target.editorUsage[e].sessions += u.sessions;
-		}
-		if (src.editorModelUsage) {
-			if (!target.editorModelUsage) { target.editorModelUsage = {}; }
-			for (const [editor, mu] of Object.entries(src.editorModelUsage)) {
-				if (!target.editorModelUsage[editor]) { target.editorModelUsage[editor] = {}; }
-				addModelUsage(target.editorModelUsage[editor], scaleModelUsage(mu, 1));
-			}
-		}
-	};
-
-	const emptyEntry = (): DailyEntry => ({ tokens: 0, sessions: 0, modelUsage: {}, editorUsage: {} });
-
-	const now = new Date();
-
-	// ── Daily period: the existing 30-day data ──────────────────────────
-	const dailyBuckets = labels.map((l, i) => ({ label: l, key: l, entry: days[i] }));
-	const dailyPeriod = buildPeriodFromEntries(dailyBuckets);
-
-	// ── Weekly period: last 6 calendar weeks ───────────────────────────
-	const getMondayOfWeek = (d: Date): Date => {
-		const copy = new Date(d); copy.setHours(0, 0, 0, 0);
-		const day = copy.getDay();
-		copy.setDate(copy.getDate() - (day === 0 ? 6 : day - 1));
-		return copy;
-	};
-	const fmtWeekLabel = (monday: Date): string => {
-		const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
-		if (monday.getMonth() === sunday.getMonth()) {
-			return `${monday.toLocaleDateString('en-US', { month: 'short' })} ${monday.getDate()}–${sunday.getDate()}`;
-		}
-		return `${monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}–${sunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-	};
-	const thisMonday = getMondayOfWeek(now);
-	const weekBucketMap = new Map<string, { label: string; key: string; entry: DailyEntry }>();
-	for (let w = 5; w >= 0; w--) {
-		const monday = new Date(thisMonday); monday.setDate(thisMonday.getDate() - w * 7);
-		const key = fmtKey(monday);
-		weekBucketMap.set(key, { label: fmtWeekLabel(monday), key, entry: emptyEntry() });
-	}
-	const sourceMap = allDaysMap || new Map(labels.map((l, i) => [l, days[i]]));
-	for (const [dateKey, entry] of sourceMap.entries()) {
-		const monday = getMondayOfWeek(new Date(dateKey + 'T00:00:00'));
-		const bucket = weekBucketMap.get(fmtKey(monday));
-		if (bucket) { mergeEntry(bucket.entry, entry); }
-	}
-	const weeklyBuckets = Array.from(weekBucketMap.values());
-	const weeklyPeriod = buildPeriodFromEntries(weeklyBuckets);
-
-	// ── Monthly period: last 12 calendar months ────────────────────────
-	const monthBucketMap = new Map<string, { label: string; key: string; entry: DailyEntry }>();
-	for (let m = 11; m >= 0; m--) {
-		const monthDate = new Date(now.getFullYear(), now.getMonth() - m, 1);
-		const key = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
-		const label = monthDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-		monthBucketMap.set(key, { label, key, entry: emptyEntry() });
-	}
-	for (const [dateKey, entry] of sourceMap.entries()) {
-		const monthKey = dateKey.slice(0, 7);
-		const bucket = monthBucketMap.get(monthKey);
-		if (bucket) { mergeEntry(bucket.entry, entry); }
-	}
-	const monthlyBuckets = Array.from(monthBucketMap.values());
-	const monthlyPeriod = buildPeriodFromEntries(monthlyBuckets);
-
-	// ── Editor totals map (last 30 days) ───────────────────────────────
-	const editorTotalsMap: Record<string, number> = {};
-	days.forEach(d => {
-		Object.entries(d.editorUsage).forEach(([editor, usage]) => {
-			editorTotalsMap[editor] = (editorTotalsMap[editor] || 0) + usage.tokens;
-		});
+export function buildChartPayload(dailyStats: DailyTokenStats[], options: CliChartOptions = {}): ChartDataPayload {
+	return buildChartData(dailyStats, {
+		getRepoDisplayName,
+		calculateEstimatedCost: (modelUsage, pricingSource) => calculateEstimatedCost(modelUsage, modelPricing, pricingSource),
+		backendConfigured: options.backendConfigured ?? false,
+		compactNumbers: options.compactNumbers ?? false,
+		now: options.now,
 	});
+}
 
-	return {
-		// Backward-compat flat fields (daily period)
-		labels: dailyPeriod.labels,
-		tokensData: dailyPeriod.tokensData,
-		sessionsData: dailyPeriod.sessionsData,
-		modelDatasets: dailyPeriod.modelDatasets,
-		editorDatasets: dailyPeriod.editorDatasets,
-		editorTotalsMap,
-		repositoryDatasets: [],
-		repositoryTotalsMap: {},
-		dailyCount: dailyPeriod.periodCount,
-		totalTokens: dailyPeriod.totalTokens,
-		avgTokensPerDay: dailyPeriod.periodCount > 0 ? Math.round(dailyPeriod.totalTokens / dailyPeriod.periodCount) : 0,
-		totalSessions: dailyPeriod.totalSessions,
-		lastUpdated: new Date().toISOString(),
+/** The zero-state chart payload (no session files): the same builder over no days, so the shape cannot drift. */
+export function createEmptyChartPayload(now: Date = new Date()): ChartDataPayload {
+	return buildChartPayload([], { now });
+}
+
+/** Inputs the CLI gathers for the Efficiency view; see `buildEfficiencyPayload`. */
+export interface CliEfficiencyInputs {
+	dailyStats: DailyTokenStats[];
+	usage: UsageAnalysisStats;
+	sessionInputs: EfficiencySessionInput[];
+	now?: Date;
+}
+
+/**
+ * The Efficiency webview's payload, built by the same shared `buildEfficiencyViewData()` the
+ * extension uses. The CLI has no PR data, team backend or display settings, so those take
+ * their "not configured" values.
+ */
+export function buildEfficiencyPayload(inputs: CliEfficiencyInputs): EfficiencyViewData {
+	return buildEfficiencyViewData({
+		dailyStats: inputs.dailyStats,
+		usage: inputs.usage,
+		sessionInputs: inputs.sessionInputs,
+		now: inputs.now ?? new Date(),
+		calculateEstimatedCost: (modelUsage, pricingSource) => calculateEstimatedCost(modelUsage, modelPricing, pricingSource),
+		prValueInputs: NO_PR_VALUE_INPUTS,
+		formatAttributionDate: formatAttributionDateEnUs,
 		backendConfigured: false,
-		periodsReady: true,
-		periods: {
-			day: dailyPeriod,
-			week: weeklyPeriod,
-			month: monthlyPeriod,
-		},
-	};
+		compactNumbers: false,
+		isDebugMode: false,
+	});
 }
 
 // ── Formatting utilities ────────────────────────────────────────────────────────────────────────────────

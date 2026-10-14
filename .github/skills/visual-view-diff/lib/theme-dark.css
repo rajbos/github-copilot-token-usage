@@ -6,9 +6,13 @@
  * has to supply them itself — otherwise every `var(--vscode-…)` resolves to
  * nothing and the screenshots come out unstyled.
  *
+ * The desktop app (desktop/src/main.ts) injects these same two files into its
+ * panel pages, so this is also the desktop's theme.
+ *
  * Only the tokens actually referenced by `src/webview/**` are defined. If a new
  * token starts being used, add it here (and to theme-light.css) or the rendered
- * view loses that colour. To list what the webviews currently reference:
+ * view loses that colour — `node scripts/validate-webview-shell.js` fails until
+ * you do. To list what the webviews currently reference:
  *
  *   grep -rho -- "--vscode-[a-zA-Z0-9-]*" vscode-extension/src/webview/ | sort -u
  */
@@ -32,6 +36,7 @@
 	--vscode-widget-border: #303031;
 	--vscode-focusBorder: #0078d4;
 	--vscode-contrastBorder: transparent;
+	--vscode-contrastActiveBorder: transparent;
 
 	--vscode-button-background: #0078d4;
 	--vscode-button-foreground: #ffffff;
@@ -47,6 +52,7 @@
 	--vscode-input-border: #3c3c3c;
 	--vscode-dropdown-background: #313131;
 	--vscode-dropdown-foreground: #cccccc;
+	--vscode-dropdown-border: #3c3c3c;
 
 	--vscode-badge-background: #616161;
 	--vscode-badge-foreground: #f8f8f8;
@@ -71,6 +77,8 @@
 	--vscode-inputValidation-infoBorder: #1a85ff;
 	--vscode-inputValidation-warningBackground: #352a05;
 	--vscode-inputValidation-warningBorder: #b89500;
+	--vscode-inputValidation-errorBackground: #5a1d1d;
+	--vscode-inputValidation-errorBorder: #be1100;
 
 	--vscode-charts-blue: #4daafc;
 	--vscode-charts-green: #89d185;

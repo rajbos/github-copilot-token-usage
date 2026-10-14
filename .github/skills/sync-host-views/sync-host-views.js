@@ -2,30 +2,31 @@
 /*
  * sync-host-views.js
  * ------------------------------------------------------------------------
- * Keep the Visual Studio and JetBrains webview "views" (screens) in sync with
- * the VS Code views, WITHOUT silently changing which set of views each host
- * ships.
+ * Keep the Visual Studio, JetBrains and desktop-app webview "views" (screens)
+ * in sync with the VS Code views, WITHOUT silently changing which set of views
+ * each host ships.
  *
  * The VS Code extension is the single source of truth for the set of webview
  * views: every entry in `vscode-extension/esbuild.js` -> `entryPoints` that maps
  * to `src/webview/<name>/main.ts` is one view, compiled to
  * `vscode-extension/dist/webview/<name>.js`.
  *
- * The Visual Studio and JetBrains hosts each load a *subset* of those compiled
- * bundles (currently 6 of 9). They deliberately do NOT ship every view. This
+ * The Visual Studio, JetBrains and desktop (Electron) hosts each load a *subset* of those compiled
+ * bundles (run the script for current counts). They deliberately do NOT ship every view. This
  * script detects, per host, which views are TRACKED, which are NEW (present in
  * VS Code but not yet wired into the host), and which are ORPHAN (listed by
  * the host but no longer produced by VS Code).
  *
- * Neither host commits webview content to git any more (see
+ * No host commits webview content to git any more (see
  * docs/adr/VS-WEBVIEW-BUNDLE-SOURCING.md): Visual Studio's `webview/*.js`
  * and `*.json` are esbuild output copied fresh from `vscode-extension/dist/webview`
  * by the `.csproj`'s `CopyWebviewBundles` MSBuild target, exactly like
- * JetBrains' `prepareBundledAssets` Gradle task always did. There is
+ * JetBrains' `prepareBundledAssets` Gradle task always did and the desktop
+ * app's `copyStaticAssets` (desktop/esbuild.js) does. There is
  * therefore nothing left for this script to compare a committed copy
  * against, or to `--refresh` — this script only tracks view-LIST drift
  * (which named bundles each host's build config references), not bundle
- * CONTENT freshness, for both hosts equally.
+ * CONTENT freshness, for every host equally.
  *
  * Dependency-free. Node >= 16.
  *
@@ -54,6 +55,8 @@ const PATHS = {
     'AIEngineeringFluency.csproj',
   ),
   jbGradle: path.join(REPO_ROOT, 'jetbrains-plugin', 'build.gradle.kts'),
+  desktopEsbuild: path.join(REPO_ROOT, 'desktop', 'esbuild.js'),
+  desktopMain: path.join(REPO_ROOT, 'desktop', 'src', 'main.ts'),
 };
 
 // ── Tiny ANSI helpers ────────────────────────────────────────────────────────
@@ -158,6 +161,32 @@ function parseJetBrainsViews() {
   return views;
 }
 
+/**
+ * Desktop app host list. The app ships a view only when it both copies the
+ * bundle (`WEBVIEW_BUNDLES` in desktop/esbuild.js) and offers it in its menus
+ * (`PANEL_MENU` in desktop/src/main.ts). Returns both lists so a view present
+ * in only one of them can be reported: a bundle nobody can open, or a menu
+ * entry that opens a blank page.
+ */
+function parseDesktopViews() {
+  const esbuild = read(PATHS.desktopEsbuild);
+  const bundleBlock = esbuild.match(/const\s+WEBVIEW_BUNDLES\s*=\s*\[([^\]]*)\]/);
+  if (!bundleBlock) {
+    throw new ConfigError('Could not find WEBVIEW_BUNDLES in desktop/esbuild.js.');
+  }
+  const bundled = new Set([...bundleBlock[1].matchAll(/['"]([\w-]+)\.js['"]/g)].map((m) => m[1]));
+
+  const main = read(PATHS.desktopMain);
+  const menuStart = main.search(/const\s+PANEL_MENU\b/);
+  if (menuStart === -1) {
+    throw new ConfigError('Could not find PANEL_MENU in desktop/src/main.ts.');
+  }
+  const menuBody = main.slice(menuStart, main.indexOf('];', menuStart));
+  const menu = new Set([...menuBody.matchAll(/panel:\s*['"]([\w-]+)['"]/g)].map((m) => m[1]));
+
+  return { bundled, menu };
+}
+
 // ── Analysis ─────────────────────────────────────────────────────────────────
 
 function analyse() {
@@ -165,6 +194,12 @@ function analyse() {
   const dist = listDistBundles();
   const vsList = parseVsCsprojViews();
   const jbList = parseJetBrainsViews();
+  const desktopLists = parseDesktopViews();
+  // A desktop view half-wired into only one of its two lists is mechanical
+  // drift (unreachable/unbundled below), not a NEW view awaiting a decision.
+  // So NEW and ORPHAN look at either list, and only TRACKED needs both.
+  const desktopAny = new Set([...desktopLists.bundled, ...desktopLists.menu]);
+  const desktopBoth = new Set([...desktopLists.bundled].filter((v) => desktopLists.menu.has(v)));
 
   const sortV = (set) => [...set].sort();
 
@@ -179,20 +214,30 @@ function analyse() {
 
   const vs = classify(vsList);
   const jb = classify(jbList);
+  const desktop = {
+    ...classify(desktopAny),
+    tracked: sortV(new Set([...desktopBoth].filter((v) => canonical.has(v)))),
+    // Half-wired views: copied but not in the menus, or in the menus but not copied.
+    unreachable: sortV(new Set([...desktopLists.bundled].filter((v) => !desktopLists.menu.has(v)))),
+    unbundled: sortV(new Set([...desktopLists.menu].filter((v) => !desktopLists.bundled.has(v)))),
+  };
 
   return {
     canonical: sortV(canonical),
     distAvailable: dist.size > 0,
     vs,
     jb,
+    desktop,
   };
 }
 
 // ── Reporting ────────────────────────────────────────────────────────────────
 
 function decideExit(result) {
-  if (result.vs.newViews.length || result.jb.newViews.length) return 3;
-  if (result.vs.orphan.length || result.jb.orphan.length) return 1;
+  const hosts = [result.vs, result.jb, result.desktop];
+  if (hosts.some((h) => h.newViews.length)) return 3;
+  if (hosts.some((h) => h.orphan.length)) return 1;
+  if (result.desktop.unreachable.length || result.desktop.unbundled.length) return 1;
   return 0;
 }
 
@@ -202,9 +247,9 @@ function printReport(result) {
   console.log(bold('\nHost view sync report'));
   console.log('-'.repeat(60));
   console.log(`Canonical VS Code views (${result.canonical.length}): ${cyan(result.canonical.join(', '))}`);
-  console.log(`dist/webview built: ${result.distAvailable ? green('yes') : red('NO — run npm run package')}`);
+  console.log(`dist/webview built: ${result.distAvailable ? green('yes') : red('NO — run pnpm run package')}`);
 
-  for (const [name, h] of [['Visual Studio', result.vs], ['JetBrains', result.jb]]) {
+  for (const [name, h] of [['Visual Studio', result.vs], ['JetBrains', result.jb], ['Desktop app', result.desktop]]) {
     console.log(bold(`\n${name}`));
     console.log(`  tracked (${h.tracked.length}): ${h.tracked.join(', ') || '(none)'}`);
     if (h.newViews.length) {
@@ -214,6 +259,12 @@ function printReport(result) {
     }
     if (h.orphan.length) {
       console.log(`  ${red('ORPHAN — listed but VS Code no longer builds it')}: ${red(rel(h.orphan))}`);
+    }
+    if (h.unreachable?.length) {
+      console.log(`  ${red('UNREACHABLE — in WEBVIEW_BUNDLES but not PANEL_MENU')}: ${red(rel(h.unreachable))}`);
+    }
+    if (h.unbundled?.length) {
+      console.log(`  ${red('UNBUNDLED — in PANEL_MENU but not WEBVIEW_BUNDLES (opens blank)')}: ${red(rel(h.unbundled))}`);
     }
   }
 
@@ -234,7 +285,7 @@ function printReport(result) {
 function main() {
   const args = process.argv.slice(2);
   if (args.includes('--help') || args.includes('-h')) {
-    console.log(`sync-host-views — keep VS / JetBrains views in sync with VS Code
+    console.log(`sync-host-views — keep VS / JetBrains / desktop views in sync with VS Code
 
 Usage:
   node .github/skills/sync-host-views/sync-host-views.js [--json]
@@ -243,7 +294,7 @@ Options:
   --json      Emit machine-readable JSON instead of a report.
   --help      Show this help.
 
-Exit codes: 0 in sync · 1 mechanical drift (ORPHAN) · 2 config error · 3 NEW views (ask user)`);
+Exit codes: 0 in sync · 1 mechanical drift (ORPHAN, desktop UNREACHABLE/UNBUNDLED) · 2 config error · 3 NEW views (ask user)`);
     return 0;
   }
 

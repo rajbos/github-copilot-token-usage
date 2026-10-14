@@ -3,10 +3,11 @@ import { localize } from './localization';
 
 export type SocialPlatform = 'linkedin' | 'bluesky' | 'mastodon';
 
-const PLATFORMS: ReadonlyArray<{ platform: SocialPlatform; icon: string }> = [
-	{ platform: 'linkedin', icon: '💼' },
-	{ platform: 'bluesky', icon: '🦋' },
-	{ platform: 'mastodon', icon: '🐘' },
+// `cls` is spelled out (not built from `platform`) so the desktop app's hidden-control contract can find it.
+const PLATFORMS: ReadonlyArray<{ platform: SocialPlatform; icon: string; cls: string }> = [
+	{ platform: 'linkedin', icon: '💼', cls: 'share-btn-linkedin' },
+	{ platform: 'bluesky', icon: '🦋', cls: 'share-btn-bluesky' },
+	{ platform: 'mastodon', icon: '🐘', cls: 'share-btn-mastodon' },
 ];
 
 /**
@@ -14,8 +15,8 @@ const PLATFORMS: ReadonlyArray<{ platform: SocialPlatform; icon: string }> = [
  * host several rows (the score and the toolbox card) without clashing ids.
  */
 export function socialShareButtonsHtml(idPrefix: string): string {
-	return PLATFORMS.map(({ platform, icon }) =>
-		`<button id="${idPrefix}-${platform}" class="share-btn share-btn-${platform}"><span class="share-btn-icon">${icon}</span><span>${escapeHtml(localize(`share.${platform}`))}</span></button>`
+	return PLATFORMS.map(({ platform, icon, cls }) =>
+		`<button id="${idPrefix}-${platform}" class="share-btn ${cls}"><span class="share-btn-icon">${icon}</span><span>${escapeHtml(localize(`share.${platform}`))}</span></button>`
 	).join('\n      ');
 }
 

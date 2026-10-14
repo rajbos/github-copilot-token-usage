@@ -1,7 +1,7 @@
 ---
 title: Documentation Index
 created: 2026-01-19
-updated: 2026-09-05
+updated: 2026-10-11
 status: active
 type: reference
 tags: [documentation, index]
@@ -56,7 +56,14 @@ Documentation and JSON schemas for Copilot session log file formats across diffe
 | [logFilesSchema/VSCODE-VARIANTS.md](logFilesSchema/VSCODE-VARIANTS.md) | VS Code variant support details |
 | [logFilesSchema/gemini-cli-session-format.md](logFilesSchema/gemini-cli-session-format.md) | Gemini CLI JSONL session format (Windows) |
 | [logFilesSchema/vscode-chat-debug-log-format.md](logFilesSchema/vscode-chat-debug-log-format.md) | VS Code Copilot Chat debug log — exact tokens and the AI Unit billing path |
+| [logFilesSchema/antigravity-session-format.md](logFilesSchema/antigravity-session-format.md) | Antigravity (Google) JSONL session format — research notes |
+| [logFilesSchema/cline-session-format.md](logFilesSchema/cline-session-format.md) | Cline (VS Code extension `saoudrizwan.claude-dev`) per-task storage under `globalStorage` |
+| [logFilesSchema/codex-cli-session-format.md](logFilesSchema/codex-cli-session-format.md) | OpenAI Codex CLI session files under `$CODEX_HOME` |
+| [logFilesSchema/devin-cli-session-format.md](logFilesSchema/devin-cli-session-format.md) | Devin CLI (ACP-based, separate from the desktop app) SQLite `sessions.db` |
+| [logFilesSchema/devin-windsurf-session-format.md](logFilesSchema/devin-windsurf-session-format.md) | Devin desktop app and Windsurf shared Cascade storage format |
 | [logFilesSchema/hydrafusion-routing-events.md](logFilesSchema/hydrafusion-routing-events.md) | HydraFusion routing events in Copilot CLI logs — which models ran behind one answer, and what each leg cost |
+| [logFilesSchema/claude-code-session-schema.json](logFilesSchema/claude-code-session-schema.json) | Claude Code session file schema (JSON) |
+| [logFilesSchema/jetbrains-session-schema.json](logFilesSchema/jetbrains-session-schema.json) | JetBrains Copilot session file schema (JSON) |
 | [logFilesSchema/session-file-schema.json](logFilesSchema/session-file-schema.json) | Manual schema documentation (JSON) |
 | [logFilesSchema/session-file-schema-analysis.json](logFilesSchema/session-file-schema-analysis.json) | Auto-generated schema analysis (JSON) |
 
@@ -90,22 +97,34 @@ Detailed documentation for individual features.
 | [features/COPILOT-SERVER-MEMORIES.md](features/COPILOT-SERVER-MEMORIES.md) | Copilot's server-side per-repository memory store: undocumented API contract, and turning re-learned facts into `AGENTS.md` entries |
 | [features/CLOUD-AGENT-COST.md](features/CLOUD-AGENT-COST.md) | Cloud Agent tab — per-repository AI credits, and the hourly cached snapshot behind it |
 | [features/DARK-FACTORY-READINESS.md](features/DARK-FACTORY-READINESS.md) | Dark Factory Readiness — per-repository governance control scan on the Fluency Score view |
+| [features/WORKSPACE-GROUPING.md](features/WORKSPACE-GROUPING.md) | Workspace grouping — folding worktrees, clones and remote spellings of one repository into one workspace, shared by the extension and the CLI |
 | [features/TTFT-TRENDS.md](features/TTFT-TRENDS.md) | Research > TTFT diagnostics tab — time-to-first-token averages and per-model trendlines from VS Code Chat's debug log |
 | [features/WHATS-NEW.md](features/WHATS-NEW.md) | What's New view and the one-a-day new-feature notification — the release catalog, view-visit tracking, and the pacing rules |
 
 ## Architecture Decision Records (ADR)
 
-Implementation notes and decisions captured during development sessions.
+Decisions and plans captured during development. Every ADR starts with a **Status** line (Proposed, Accepted, Implemented, Superseded or Historical), the date it was decided/added (from `git log --diff-filter=A`) and, where checked, "Verified against code on <date>". Numbers inside ADRs are snapshots; each says when it was measured.
 
-| File | Description |
-|---|---|
-| [adr/IMPLEMENTATION-SUMMARY.md](adr/IMPLEMENTATION-SUMMARY.md) | Fluency Level Viewer implementation summary |
-| [adr/LIGHT-THEME-SUPPORT.md](adr/LIGHT-THEME-SUPPORT.md) | Light theme support implementation summary |
-| [adr/IMPLEMENTATION-SUMMARY-SOCIAL-SHARE.md](adr/IMPLEMENTATION-SUMMARY-SOCIAL-SHARE.md) | Social media share feature implementation summary |
-| [adr/FLUENCY-DATA-IMPLEMENTATION.md](adr/FLUENCY-DATA-IMPLEMENTATION.md) | Fluency data cloud upload — gap analysis and plan |
-| [adr/PR_SUMMARY.md](adr/PR_SUMMARY.md) | PR summary: comprehensive light theme support |
-| [adr/SQLITE-WAL-READS.md](adr/SQLITE-WAL-READS.md) | Why sql.js reads of data.db/opencode.db must merge pending WAL frames first |
-| [adr/ANALYSIS-WORKER.md](adr/ANALYSIS-WORKER.md) | Why session parsing and workspace scans run on worker threads, and how that is kept from regressing |
-| [adr/LOCALIZATION-ARCHITECTURE.md](adr/LOCALIZATION-ARCHITECTURE.md) | Repo-wide localization standard: the four runtime tiers and one source of truth |
-| [adr/INSIGHTS-CATALOG-LOCALIZATION.md](adr/INSIGHTS-CATALOG-LOCALIZATION.md) | How the Insights catalog is localized without giving up insightsEngine.ts's purity |
-| [adr/TOOL-EXECUTION-STATS.md](adr/TOOL-EXECUTION-STATS.md) | Per-tool failure counts and latency histograms (reliability, latency, MCP health, cost-vs-speed panels): data sources, additive design, phased plan |
+| File | Status | Description |
+|---|---|---|
+| [adr/ANALYSIS-WORKER.md](adr/ANALYSIS-WORKER.md) | Implemented | Why session parsing and workspace scans run on worker threads, and how that is kept from regressing |
+| [adr/SQLITE-WAL-READS.md](adr/SQLITE-WAL-READS.md) | Implemented | Why sql.js reads of data.db/opencode.db must merge pending WAL frames first |
+| [adr/TOOL-EXECUTION-STATS.md](adr/TOOL-EXECUTION-STATS.md) | Implemented | Per-tool failure counts and latency histograms (reliability, latency, MCP health, cost-vs-speed panels): data sources, additive design, phased plan |
+| [adr/LOCALIZATION-ARCHITECTURE.md](adr/LOCALIZATION-ARCHITECTURE.md) | Accepted | Repo-wide localization standard: the four runtime tiers and one source of truth |
+| [adr/INSIGHTS-CATALOG-LOCALIZATION.md](adr/INSIGHTS-CATALOG-LOCALIZATION.md) | Implemented | How the Insights catalog is localized without giving up insightsEngine.ts's purity |
+| [adr/VS-WEBVIEW-BUNDLE-SOURCING.md](adr/VS-WEBVIEW-BUNDLE-SOURCING.md) | Implemented, **release gate open** | Visual Studio webview bundles are generated at build time, not committed; **a human must still verify the built VSIX contains them** (checklist at the top) |
+| [adr/EXTENSION-TS-DECOMPOSITION.md](adr/EXTENSION-TS-DECOMPOSITION.md) | Proposed | Plan for breaking up the `extension.ts` god-object (nothing executed yet) |
+| [adr/SHARED-SRC-API-BOUNDARY.md](adr/SHARED-SRC-API-BOUNDARY.md) | Proposed | Analysis and recommended incremental API boundary for the shared `src/` folder |
+
+### Historical PR and implementation notes
+
+Point-in-time summaries from single PRs (mostly 2026-05-15). They are kept for the record, not as current guidance; each carries a banner listing what has since changed. They live in `docs/adr/history/`.
+
+| File | Status | Description |
+|---|---|---|
+| [adr/history/IMPLEMENTATION-SUMMARY.md](adr/history/IMPLEMENTATION-SUMMARY.md) | Historical, partly superseded | Fluency Level Viewer implementation summary |
+| [adr/history/LIGHT-THEME-SUPPORT.md](adr/history/LIGHT-THEME-SUPPORT.md) | Historical | Light theme support implementation summary |
+| [adr/history/PR_SUMMARY.md](adr/history/PR_SUMMARY.md) | Historical | PR summary for the same light-theme PR |
+| [adr/history/IMPLEMENTATION-SUMMARY-SOCIAL-SHARE.md](adr/history/IMPLEMENTATION-SUMMARY-SOCIAL-SHARE.md) | Superseded | Original social media share design (replaced by the PNG-based `shareToSocial` flow) |
+| [adr/history/FLUENCY-DATA-IMPLEMENTATION.md](adr/history/FLUENCY-DATA-IMPLEMENTATION.md) | Historical | Fluency data cloud upload — gap analysis and plan (team dashboard part has since shipped) |
+| [adr/history/VS-WEBVIEW-BUNDLE-SOURCING-SESSION-LOG.md](adr/history/VS-WEBVIEW-BUNDLE-SOURCING-SESSION-LOG.md) | Historical | Agent-session narrative and deletion log split out of the Visual Studio bundle ADR |

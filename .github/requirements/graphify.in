@@ -26,4 +26,4 @@
 # took a pin quoted in the old header for the real declaration, bumped the
 # version everywhere and left the hash belonging to the old wheel.
 
-graphifyy==0.9.75
+graphifyy==0.9.82

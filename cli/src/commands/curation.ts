@@ -18,6 +18,7 @@ import {
 	buildMcpEntriesFromJson,
 	discoverSkillEntries,
 	analyzeToolCuration,
+	mergeAvailableToolEntries,
 } from '../../../src/toolCuration';
 import type { ToolCurationAnalysis } from '../../../src/types';
 
@@ -38,9 +39,10 @@ export const curationCommand = new Command('curation')
 
 		// Build available tools from file-system sources only (no vscode.lm.tools).
 		const workspaceFolderPaths = [cwd];
-		const mcpEntries = buildMcpEntriesFromJson(workspaceFolderPaths);
-		const skillEntries = discoverSkillEntries(workspaceFolderPaths);
-		const availableTools = [...mcpEntries, ...skillEntries];
+		const availableTools = mergeAvailableToolEntries({
+			mcpJson: buildMcpEntriesFromJson(workspaceFolderPaths),
+			skills: discoverSkillEntries(workspaceFolderPaths),
+		});
 
 		if (availableTools.length === 0 && !last30Days) {
 			if (shouldOutputJson(options)) {

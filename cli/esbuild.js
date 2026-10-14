@@ -6,22 +6,6 @@ const { execFileSync } = require("child_process");
 const production = process.argv.includes("--production");
 
 async function main() {
-  // Copy JSON data files from src/ to a temp location for bundling
-  const dataFiles = [
-    "tokenEstimators.json",
-    "modelPricing.json",
-    "toolNames.json",
-    "automaticTools.json",
-  ];
-
-  for (const file of dataFiles) {
-    const srcPath = path.join(__dirname, "..", "src", file);
-    const destPath = path.join(__dirname, "src", file);
-    if (fs.existsSync(srcPath) && !fs.existsSync(destPath)) {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
-
   // Copy sql-wasm.wasm to dist/
   const distDir = path.join(__dirname, "dist");
   if (!fs.existsSync(distDir)) {
@@ -50,20 +34,15 @@ async function main() {
     outfile: "dist/cli.js",
     format: "cjs",
     platform: "node",
-    target: "node18",
+    target: "node22",
     sourcemap: !production,
     minify: production,
     banner: {
       js: "#!/usr/bin/env node",
     },
-    external: ["vscode"],
     // The CLI bundles shared sources from ../src (repo root), so tell esbuild
     // to resolve package imports from the CLI's own node_modules as well.
     nodePaths: [path.join(__dirname, "node_modules")],
-    // Resolve the parent src/ directory modules
-    alias: {
-      vscode: path.join(__dirname, "src", "vscode-stub.ts"),
-    },
     loader: {
       ".json": "json",
     },
@@ -77,13 +56,6 @@ async function main() {
 
   await buildLibrary(buildOptions);
 
-  // Clean up copied JSON files
-  for (const file of dataFiles) {
-    const destPath = path.join(__dirname, "src", file);
-    if (fs.existsSync(destPath)) {
-      fs.unlinkSync(destPath);
-    }
-  }
 }
 
 /**

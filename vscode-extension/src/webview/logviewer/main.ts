@@ -832,7 +832,7 @@ function buildHierarchyCard(data: SessionLogData): string {
 	const childCount = data.totalChildCount ?? data.childInfo?.length ?? 0;
 	if (!hasParent && childCount === 0) { return ''; }
 
-	let parts: string[] = [];
+	const parts: string[] = [];
 	if (hasParent) {
 		const pName = escapeHtml(data.parentInfo!.name);
 		parts.push(`<div class="hierarchy-line hierarchy-parent-line">↑ Parent: <strong>${pName}</strong></div>`);

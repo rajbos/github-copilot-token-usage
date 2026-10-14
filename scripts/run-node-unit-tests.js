@@ -11,6 +11,10 @@ const testFiles = fs.readdirSync(outUnitDir)
 	.filter((name) => name.endsWith('.test.js'))
 	.sort((a, b) => a.localeCompare(b));
 
+// Run every file even after a failure, so one failing file cannot hide the
+// results of the files sorted after it; exit non-zero at the end instead.
+const failed = [];
+
 for (const fileName of testFiles) {
 	const testFilePath = path.join(outUnitDir, fileName);
 	const result = spawnSync(
@@ -22,6 +26,10 @@ for (const fileName of testFiles) {
 		},
 	);
 
+	if (result.error) {
+		throw result.error;
+	}
+
 	if (result.status !== 0) {
 		if (result.stdout) {
 			process.stdout.write(result.stdout);
@@ -31,12 +39,16 @@ for (const fileName of testFiles) {
 			process.stderr.write(result.stderr);
 		}
 
-		process.exit(result.status ?? 1);
-	}
-
-	if (result.error) {
-		throw result.error;
+		process.stdout.write(`FAIL ${fileName}\n`);
+		failed.push({ fileName, status: result.status ?? 1 });
+		continue;
 	}
 
 	process.stdout.write(`PASS ${fileName}\n`);
+}
+
+if (failed.length > 0) {
+	const list = failed.map((f) => `  ${f.fileName}`).join('\n');
+	process.stderr.write(`\n${failed.length} of ${testFiles.length} test file(s) failed:\n${list}\n`);
+	process.exit(failed[0].status);
 }
