@@ -183,7 +183,7 @@ export const WHATS_NEW_RELEASES: readonly WhatsNewRelease[] = [
 				titleKey: 'whatsNew.feature.usage.memory-files-hygiene.title',
 				descriptionKey: 'whatsNew.feature.usage.memory-files-hygiene.description',
 				kind: 'section',
-				surface: { view: 'usage', tab: 'tools', anchor: 'section-memory-files' },
+				surface: { view: 'usage', tab: 'health', anchor: 'section-memory-files' },
 			},
 			{
 				id: 'logviewer.hydrafusion-routing',

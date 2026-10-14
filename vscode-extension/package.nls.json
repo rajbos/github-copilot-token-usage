@@ -772,7 +772,7 @@
   "usage.toolExec.empty.mcp": "No MCP server calls with a recorded outcome in this period.",
   "usage.toolExec.empty.costSpeed": "No tools have both latency and output-token data yet.",
   "whatsNew.feature.usage.memory-files-hygiene.title": "Copilot Memory Files",
-  "whatsNew.feature.usage.memory-files-hygiene.description": "A new section on the Tools tab showing how much Copilot agent memory has accumulated on disk — per workspace, repo, session, and global scope — with counts for stale and oversized files so you know what is safe to clear out.",
+  "whatsNew.feature.usage.memory-files-hygiene.description": "A new section on the Workspace Health tab showing how much Copilot agent memory has accumulated on disk — per workspace, repo, session, and global scope — with counts for stale and oversized files so you know what is safe to clear out.",
   "whatsNew.feature.logviewer.hydrafusion-routing.title": "HydraFusion Routing",
   "whatsNew.feature.logviewer.hydrafusion-routing.description": "When a Copilot CLI session runs on HydraFusion, several models draft, judge and repair one answer behind the scenes and you are shown one result and one credit number. This section opens that up: which models ran, who rejected whom, which leg you actually read, and what share of the credits went on review rather than on the answer.",
   "whatsNew.feature.usage.corrections-tab.title": "Corrections tab",
