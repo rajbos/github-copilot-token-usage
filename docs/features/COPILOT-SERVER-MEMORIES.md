@@ -1,7 +1,7 @@
 # Copilot Server-Side Repository Memories
 
 Status: **Implemented** — shared fetch/analysis module, CLI `memory-files --server`
-/ `--promote`, and a Tools-tab UI section are live.
+/ `--promote`, and a Workspace Health tab UI section are live.
 
 Companion to [COPILOT-MEMORY-FILES-INSIGHT.md](COPILOT-MEMORY-FILES-INSIGHT.md),
 which covers the *local* half of Copilot's memory. This document covers the other
@@ -194,7 +194,7 @@ extension or in `--promote`. When that leaves nothing, both surfaces print the s
 explanation (`describeNoPromotionCandidates()`) with the documented / unverifiable /
 fully stale breakdown, rather than claiming every memory is already documented.
 
-## The Tools-tab section
+## The Workspace Health tab section
 
 - **Scope.** The section names the repository (`owner/name`) and the local checkout
   it was resolved from. The store is per GitHub repository, shared by everyone
@@ -247,7 +247,7 @@ fields the typed shape does not know about. Use it when the API changes.
 | Unit tests | `vscode-extension/test/unit/copilotServerMemories.test.ts` (offline — `fetch` and `fileExists` are both injected), `vscode-extension/test/unit/webview-serverMemoriesSection.test.ts` (section HTML and click mapping) |
 | CLI | `cli/src/commands/memory-files.ts` — `--server`, `--repo`, `--limit`, `--promote` |
 | Runtime wiring | `vscode-extension/src/extension.ts` — `scheduleServerMemoriesRefresh()`, `decideServerMemoriesRefresh()` (pure, exported), `buildServerMemoriesView()`, `resolveWorkspaceRepoSlug()`, `invalidateServerMemoriesCache()`, TTL `SERVER_MEMORIES_FETCH_TTL_MS` |
-| Tools-tab UI | `vscode-extension/src/webview/usage/serverMemories.ts` — `buildServerMemoriesSectionHtml()`, `sanitizeServerMemoriesAnalysis()`, `wireServerMemoriesButtons()`, `#section-server-memories`. The buttons post `draftServerMemoryPromotion` (subject key and row fingerprint; the host rebuilds and drafts) and `openServerMemoryCitation` (a repo-relative path; the host opens it only if the current analysis cites it and it is a regular file inside the current checkout, `isOpenableCitedDocument()`). The webview never receives absolute paths. Both tables use the shared data-table component. Split out of `main.ts`, which would otherwise have crossed the 6000-line `max-lines` ceiling; `main.ts` imports both and holds the cross-refresh cache. |
+| Workspace Health tab UI | `vscode-extension/src/webview/usage/serverMemories.ts` — `buildServerMemoriesSectionHtml()`, `sanitizeServerMemoriesAnalysis()`, `wireServerMemoriesButtons()`, `#section-server-memories`. The buttons post `draftServerMemoryPromotion` (subject key and row fingerprint; the host rebuilds and drafts) and `openServerMemoryCitation` (a repo-relative path; the host opens it only if the current analysis cites it and it is a regular file inside the current checkout, `isOpenableCitedDocument()`). The webview never receives absolute paths. Both tables use the shared data-table component. Kept out of `main.ts`, which is over the 6000-line `max-lines` ceiling; `main.ts` imports both and holds the cross-refresh cache. |
 | Raw probe | `scripts/fetch-copilot-memories.js` |
 | Setting | `aiEngineeringFluency.serverMemories.enabled` (default `true`) |
 

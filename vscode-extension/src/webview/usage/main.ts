@@ -1911,8 +1911,7 @@ function sanitizeStats(raw: any): UsageAnalysisStats | null {
 			traceCurationOnce('sanitize-no-curation', 'sanitizeStats.curation.missing');
 		}
 
-		// Pass through the memory-files hygiene analysis (compact MemoryFilesAnalysisView
-		// rollup: counts/rollup scalars only — no paths and no per-file metadata).
+		// Pass through the memory-files hygiene analysis (compact rollup: counts/scalars only, no paths).
 		applyMemoryFilesAnalysis(sanitized, raw);
 
 		// Pass through the Copilot API quota balance and current-month billing costs.
@@ -3019,11 +3018,18 @@ function buildUsageAllKeysSets(stats: UsageAnalysisStats): {
 	};
 }
 
+/** The two memory sections (on-disk files, then server-side repository memories) shown on the Workspace Health tab. */
+function buildMemorySectionsHtml(stats: UsageAnalysisStats): string {
+	return buildMemoryFilesSectionHtml(currentMemoryFilesAnalysis ?? stats.memoryFilesAnalysis)
+		+ buildServerMemoriesSectionHtml(currentServerMemoriesAnalysis ?? stats.serverMemoriesAnalysis);
+}
+
 function buildHealthTabPanelHtml(customizationHtml: string, stats: UsageAnalysisStats): string {
 	return `
 		<div id="tab-panel-health" class="tab-panel"${activeTab !== 'health' ? ' style="display:none"' : ''}>
 			${customizationHtml}
 			${renderMissedPotential(stats)}
+			${buildMemorySectionsHtml(stats)}
 
 			<!-- Repository Setup Section -->
 			<div class="repo-hygiene-section" id="section-repo-hygiene" style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px;">
@@ -5287,8 +5293,6 @@ function buildToolsTabPanelHtml(stats: UsageAnalysisStats): string {
 			${safeSectionHtml(localize('usage.tab.tools'), () => buildToolExecutionSectionsHtml({ toolCalls: stats.last30Days.toolCalls, mcpTools: stats.last30Days.mcpTools, resolveToolName: lookupToolName, hiddenTools: hideAutomaticToolCalls ? AUTOMATIC_TOOL_SET_WV : undefined }))}
 			${buildMcpToolsSectionHtml(stats)}
 			${buildCurationSectionHtml(currentCurationAnalysis ?? stats.curationAnalysis)}
-			${buildMemoryFilesSectionHtml(currentMemoryFilesAnalysis ?? stats.memoryFilesAnalysis)}
-			${buildServerMemoriesSectionHtml(currentServerMemoriesAnalysis ?? stats.serverMemoriesAnalysis)}
 			${buildSkillSuggestionsSectionHtml(stats.repeatedTasks ?? null)}
 		</div>`;
 }

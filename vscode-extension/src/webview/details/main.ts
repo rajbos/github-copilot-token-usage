@@ -1139,32 +1139,6 @@ section.append(inner);
 return section;
 }
 
-function buildEstimatesSection(): HTMLElement {
-const section = el('div', 'section');
-const heading = iconHeading('h3', 'lightbulb', 'Calculation & Estimates');
-section.append(heading);
-
-const notes = document.createElement('ul');
-notes.className = 'notes';
-
-const items = [
-'Cost (UBB) uses GitHub Copilot AI Credit rates (1 credit = $0.01) — this is what you are billed under Usage Based Billing.',
-'"Estimated cost (all/selected providers)" and the Total card sum estimated spend across the currently included providers (GitHub Copilot, Anthropic, Google, OpenAI, …) — all of them by default; when the Cost by Provider section is shown, click a provider card there to include/exclude it. Non-Copilot providers (e.g. Claude Code) are priced at their public API rates as an API-equivalent estimate, even when you use them through a flat-rate subscription.',
-'Estimated CO₂ is based on ~0.2 g CO₂e per 1,000 tokens.',
-'Estimated water usage is based on ~0.3 L per 1,000 tokens.',
-'Tree equivalent represents the fraction of a single mature tree\'s annual CO₂ absorption (~21 kg/year).'
-];
-
-items.forEach(text => {
-const li = document.createElement('li');
-li.textContent = text;
-notes.append(li);
-});
-
-section.append(notes);
-return section;
-}
-
 function wireButtons(): void {
 const refresh = document.getElementById('btn-refresh');
 const chart = document.getElementById('btn-chart');

@@ -89,8 +89,8 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 			{
 				id: 'details.key-metrics',
 				title: 'Key Metrics',
-				description: 'Tokens, cost, sessions and CO₂ side by side for today, the last 30 days, this month, last month and the projected year.',
-				keywords: ['tokens', 'cost', 'co2', 'projection'],
+				description: 'A Tokens, Cost and Activity table across Today, Last 30 Days, Current Month, Previous Month and Projected Year.',
+				keywords: ['tokens', 'cost', 'activity', 'projection'],
 				nav: { anchor: 'section-key-metrics' },
 			},
 			{
@@ -190,8 +190,6 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 							{ id: 'usage.tools.cost-speed', title: 'Cost vs speed map', description: 'Bubble chart of tool latency against the tokens each tool returns.', nav: { anchor: 'section-tool-cost-speed' } },
 							{ id: 'usage.tools.mcp-tools', title: 'MCP Tools', description: 'MCP calls by server and by tool for three periods, and any unknown tools you can report.', keywords: ['unknown tools'], nav: { anchor: 'section-mcp-tools' } },
 							{ id: 'usage.tools.curation', title: 'Tool Curation', description: 'Available versus used tools, the prompt overhead they cost, and unused MCP servers, plugins, built-ins and skills.', keywords: ['unused', 'overhead', 'trim'], nav: { anchor: 'section-tool-curation' }, condition: 'When tool definitions were captured' },
-							{ id: 'usage.tools.memory-files', title: 'Copilot Memory Files', description: 'Memory files per workspace with size, stale entries and last update.', keywords: ['memories', 'hygiene'], nav: { anchor: 'section-memory-files' }, condition: 'When memory files exist' },
-							{ id: 'usage.tools.server-memories', title: 'Copilot Repository Memories', description: 'Server-side agent memories for this repository and candidates to promote into instructions.', nav: { anchor: 'section-server-memories' }, condition: 'When the workspace is a GitHub repository' },
 							{ id: 'usage.tools.skill-suggestions', title: 'Skill Suggestions', description: 'Prompts you keep repeating that would make good reusable skills.', keywords: ['repeated prompts'], nav: { anchor: 'section-skill-suggestions' }, condition: 'When repeated prompts are found' },
 						],
 					},
@@ -203,6 +201,8 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 						children: [
 							{ id: 'usage.health.customization', title: 'Copilot Customization Files', description: 'Which workspaces have instructions, prompts, agents and skills set up for Copilot.', keywords: ['instructions', 'agents.md', 'copilot-instructions'], nav: { anchor: 'section-customization-files' } },
 							{ id: 'usage.health.missed-potential', title: 'Missed Potential', description: 'Workspaces with instruction files for other AI tools but no Copilot equivalent.', keywords: ['claude.md', 'cursor rules'], nav: { anchor: 'section-missed-potential' } },
+							{ id: 'usage.tools.memory-files', title: 'Copilot Memory Files', description: 'Memory files per workspace with size, stale entries and last update.', keywords: ['memories', 'hygiene'], nav: { anchor: 'section-memory-files' }, condition: 'When memory files exist' },
+							{ id: 'usage.tools.server-memories', title: 'Copilot Repository Memories', description: 'Server-side agent memories for this repository and candidates to promote into instructions.', nav: { anchor: 'section-server-memories' }, condition: 'When the workspace is a GitHub repository' },
 							{ id: 'usage.health.repo-hygiene', title: 'Repository Hygiene Analysis', description: 'Per-repository checks for the setup that helps agents do good work.', nav: { anchor: 'section-repo-hygiene' } },
 						],
 					},
@@ -359,7 +359,7 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 				children: [
 					{ id: 'diagnostics.report', title: 'Report', description: 'A plain-text diagnostic report (no code or conversation content) to copy into an issue, plus the session folders per editor.', keywords: ['issue', 'bug report'], nav: { tab: 'report' } },
 					{ id: 'diagnostics.sessions', title: 'Session Files', description: 'Every session file found, per editor, with interactions and tokens. Open one in the Session Log Viewer.', keywords: ['logs', 'files', 'session log viewer'], nav: { tab: 'sessions' } },
-					{ id: 'diagnostics.cache', title: 'Cache', description: 'Cache size, age and location, and buttons to clear or reset it.', nav: { tab: 'cache' } },
+					{ id: 'diagnostics.cache', title: 'Session Cache', description: "The extension's own session-parse cache: size, age and location, and buttons to clear or reset it (not LLM prompt caching).", nav: { tab: 'cache' } },
 					{ id: 'diagnostics.path-analyzer', title: 'Path Analyzer', description: 'Point at a folder to see which session files the extension finds there and how it reads them.', keywords: ['folder', 'scan'], nav: { tab: 'path-analyzer' } },
 					{ id: 'diagnostics.share', title: 'Share Card', description: 'A shareable card of your AI coding toolbox for a chosen period.', keywords: ['social', 'image'], nav: { tab: 'share' } },
 				],
