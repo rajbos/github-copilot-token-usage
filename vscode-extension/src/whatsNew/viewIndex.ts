@@ -89,8 +89,8 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 			{
 				id: 'details.key-metrics',
 				title: 'Key Metrics',
-				description: 'Tokens, cost, sessions and CO₂ side by side for today, the last 30 days, this month, last month and the projected year.',
-				keywords: ['tokens', 'cost', 'co2', 'projection'],
+				description: 'A Tokens, Cost and Activity table across Today, Last 30 Days, Current Month, Previous Month and Projected Year.',
+				keywords: ['tokens', 'cost', 'activity', 'projection'],
 				nav: { anchor: 'section-key-metrics' },
 			},
 			{
@@ -360,7 +360,7 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 				children: [
 					{ id: 'diagnostics.report', title: 'Report', description: 'A plain-text diagnostic report (no code or conversation content) to copy into an issue, plus the session folders per editor.', keywords: ['issue', 'bug report'], nav: { tab: 'report' } },
 					{ id: 'diagnostics.sessions', title: 'Session Files', description: 'Every session file found, per editor, with interactions and tokens. Open one in the Session Log Viewer.', keywords: ['logs', 'files', 'session log viewer'], nav: { tab: 'sessions' } },
-					{ id: 'diagnostics.cache', title: 'Cache', description: 'Cache size, age and location, and buttons to clear or reset it.', nav: { tab: 'cache' } },
+					{ id: 'diagnostics.cache', title: 'Session Cache', description: "The extension's own session-parse cache: size, age and location, and buttons to clear or reset it (not LLM prompt caching).", nav: { tab: 'cache' } },
 					{ id: 'diagnostics.path-analyzer', title: 'Path Analyzer', description: 'Point at a folder to see which session files the extension finds there and how it reads them.', keywords: ['folder', 'scan'], nav: { tab: 'path-analyzer' } },
 				],
 			},

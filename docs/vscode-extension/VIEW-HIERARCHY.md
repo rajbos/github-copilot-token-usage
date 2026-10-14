@@ -94,7 +94,7 @@ Analysis. Copy it when a view outgrows one row of tabs.
 
 | Group | Leaf tabs |
 |---|---|
-| 🩺 Diagnostics | Report · Session Files · Cache · Path Analyzer |
+| 🩺 Diagnostics | Report · Session Files · Session Cache · Path Analyzer |
 | 🔬 Research | Model Usage · Tool Analysis · Skill Usage · OTel Delta · TTFT |
 | ⚙️ Settings | Display · Backend Storage · GitHub Auth · Debug (debug mode only) |
 

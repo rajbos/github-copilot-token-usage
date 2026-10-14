@@ -2042,6 +2042,26 @@ test('l10n: toolbox card keys resolve in zh-cn and differ from English', () => {
 	}
 });
 
+test('l10n: Diagnostics Session Cache strings resolve in English and zh-cn and stay distinct from Prompt Cache', () => {
+	mock.setLanguage('en');
+	try {
+		assert.equal(t('diagnostics.cache.tab'), 'Session Cache');
+		assert.equal(t('diagnostics.cache.infoTitle'), 'Session Cache Information');
+		assert.equal(t('diagnostics.cache.management'), 'Session Cache Management');
+		assert.ok(t('diagnostics.cache.storedIncludes').includes('on-disk snapshot'));
+		assert.ok(t('diagnostics.cache.infoBody').includes('not LLM prompt caching'), 'English body must disambiguate from prompt caching');
+		assert.ok(t('diagnostics.cache.infoBody').includes('on-disk snapshot'), 'English body must describe the on-disk snapshot, not globalState');
+
+		mock.setLanguage('zh-cn');
+		assert.equal(t('diagnostics.cache.tab'), '会话缓存');
+		assert.equal(t('diagnostics.cache.infoTitle'), '会话缓存信息');
+		assert.equal(t('diagnostics.cache.management'), '会话缓存管理');
+		assert.ok(t('diagnostics.cache.infoBody').includes('LLM'), 'zh-cn body must still mention LLM prompt caching');
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
 test('l10n: workspace grouping strings in the Customization Files matrix resolve in English and zh-cn', () => {
 	mock.setLanguage('en');
 	assert.equal(t('customizationMatrix.mergedFolders', '3'), '3 folders merged');
