@@ -11,7 +11,7 @@
         {
           "id": "usage.memory-files-hygiene",
           "title": "Copilot Memory Files",
-          "description": "A new section on the Tools tab showing how much Copilot agent memory has accumulated on disk — per workspace, repo, session, and global scope — with counts for stale and oversized files so you know what is safe to clear out.",
+          "description": "A new section on the Workspace Health tab showing how much Copilot agent memory has accumulated on disk — per workspace, repo, session, and global scope — with counts for stale and oversized files so you know what is safe to clear out.",
           "kind": "section",
           "isUnseen": true
         },
