@@ -13136,8 +13136,7 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
       const dirCounts = new Map<string, number>();
       for (const file of sessionFiles) { const parent = require("path").dirname(file); dirCounts.set(parent, (dirCounts.get(parent) || 0) + 1); }
       if (dirCounts.size > 0) { report.push("Session Files by Directory:"); for (const [dir, count] of dirCounts.entries()) { report.push(`  ${dir}: ${count}`); } report.push(""); }
-      if (sessionFiles.length > 0) { await this.appendSessionFileListing(report, sessionFiles); }
-      else { this.appendNoSessionFilesMessage(report); }
+      // The per-file listing (and the "no files found" help) is emitted once, by buildDiagReportSessionFiles.
       report.push("");
     } catch (error) { report.push(l10n.t('error.calculatingTokenUsageStatistics') + `: ${error}`); report.push(""); }
   }
@@ -15610,6 +15609,24 @@ function setupBackend(context: vscode.ExtensionContext, tokenTracker: CopilotTok
     );
 
     context.subscriptions.push(configureBackendCommand);
+
+    // Every backend command contributed in package.json must be registered here;
+    // test/unit/command-registration.test.ts fails if one is missing.
+    const backendCommandHandlers: Array<[string, () => Promise<void>]> = [
+      ["copyBackendConfig", () => backendHandler.handleCopyBackendConfig()],
+      ["exportCurrentView", () => backendHandler.handleExportCurrentView()],
+      ["setBackendSharedKey", () => backendHandler.handleSetBackendSharedKey()],
+      ["rotateBackendSharedKey", () => backendHandler.handleRotateBackendSharedKey()],
+      ["clearBackendSharedKey", () => backendHandler.handleClearBackendSharedKey()],
+      ["toggleBackendWorkspaceMachineNameSync", () => backendHandler.handleToggleBackendWorkspaceMachineNameSync()],
+      ["setSharingProfile", () => backendHandler.handleSetSharingProfile()],
+      ["clearAzureSettings", () => backendHandler.handleClearAzureSettings()],
+    ];
+    for (const [id, handler] of backendCommandHandlers) {
+      context.subscriptions.push(
+        vscode.commands.registerCommand(`aiEngineeringFluency.${id}`, handler),
+      );
+    }
 
     const configureTeamServerCommand = vscode.commands.registerCommand(
       "aiEngineeringFluency.configureTeamServer",
