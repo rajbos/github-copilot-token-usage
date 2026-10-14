@@ -1,7 +1,7 @@
 /**
  * Which group tab each of the Usage Analysis leaf tabs lives under.
  *
- * The view reached ten tabs in one strip, which wrapped onto a second row at ordinary panel
+ * The view reached eleven tabs in one strip, which wrapped onto a second row at ordinary panel
  * widths and offered no way to tell at a glance that "Repository PRs" and "Cloud Agent" are the
  * same kind of thing. This mirrors the two-level strip the Diagnostics view already uses.
  *
