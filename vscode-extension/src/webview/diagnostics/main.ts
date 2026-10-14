@@ -4,7 +4,7 @@ import { setHtml } from "../shared/domUtils";
 import { renderDataTable, setDataTableState, type DataTableColumn, type DataTableSortValue } from "../shared/dataTable";
 import { wireExtensionPointButtons } from "../shared/extensionPoints";
 import { escapeHtml, formatFileSize, getTimeSince, getEditorIcon } from "../shared/formatUtils";
-import { createPeriodSelector, PERIOD_LABELS, type Period } from "../shared/periodSelector";
+import { createPeriodSelector, type Period } from "../shared/periodSelector";
 import { createViewStateManager } from "../shared/viewState";
 // CSS imported as text via esbuild
 import themeStyles from "../shared/theme.css";
