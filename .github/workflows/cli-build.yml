@@ -6,6 +6,13 @@ on:
     paths:
       - 'cli/**'
       - 'src/**'
+      - 'docs/cli/README.md'
+      - '.nvmrc'
+      - 'vscode-extension/src/**'
+      - 'vscode-extension/package.json'
+      - 'vscode-extension/pnpm-lock.yaml'
+      - 'vscode-extension/pnpm-workspace.yaml'
+      - '.github/workflows/cli-build.yml'
   pull_request:
     branches: [main]
 
@@ -19,7 +26,7 @@ jobs:
       cli-relevant: ${{ github.event_name == 'push' || steps.filter.outputs.cli-relevant == 'true' }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
@@ -34,6 +41,13 @@ jobs:
             cli-relevant:
               - 'cli/**'
               - 'src/**'
+              - 'docs/cli/README.md'
+              - '.nvmrc'
+              - 'vscode-extension/src/**'
+              - 'vscode-extension/package.json'
+              - 'vscode-extension/pnpm-lock.yaml'
+              - 'vscode-extension/pnpm-workspace.yaml'
+              - '.github/workflows/cli-build.yml'
 
   build-and-validate:
     needs: check-changes
@@ -41,34 +55,51 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: '11.2.2'
+
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: '.nvmrc'
-          # This job runs `npm ci` in both vscode-extension/ and cli/, so the
-          # npm cache is keyed on both lock files.
-          cache: 'npm'
+          # This job installs dependencies in both vscode-extension/ and cli/, so the
+          # pnpm cache is keyed on both lock files.
+          cache: 'pnpm'
           cache-dependency-path: |
-            vscode-extension/package-lock.json
-            cli/package-lock.json
+            vscode-extension/pnpm-lock.yaml
+            cli/pnpm-lock.yaml
 
       - name: Install extension dependencies
         working-directory: vscode-extension
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Install CLI dependencies
         working-directory: cli
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build CLI
         working-directory: cli
-        run: npm run build
+        run: pnpm run build
+
+      # Lints cli/src with the extension's ESLint and config (the CLI has no
+      # eslint of its own). Findings are warnings, so this reports without
+      # failing; new errors fail the job.
+      - name: Lint CLI sources
+        working-directory: cli
+        run: pnpm run lint
+
+      # Needs the build above: some tests import the built library from dist/lib.
+      - name: Run CLI unit tests
+        working-directory: cli
+        run: pnpm run test:unit
 
       - name: Validate CLI --help
         working-directory: cli
@@ -112,7 +143,7 @@ jobs:
 
       - name: Build production bundle
         working-directory: cli
-        run: npm run build:production
+        run: pnpm run build:production
 
       - name: Verify production bundle runs
         working-directory: cli

@@ -1,1 +1,0 @@
-{"nodes": [{"id": "github_workflows_validate_gradle_wrapper_workflow", "label": "Validate Gradle Wrapper", "file_type": "code", "source_file": ".github/workflows/validate-gradle-wrapper.yml", "source_location": null, "source_url": null, "captured_at": null, "author": null, "contributor": null}], "edges": [], "hyperedges": []}

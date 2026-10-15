@@ -1,11 +1,11 @@
 /**
  * Which group tab each of the Usage Analysis leaf tabs lives under.
  *
- * The view reached ten tabs in one strip, which wrapped onto a second row at ordinary panel
+ * The view reached eleven tabs in one strip, which wrapped onto a second row at ordinary panel
  * widths and offered no way to tell at a glance that "Repository PRs" and "Cloud Agent" are the
  * same kind of thing. This mirrors the two-level strip the Diagnostics view already uses.
  *
- * The count is ten because AI Readiness joined the view in #2194; the test against SWITCHABLE_TABS
+ * The count is eleven: AI Readiness joined the view in #2194 and Billing moved in from My Activity; the test against SWITCHABLE_TABS
  * is what actually keeps this list honest, so trust it over any number written in prose.
  *
  * **Leaf tab ids are unchanged and must stay that way.** They are the `viewTabOpened` telemetry
@@ -31,7 +31,7 @@ export interface UsageTabGroup {
 export const USAGE_TAB_GROUPS: readonly UsageTabGroup[] = [
 	{ id: 'usage', labelKey: 'usage.group.usage', icon: 'graph', tabs: ['activity', 'sessions'] },
 	{ id: 'workspace', labelKey: 'usage.group.workspace', icon: 'folder-opened', tabs: ['tools', 'health', 'readiness', 'worktrees'] },
-	{ id: 'github', labelKey: 'usage.group.github', icon: 'github', tabs: ['repos', 'agent'] },
+	{ id: 'github', labelKey: 'usage.group.github', icon: 'github', tabs: ['repos', 'agent', 'billing'] },
 	{ id: 'coaching', labelKey: 'usage.group.coaching', icon: 'mortar-board', tabs: ['insights', 'corrections'] },
 ];
 

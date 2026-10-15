@@ -1,8 +1,10 @@
 // Fluency Level Viewer webview
-import { buttonHtml } from '../shared/buttonConfig';
+import { buttonHtml, getNavButtons } from '../shared/buttonConfig';
 import { setHtml } from '../shared/domUtils';
 import { escapeHtml, markdownToHtml, STAGE_LABELS, STAGE_DESCRIPTIONS } from '../shared/formatUtils';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
+import themeStyles from '../shared/theme.css';
+import dataTableStyles from '../shared/dataTable.css';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
 import type { CategoryLevelData } from '../shared/types';
@@ -94,6 +96,8 @@ function wireNavButtons(data: FluencyLevelData): void {
 	document.getElementById('btn-details')?.addEventListener('click', () => { vscode.postMessage({ command: 'showDetails' }); });
 	document.getElementById('btn-chart')?.addEventListener('click', () => { vscode.postMessage({ command: 'showChart' }); });
 	document.getElementById('btn-usage')?.addEventListener('click', () => { vscode.postMessage({ command: 'showUsageAnalysis' }); });
+	document.getElementById('btn-efficiency')?.addEventListener('click', () => { vscode.postMessage({ command: 'showEfficiency' }); });
+	document.getElementById('btn-environmental')?.addEventListener('click', () => { vscode.postMessage({ command: 'showEnvironmental' }); });
 	document.getElementById('btn-diagnostics')?.addEventListener('click', () => { vscode.postMessage({ command: 'showDiagnostics' }); });
 	document.getElementById('btn-dashboard')?.addEventListener('click', () => { vscode.postMessage({ command: 'showDashboard' }); });
 	wireExtensionPointButtons(vscode);
@@ -113,6 +117,7 @@ function renderLayout(data: FluencyLevelData): void {
 	const selectedCategory = data.categories[selectedCategoryIndex];
 
 	setHtml(root, `
+		<style>${themeStyles}</style><style>${dataTableStyles}</style>
 		<style>${styles}</style>
 		<div class="container">
 			<div class="header">
@@ -122,13 +127,7 @@ function renderLayout(data: FluencyLevelData): void {
 					${data.isDebugMode ? '<span class="debug-badge">🐛 DEBUG MODE</span>' : ''}
 				</div>
 				<div class="button-row">
-					${buttonHtml('btn-refresh')}
-					${buttonHtml('btn-maturity')}
-					${buttonHtml('btn-details')}
-					${buttonHtml('btn-chart')}
-					${buttonHtml('btn-usage')}
-					${buttonHtml('btn-diagnostics')}
-					${data.backendConfigured ? buttonHtml('btn-dashboard') : ''}
+					${getNavButtons(null, !!data.backendConfigured).map(buttonHtml).join('')}
 				</div>
 			</div>
 

@@ -832,7 +832,7 @@ function buildHierarchyCard(data: SessionLogData): string {
 	const childCount = data.totalChildCount ?? data.childInfo?.length ?? 0;
 	if (!hasParent && childCount === 0) { return ''; }
 
-	let parts: string[] = [];
+	const parts: string[] = [];
 	if (hasParent) {
 		const pName = escapeHtml(data.parentInfo!.name);
 		parts.push(`<div class="hierarchy-line hierarchy-parent-line">↑ Parent: <strong>${pName}</strong></div>`);
@@ -1343,18 +1343,6 @@ if ((e as KeyboardEvent).key === 'Enter' || (e as KeyboardEvent).key === ' ') { 
 let logViewerClicksBound = false;
 
 function wireUpEventHandlers(): void {
-document.getElementById('btn-raw')?.addEventListener('click', () => {
-vscode.postMessage({ command: 'openRawFile' });
-});
-document.getElementById('btn-diagnostics')?.addEventListener('click', () => {
-vscode.postMessage({ command: 'showDiagnostics' });
-});
-document.getElementById('btn-usage')?.addEventListener('click', () => {
-vscode.postMessage({ command: 'showUsageAnalysis' });
-});
-document.getElementById('btn-details')?.addEventListener('click', () => {
-vscode.postMessage({ command: 'showDetails' });
-});
 document.getElementById('btn-refresh-session')?.addEventListener('click', () => {
 vscode.postMessage({ command: 'refreshSession' });
 });

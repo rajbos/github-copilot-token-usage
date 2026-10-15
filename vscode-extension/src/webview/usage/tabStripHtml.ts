@@ -10,18 +10,15 @@ import { escapeHtml } from '../shared/formatUtils';
 import { localize } from '../shared/localization';
 import { USAGE_TAB_GROUPS, groupOfUsageTab } from './tabGroups';
 
-/** What the strip needs to render: the selected tab, the badge counts, and the readiness button. */
+/** What the strip needs to render: the selected tab, the badge counts, and whether readiness is offered. */
 export interface UsageTabStripInput {
 	activeTab: string;
 	/** Insights whose status is still `new`; drives the Insights badge. */
 	newInsightCount: number;
 	/** Sessions carrying correction moments; drives the Corrections badge. */
 	correctionSessionCount: number;
-	/**
-	 * The AI Readiness button, rendered by `DarkFactoryTab` in main.ts. Passed in because that
-	 * tab owns its own markup and lifecycle, and importing it here would drag the whole tab in.
-	 */
-	readinessButtonHtml: string;
+	/** Whether the host offers the AI Readiness scan; the button is omitted when it does not. */
+	readinessAvailable: boolean;
 }
 
 /** A count badge, or nothing at all when the count is zero. */
@@ -37,9 +34,8 @@ function tabBadgeHtml(count: number, rgba: string): string {
  * were English literals while they lived inline in main.ts, which left the two halves of the
  * same strip disagreeing about whether a tab strip is translatable — the group row followed the
  * display language and the leaf row under it did not.
- *
- * The one exception is AI Readiness, whose whole button arrives from `DarkFactoryTab`; that tab
- * owns its own markup, so its label is localized there or not at all.
+
+ * AI Readiness is built here too, but only when `readinessAvailable` is set (the VS Code host).
  */
 export function usageLeafTabButtons(input: UsageTabStripInput): Record<string, string> {
 	const btn = (tab: string, icon: string, extra = ''): string =>
@@ -51,7 +47,8 @@ export function usageLeafTabButtons(input: UsageTabStripInput): Record<string, s
 		health: btn('health', 'server-environment'),
 		repos: btn('repos', 'git-pull-request'),
 		agent: btn('agent', 'cloud'),
-		readiness: input.readinessButtonHtml,
+		billing: btn('billing', 'credit-card'),
+		readiness: input.readinessAvailable ? btn('readiness', 'shield') : '',
 		worktrees: btn('worktrees', 'git-branch'),
 		insights: btn('insights', 'lightbulb', tabBadgeHtml(input.newInsightCount, 'rgba(96,165,250,0.4)')),
 		corrections: btn('corrections', 'debug-restart', tabBadgeHtml(input.correctionSessionCount, 'rgba(251,191,36,0.4)')),

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import * as vscode from 'vscode';
 import { t } from '../../src/l10n';
 import { ENGLISH_BUNDLE, resolvedLocale } from '../../src/l10nCore';
-import { INSIGHT_CATALOG, evaluateInsights } from '../../src/insightsEngine';
+import { INSIGHT_CATALOG, evaluateInsights } from '../../../src/insightsEngine';
 import { insightFixtureContexts } from './fixtures/insightContexts';
 import { WHATS_NEW_RELEASES } from '../../src/whatsNew/catalog';
 
@@ -122,6 +122,81 @@ test('l10n: customization files table controls resolve in English and zh-cn', ()
 	}
 });
 
+test('l10n: tool × period table strings resolve in English and zh-cn', () => {
+	const translations: Array<[string, string, string]> = [
+		['usage.toolPeriod.colTool', 'Tool', '工具'],
+		['usage.toolPeriod.colServer', 'Server', '服务器'],
+		['usage.toolPeriod.colToday', 'Today', '今天'],
+		['usage.toolPeriod.colLast30', 'Last 30 Days', '最近 30 天'],
+		['usage.toolPeriod.colPreviousMonth', 'Previous Month', '上月'],
+		['usage.toolPeriod.totalToolCalls', 'Total tool calls', '工具调用总数'],
+		['usage.toolPeriod.totalMcpCalls', 'Total MCP calls', 'MCP 调用总数'],
+		['usage.toolPeriod.byServer', 'By Server', '按服务器'],
+		['usage.toolPeriod.byTool', 'By Tool', '按工具'],
+		['usage.toolPeriod.mcpViewAria', 'MCP breakdown', 'MCP 细分'],
+		['usage.toolPeriod.emptyTools', 'No tools used yet', '尚未使用任何工具'],
+		['usage.toolPeriod.emptyToolsHidden', 'No purposeful tools used yet (automatic tool calls are hidden)', '尚未使用任何有目的的工具（已隐藏自动工具调用）'],
+		['usage.toolPeriod.emptyMcp', 'No MCP tools used yet', '尚未使用任何 MCP 工具'],
+		['usage.toolPeriod.autoBadge', 'auto', '自动'],
+		['usage.toolPeriod.ariaToolUsage', 'Tool usage by period', '按时间段的工具使用情况'],
+		['usage.toolPeriod.ariaMcpServers', 'MCP calls by server and period', '按服务器和时间段的 MCP 调用'],
+		['usage.toolPeriod.ariaMcpTools', 'MCP calls by tool and period', '按工具和时间段的 MCP 调用'],
+		['usage.toolPeriod.autoBadgeTitle', 'Automatic tool — Copilot uses this internally and it does not count toward fluency scoring', '自动工具 — Copilot 在内部使用，不计入熟练度评分'],
+	];
+	for (const [key, english] of translations) {
+		assert.equal(t(key), english, key);
+	}
+	mock.setLanguage('zh-cn');
+	try {
+		for (const [key, , chinese] of translations) {
+			assert.equal(t(key), chinese, key);
+		}
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
+test('l10n: skill suggestion UI strings resolve in English and zh-cn', () => {
+	const translations: Array<[string, string, string]> = [
+		["usage.skillSuggestions.title", "Skill Suggestions ({0})", "技能建议（{0}）"],
+		["usage.skillSuggestions.subtitle", "Tasks you keep prompting for across sessions (first prompt per session, {0} sessions scanned). A repeated task is a good candidate for a reusable skill, prompt file, or custom agent.", "你在多个会话中反复提出的任务（取每个会话的第一条提示，共扫描 {0} 个会话）。重复的任务很适合做成可复用的技能、提示文件或自定义智能体。"],
+		["usage.skillSuggestions.repeated", "{0}× repeated", "重复 {0} 次"],
+		["usage.skillSuggestions.sessions", "Sessions ({0})", "会话（{0}）"],
+		["usage.skillSuggestions.createSkill", "🤖 Create skill with Copilot", "🤖 用 Copilot 创建技能"],
+		["usage.skillSuggestions.createSkillTooltip", "Draft a Copilot Chat prompt that turns this task into a reusable skill. The prompt is not sent until you review it.", "起草一条 Copilot Chat 提示，将此任务做成可复用的技能。提示在你检查之前不会发送。"],
+		["usage.skillSuggestions.copyPrompt", "📋 Copy prompt", "📋 复制提示"],
+		["usage.skillSuggestions.copyPromptTooltip", "Copy the skill prompt to paste into Copilot Chat in another workspace", "复制技能提示，以便粘贴到其他工作区的 Copilot Chat 中"],
+		["usage.skillSuggestions.copied", "✅ Copied!", "✅ 已复制！"],
+		["usage.skillSuggestions.target.workspace", "Target: workspace skill in {0}", "目标：{0} 中的工作区技能"],
+		["usage.skillSuggestions.target.user", "Target: user-level skill (not tied to exactly one repository)", "目标：用户级技能（不只属于一个仓库）"],
+		["usage.skillSuggestions.openRepoFirst", "⚠️ Open \"{0}\" in VS Code first, then paste this prompt into Copilot Chat:", "⚠️ 请先在 VS Code 中打开“{0}”，然后将此提示粘贴到 Copilot Chat："],
+		["usage.skillSuggestions.column.session", "Session", "会话"],
+		["usage.skillSuggestions.column.date", "Date", "日期"],
+		["usage.skillSuggestions.column.repository", "Repository", "仓库"],
+		["usage.skillSuggestions.column.actions", "Actions", "操作"],
+		["usage.skillSuggestions.openSession", "Open", "打开"],
+		["usage.skillSuggestions.openSessionTooltip", "Open this session in the session viewer", "在会话查看器中打开此会话"],
+		["usage.skillSuggestions.sessionsTableLabel", "Sessions for this suggestion", "此建议的会话"],
+		["usage.skillSuggestions.pagerLabel", "Skill suggestion pages", "技能建议分页"],
+	];
+	for (const [key, english] of translations) {
+		assert.equal(t(key), english, key);
+	}
+	assert.equal(t('usage.skillSuggestions.title', 7), 'Skill Suggestions (7)');
+	assert.equal(t('usage.skillSuggestions.repeated', 3), '3× repeated');
+	assert.equal(t('usage.skillSuggestions.openRepoFirst', 'app'), '⚠️ Open "app" in VS Code first, then paste this prompt into Copilot Chat:');
+	mock.setLanguage('zh-cn');
+	try {
+		for (const [key, , chinese] of translations) {
+			assert.equal(t(key), chinese, key);
+		}
+		assert.equal(t('usage.skillSuggestions.title', 7), '技能建议（7）');
+		assert.equal(t('usage.skillSuggestions.repeated', 3), '重复 3 次');
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
 test('l10n: tool curation UI strings resolve in English and zh-cn', () => {
 	const translations: Array<[string, string, string]> = [
 		['usage.toolCuration.column.server', 'Server', '服务器'],
@@ -186,8 +261,8 @@ test('l10n: tool curation UI strings resolve in English and zh-cn', () => {
 });
 
 test('l10n: AI Readiness command and navigation labels resolve in both languages', () => {
-	assert.equal(t('command.showReadiness.title'), 'Show AI Readiness');
-	assert.equal(t('nav.btnReadiness'), 'AI Readiness');
+	assert.equal(t('command.showReadiness.title'), 'Show AI Readiness (Usage Analysis)');
+	assert.equal(t('usage.tab.readiness'), 'AI Readiness');
 	assert.equal(t('readiness.loading'), 'Scanning repository controls…');
 	assert.equal(t('readiness.refreshing'), 'Showing the last scan while a fresh one runs…');
 	assert.equal(t('readiness.scanFailed'), 'Could not scan repository readiness. Check the AI Engineering Fluency output for details, then try Refresh.');
@@ -201,8 +276,8 @@ test('l10n: AI Readiness command and navigation labels resolve in both languages
 	assert.equal(t('whatsNew.feature.usage.group-tabs.description'), "The ten Usage Analysis tabs now sit under four group tabs (Usage, Workspace, GitHub, Coaching), and My Activity is split into Overview, Spend & models and Context bands.");
 	mock.setLanguage('zh-cn');
 	try {
-		assert.equal(t('command.showReadiness.title'), '显示 AI 就绪度');
-		assert.equal(t('nav.btnReadiness'), 'AI 就绪度');
+		assert.equal(t('command.showReadiness.title'), '显示 AI 就绪度（使用分析）');
+		assert.equal(t('usage.tab.readiness'), 'AI 就绪度');
 		assert.equal(t('readiness.loading'), '正在扫描仓库控制措施…');
 		assert.equal(t('readiness.refreshing'), '正在显示上次扫描结果，同时重新扫描…');
 		assert.equal(t('readiness.scanFailed'), '无法扫描仓库就绪度。请查看 AI 工程熟练度输出中的详细信息，然后重试刷新。');
@@ -460,6 +535,10 @@ test('l10n: usage tab-group, band and context-reference keys resolve in English'
 		'usage.tab.health': 'Workspace Health',
 		'usage.tab.repos': 'Repository PRs',
 		'usage.tab.agent': 'Cloud Agent',
+		'usage.tab.billing': 'Billing',
+		'usage.billing.title': 'AI Billing Coverage',
+		'usage.billing.signInRequired': 'GitHub authentication required',
+		'usage.billing.signInHint': 'Sign in with GitHub (via the Diagnostics tab) to see your Copilot AI credit balance and budgets.',
 		'usage.tab.worktrees': 'Worktrees',
 		'usage.tab.insights': 'Insights',
 		'usage.tab.corrections': 'Corrections',
@@ -507,6 +586,10 @@ test('l10n: usage tab-group, band and context-reference keys resolve in zh-cn', 
 			'usage.tab.health': '工作区健康度',
 			'usage.tab.repos': '仓库 PR',
 			'usage.tab.agent': '云端代理',
+			'usage.tab.billing': '计费',
+			'usage.billing.title': 'AI 计费覆盖',
+			'usage.billing.signInRequired': '需要 GitHub 身份验证',
+			'usage.billing.signInHint': '通过 GitHub 登录（在“诊断”选项卡中）以查看 Copilot AI 额度余额和预算。',
 			'usage.tab.worktrees': '工作树',
 			'usage.tab.insights': '洞察',
 			'usage.tab.corrections': '纠正',
@@ -1196,7 +1279,7 @@ test('l10n: Copilot Repository Memories section strings resolve in English and z
 		'serverMemories.sectionTitle': 'Copilot Repository Memories',
 		'serverMemories.sectionSubtitle': 'Facts the Copilot coding agent has stored server-side for this repository (GitHub Settings \u2192 Copilot \u2192 Memory)',
 		'serverMemories.summary': '{0} memories \u00b7 {1} subjects',
-		'serverMemories.documentedSummary': '{0} already cite an instruction file',
+		'serverMemories.documentedSummary': '{0} already cite an instruction or documentation file',
 		'serverMemories.staleSummary': '{0} cite only files that no longer exist',
 		'serverMemories.promoteHeading': 'Worth adding to AGENTS.md',
 		'serverMemories.promoteHint': 'The agent learned these from code alone, so it re-derives them every run. Writing them into an instruction file makes them free.',
@@ -1216,7 +1299,7 @@ test('l10n: Copilot Repository Memories section strings resolve in English and z
 	// The placeholder-bearing keys are the ones a typo silently breaks: a wrong index leaves
 	// a literal "{0}" in the rendered section rather than failing anywhere visible.
 	assert.equal(t('serverMemories.summary', '340', '191'), '340 memories \u00b7 191 subjects');
-	assert.equal(t('serverMemories.documentedSummary', '99'), '99 already cite an instruction file');
+	assert.equal(t('serverMemories.documentedSummary', '99'), '99 already cite an instruction or documentation file');
 	assert.equal(t('serverMemories.staleSummary', '4'), '4 cite only files that no longer exist');
 	assert.equal(t('serverMemories.repeatBadge', '12'), 're-learned 12\u00d7');
 	assert.equal(t('serverMemories.unavailable', 'HTTP 403'), 'Repository memories could not be read: HTTP 403');
@@ -1227,7 +1310,7 @@ test('l10n: Copilot Repository Memories section strings resolve in English and z
 			'serverMemories.sectionTitle': 'Copilot \u4ed3\u5e93\u8bb0\u5fc6',
 			'serverMemories.sectionSubtitle': 'Copilot \u7f16\u7801\u4ee3\u7406\u4e3a\u672c\u4ed3\u5e93\u5b58\u50a8\u5728\u670d\u52a1\u7aef\u7684\u4e8b\u5b9e\uff08GitHub \u8bbe\u7f6e \u2192 Copilot \u2192 \u8bb0\u5fc6\uff09',
 			'serverMemories.summary': '{0} \u6761\u8bb0\u5fc6 \u00b7 {1} \u4e2a\u4e3b\u9898',
-			'serverMemories.documentedSummary': '{0} \u6761\u5df2\u5f15\u7528\u6307\u4ee4\u6587\u4ef6',
+			'serverMemories.documentedSummary': '{0} \u6761\u5df2\u5f15\u7528\u6307\u4ee4\u6216\u6587\u6863\u6587\u4ef6',
 			'serverMemories.staleSummary': '{0} \u6761\u4ec5\u5f15\u7528\u4e86\u5df2\u4e0d\u5b58\u5728\u7684\u6587\u4ef6',
 			'serverMemories.promoteHeading': '\u5efa\u8bae\u5199\u5165 AGENTS.md',
 			'serverMemories.repeatBadge': '\u91cd\u590d\u5b66\u4e60 {0} \u6b21',
@@ -1244,6 +1327,92 @@ test('l10n: Copilot Repository Memories section strings resolve in English and z
 			assert.equal(t(key), value, `zh-cn value for ${key}`);
 		}
 		assert.equal(t('serverMemories.summary', '340', '191'), '340 \u6761\u8bb0\u5fc6 \u00b7 191 \u4e2a\u4e3b\u9898');
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
+test('l10n: Copilot Repository Memories scope, action and documented-list strings resolve in English and zh-cn', () => {
+	mock.setLanguage('en');
+	assert.equal(t('serverMemories.scope', 'o/n', '/repo'), 'Memories GitHub stores for o/n, the repository checked out at /repo. Shared by everyone working on this repository — not specific to this VS Code workspace.');
+	assert.equal(t('serverMemories.scopeNoPath', 'o/n'), 'Memories GitHub stores for o/n. Shared by everyone working on this repository — not specific to this VS Code workspace.');
+	assert.equal(t('serverMemories.multiRootNote', '3'), 'This workspace has 3 folders; only the first folder backed by a GitHub repository is shown.');
+	assert.equal(t('serverMemories.localVsServer'), 'Unlike Copilot Memory Files (local notes, per machine and workspace), these live on GitHub, per repository.');
+	assert.equal(t('serverMemories.targetExisting', 'AGENTS.md'), 'Suggested file: AGENTS.md.');
+	assert.equal(t('serverMemories.targetNew', 'AGENTS.md'), 'Suggested file: AGENTS.md (does not exist yet; Copilot will be asked to create it).');
+	assert.equal(t('serverMemories.table.action'), 'Action');
+	assert.equal(t('serverMemories.askCopilot'), 'Ask Copilot');
+	assert.equal(t('serverMemories.askCopilotTooltip', 'AGENTS.md'), 'Drafts a Copilot Chat prompt to verify this fact against its sources and add it to AGENTS.md. Nothing is sent until you press Enter.');
+	assert.equal(t('serverMemories.documentedHeading'), 'Already documented');
+	assert.equal(t('serverMemories.documentedHint'), 'These memories cite an instruction or documentation file (AGENTS.md, .github/instructions, skills, agents or docs/). Check that the cited file still states the fact before deleting the memory from the repository\'s Settings → Copilot → Memory page on GitHub. Keep memories whose cited file is marked missing: they may be the only remaining copy.');
+	assert.equal(t('serverMemories.table.citedFile'), 'Cited file');
+	assert.equal(t('serverMemories.openFile'), 'Open file');
+	assert.equal(t('serverMemories.showingOf', '10', '99'), 'showing 10 of 99');
+
+	mock.setLanguage('zh-cn');
+	try {
+		assert.equal(t('serverMemories.scope', 'o/n', '/repo'), 'GitHub 为 o/n 存储的记忆，该仓库检出于 /repo。由所有参与本仓库的人共享，并非特定于此 VS Code 工作区。');
+		assert.equal(t('serverMemories.multiRootNote', '3'), '此工作区有 3 个文件夹；仅显示第一个由 GitHub 仓库支持的文件夹。');
+		assert.equal(t('serverMemories.askCopilot'), '询问 Copilot');
+		assert.equal(t('serverMemories.documentedHeading'), '已记录');
+		assert.equal(t('serverMemories.openFile'), '打开文件');
+		assert.equal(t('serverMemories.table.action'), '操作');
+		assert.equal(t('serverMemories.table.citedFile'), '引用的文件');
+		assert.equal(t('serverMemories.scopeNoPath', 'o/n'), 'GitHub 为 o/n 存储的记忆。由所有参与本仓库的人共享，并非特定于此 VS Code 工作区。');
+		assert.equal(t('serverMemories.localVsServer'), '与 Copilot 记忆文件（本地笔记，按机器和工作区）不同，这些记忆按仓库存储在 GitHub 上。');
+		assert.equal(t('serverMemories.targetExisting', 'AGENTS.md'), '建议文件：AGENTS.md。');
+		assert.equal(t('serverMemories.targetNew', 'AGENTS.md'), '建议文件：AGENTS.md（尚不存在；将请 Copilot 创建）。');
+		assert.equal(t('serverMemories.askCopilotTooltip', 'AGENTS.md'), '起草一条 Copilot Chat 提示，先对照来源验证此事实，再将其添加到 AGENTS.md。在您按 Enter 之前不会发送任何内容。');
+		assert.equal(t('serverMemories.documentedHint'), '这些记忆引用了指令或文档文件（AGENTS.md、.github/instructions、skills、agents 或 docs/）。在 GitHub 仓库的 设置 → Copilot → 记忆 页面中删除记忆之前，请先确认引用的文件仍然包含该事实。引用文件标记为缺失的记忆请保留：它们可能是唯一剩下的副本。');
+		// The zh-CN template puts the total first, so this catches a swapped placeholder.
+		assert.equal(t('serverMemories.showingOf', '10', '99'), '显示 99 条中的 10 条');
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
+test('l10n: server-memory summary counts agree with their verb in English, and resolve in zh-cn', () => {
+	mock.setLanguage('en');
+	assert.equal(t('serverMemories.documentedSummaryOne', '1'), '1 already cites an instruction or documentation file');
+	assert.equal(t('serverMemories.staleSummaryOne', '1'), '1 cites only files that no longer exist');
+	mock.setLanguage('zh-cn');
+	try {
+		assert.equal(t('serverMemories.documentedSummaryOne', '1'), '1 条已引用指令或文档文件');
+		assert.equal(t('serverMemories.staleSummaryOne', '1'), '1 条仅引用了已不存在的文件');
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
+test('l10n: server-memory stale-row, open-refusal and missing-file strings resolve in English and zh-cn', () => {
+	mock.setLanguage('en');
+	assert.equal(t('serverMemories.citedFileMissing'), 'missing');
+	assert.equal(t('serverMemories.draftRowChanged'), 'Not drafting a prompt: the repository memories changed since this list was shown. The section has been refreshed.');
+	assert.equal(t('serverMemories.openRefused', 'docs/x.md'), 'Not opening docs/x.md: it is no longer a cited file inside this checkout.');
+	mock.setLanguage('zh-cn');
+	try {
+		assert.equal(t('serverMemories.citedFileMissing'), '缺失');
+		assert.equal(t('serverMemories.draftRowChanged'), '未起草提示：自显示此列表以来仓库记忆已更改。该板块已刷新。');
+		assert.equal(t('serverMemories.openRefused', 'docs/x.md'), '未打开 docs/x.md：它已不再是此检出中被引用的文件。');
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
+test('l10n: server-memory draft refusals resolve in English and zh-cn', () => {
+	mock.setLanguage('en');
+	assert.equal(t('serverMemories.draftBlocked', 'AGENTS.md'), 'Not drafting a prompt: AGENTS.md is not a regular file inside this checkout.');
+	assert.equal(t('serverMemories.draftNoTarget'), 'Not drafting a prompt: no safe instruction file was found in this checkout.');
+	assert.equal(t('serverMemories.draftNoLiveSource'), "Not drafting a prompt: none of this memory's cited files exists in this checkout any more. The section will refresh.");
+	assert.equal(t('serverMemories.openContextChanged'), "Not opening the file: the workspace now points at a different repository than these memories were read for. The section will refresh.");
+	assert.equal(t('serverMemories.draftContextChanged'), 'Not drafting a prompt: the workspace now points at a different repository than these memories were read for. The section will refresh.');
+	mock.setLanguage('zh-cn');
+	try {
+		assert.equal(t('serverMemories.draftBlocked', 'AGENTS.md'), '未起草提示：AGENTS.md 不是此检出中的常规文件。');
+		assert.equal(t('serverMemories.draftNoLiveSource'), "未起草提示：此记忆引用的文件在此检出中均已不存在。该板块将刷新。");
+		assert.equal(t('serverMemories.openContextChanged'), "未打开文件：工作区现在指向的仓库与读取这些记忆时的仓库不同。该板块将刷新。");
+		assert.equal(t('serverMemories.draftContextChanged'), '未起草提示：工作区现在指向的仓库与读取这些记忆时的仓库不同。该板块将刷新。');
+		assert.equal(t('serverMemories.draftNoTarget'), '未起草提示：在此检出中未找到安全的指令文件。');
 	} finally {
 		mock.setLanguage('en');
 	}
@@ -1409,7 +1578,7 @@ test('insights l10n: the bundle carries no orphaned insight keys', () => {
 	// engine's source.
 	// Tests run compiled out of `out/`, so __dirname does not sit next to the
 	// real source tree — same hop the other source-reading tests use.
-	const source = readFileSync(join(__dirname, '../../../../src/insightsEngine.ts'), 'utf8');
+	const source = readFileSync(join(__dirname, '../../../../../src/insightsEngine.ts'), 'utf8');
 	const orphans = insightKeys().filter(key => {
 		const parts = key.split('.');
 		// Try the full key, then progressively shorter prefixes, down to the two
@@ -1813,6 +1982,11 @@ const WORKTREE_CLEANUP_KEYS: Record<string, { en: string; zh: string }> = {
 	'usage.worktreeCleanup.deleting': { en: '⏳ Deleting worktree{0}…', zh: '⏳ 正在删除工作树{0}…' },
 	'usage.worktreeCleanup.deleted': { en: '✅ Deleted', zh: '✅ 已删除' },
 	'usage.worktreeCleanup.deleteFailed': { en: '❌ Delete failed: {0}', zh: '❌ 删除失败：{0}' },
+	'usage.worktreeCleanup.recovered': { en: '{0} recovered', zh: '已回收 {0}' },
+	'usage.worktreeCleanup.copyPrompt': { en: '📋 Copy prompt', zh: '📋 复制提示词' },
+	'usage.worktreeCleanup.copyPromptTitle': { en: 'Copy a starter prompt: open this worktree in VS Code, start a chat session there and paste it to learn what the diff contains', zh: '复制起始提示词：在 VS Code 中打开此工作树，开始聊天会话并粘贴，以了解其中的差异' },
+	'usage.worktreeCleanup.copied': { en: '✅ Copied!', zh: '✅ 已复制！' },
+	'usage.worktreeCleanup.starterPrompt': { en: 'This git worktree (branch "{0}") could not be deleted automatically. Inspect its current state: run git status and git diff against its upstream or base branch, summarize what changed and why, and tell me whether the work is already merged or pushed elsewhere, so I can decide whether it is safe to delete this worktree.', zh: '此 git 工作树（分支“{0}”）无法自动删除。请检查其当前状态：运行 git status，并对比其上游或基础分支运行 git diff，总结改动内容及原因，并告诉我这些工作是否已合并或已推送到别处，以便我判断是否可以安全删除此工作树。' },
 	'usage.worktreeCleanup.unknownError': { en: 'unknown error', zh: '未知错误' },
 	'usage.worktreeCleanup.revealMissing': { en: '"{0}" no longer exists on disk.', zh: '“{0}”在磁盘上已不存在。' },
 };
@@ -1829,6 +2003,99 @@ test('worktree cleanup delete-feedback keys resolve in zh-cn', () => {
 		for (const [key, { zh }] of Object.entries(WORKTREE_CLEANUP_KEYS)) {
 			assert.equal(t(key), zh, `zh-cn value for ${key}`);
 		}
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
+// Fluency Score "My AI Coding Toolbox" card (moved from Diagnostics) — guards raw keys
+// resurfacing in the panel and in the copied summary for every locale.
+const TOOLBOX_KEYS_EN: Record<string, string> = {
+	'share.summaryCopied': 'Summary copied to clipboard',
+	'share.toolbox.title': 'Share Your AI Coding Toolbox',
+	'share.toolbox.cardTitle': 'My AI Coding Toolbox',
+	'share.toolbox.period': 'Period:',
+	'share.toolbox.editorsDetectedOne': '1 editor detected',
+	'share.toolbox.editorsDetected': '{0} editors detected',
+	'share.toolbox.copy': '📋 Copy Summary Text',
+	'share.toolbox.phrase.today': 'today',
+	'share.toolbox.phrase.last30': 'in the last 30 days',
+	'share.linkedin': 'Share on LinkedIn',
+	'share.bluesky': 'Share on Bluesky',
+	'share.mastodon': 'Share on Mastodon',
+};
+
+test('l10n: toolbox card keys resolve in English', () => {
+	for (const [key, english] of Object.entries(TOOLBOX_KEYS_EN)) {
+		assert.equal(t(key), english, `English value for ${key}`);
+	}
+});
+
+test('l10n: toolbox card keys resolve in zh-cn and differ from English', () => {
+	mock.setLanguage('zh-cn');
+	try {
+		const expected: Record<string, string> = {
+			'share.summaryCopied': '摘要已复制到剪贴板',
+			'share.toolbox.title': '分享您的 AI 编码工具箱',
+			'share.toolbox.cardTitle': '我的 AI 编码工具箱',
+			'share.toolbox.period': '时间段：',
+			'share.toolbox.phrase.today': '今天',
+			'share.linkedin': '在 LinkedIn 上分享',
+		};
+		for (const [key, chinese] of Object.entries(expected)) {
+			assert.equal(t(key), chinese, `zh-cn value for ${key}`);
+		}
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
+test('l10n: Diagnostics Session Cache strings resolve in English and zh-cn and stay distinct from Prompt Cache', () => {
+	mock.setLanguage('en');
+	try {
+		assert.equal(t('diagnostics.cache.tab'), 'Session Cache');
+		assert.equal(t('diagnostics.cache.infoTitle'), 'Session Cache Information');
+		assert.equal(t('diagnostics.cache.management'), 'Session Cache Management');
+		assert.ok(t('diagnostics.cache.storedIncludes').includes('on-disk snapshot'));
+		assert.ok(t('diagnostics.cache.infoBody').includes('not LLM prompt caching'), 'English body must disambiguate from prompt caching');
+		assert.ok(t('diagnostics.cache.infoBody').includes('on-disk snapshot'), 'English body must describe the on-disk snapshot, not globalState');
+
+		mock.setLanguage('zh-cn');
+		assert.equal(t('diagnostics.cache.tab'), '会话缓存');
+		assert.equal(t('diagnostics.cache.infoTitle'), '会话缓存信息');
+		assert.equal(t('diagnostics.cache.management'), '会话缓存管理');
+		assert.ok(t('diagnostics.cache.infoBody').includes('LLM'), 'zh-cn body must still mention LLM prompt caching');
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
+test('l10n: workspace grouping strings in the Customization Files matrix resolve in English and zh-cn', () => {
+	mock.setLanguage('en');
+	assert.equal(t('customizationMatrix.mergedFolders', '3'), '3 folders merged');
+	assert.equal(t('customizationMatrix.ungroupedBadge'), 'Ungrouped workspace names');
+	assert.equal(
+		t('customizationMatrix.ungroupedNames', '2', 'repo-85ed99, goofy-wozniak-42f712'),
+		'2 workspace name(s) look like ungrouped worktrees or clones: repo-85ed99, goofy-wozniak-42f712'
+	);
+	mock.setLanguage('zh-cn');
+	try {
+		assert.equal(t('customizationMatrix.mergedFolders', '3'), '已合并 3 个文件夹');
+		assert.equal(t('customizationMatrix.ungroupedBadge'), '未分组的工作区名称');
+		assert.equal(
+			t('customizationMatrix.ungroupedNames', '2', 'a, b'),
+			'2 个工作区名称看起来像未分组的工作树或克隆：a, b'
+		);
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
+test('l10n: efficiency Skills tab label resolves in English and zh-cn', () => {
+	assert.equal(t('efficiency.tab.skills'), '🛠️ Skills');
+	mock.setLanguage('zh-cn');
+	try {
+		assert.equal(t('efficiency.tab.skills'), '🛠️ 技能');
 	} finally {
 		mock.setLanguage('en');
 	}

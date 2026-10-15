@@ -1,7 +1,7 @@
 # Copilot Server-Side Repository Memories
 
 Status: **Implemented** — shared fetch/analysis module, CLI `memory-files --server`
-/ `--promote`, and a Tools-tab UI section are live.
+/ `--promote`, and a Workspace Health tab UI section are live.
 
 Companion to [COPILOT-MEMORY-FILES-INSIGHT.md](COPILOT-MEMORY-FILES-INSIGHT.md),
 which covers the *local* half of Copilot's memory. This document covers the other
@@ -127,9 +127,94 @@ available, given the API returns no timestamps.
 
 `renderPromotionMarkdown()` turns the top groups into a Markdown block. It is
 produced as text for a human to edit and commit, never written into an instruction
-file directly: these facts are an agent's unverified observations — some of this
-repository's cited files are already gone — and an instruction file is the one
-place where a wrong statement is read by every agent on every run.
+file directly by this tool: these facts are an agent's unverified observations —
+some of this repository's cited files are already gone — and an instruction file is
+the one place where a wrong statement is read by every agent on every run.
+
+The VS Code section's **Ask Copilot** button is the softer version of the same
+thing. It *drafts* a Copilot Chat prompt (agent mode, not submitted) built by the
+shared `buildPromotionPrompt()`: it quotes the fact as an unverified claim, lists
+the citations and the target file, and asks Copilot to verify the fact against the
+cited files **before** adding a concise entry, and not to commit. The person reads
+the prompt before sending it and reviews the resulting diff, so nothing reaches an
+instruction file without a human in the loop. Every server-supplied field is
+flattened to one line, so memory text cannot add steps of its own to the prompt.
+Citations are listed live-first (`orderCitationsLiveFirst()`): the existing regular
+files that made the group promotable come before `User input:` or deleted ones, so
+the five-citation cap can never hide the only verifiable source.
+
+The button sends the group's subject key and a fingerprint of the row it was
+rendered from (subject, fact, citations — `promotionGroupFingerprint()`) as
+`draftServerMemoryPromotion`; never prompt text. Renders do no citation or target probing (only the existing repository lookup
+reads the checkout's git config):
+they show the cached analysis, which a throttled background re-check refreshes at
+most once a minute (see below). The click handler is therefore the authorization
+step: it re-checks the group's live sources at that moment with asynchronous,
+yielding probes (they can aggregate many records), re-validates the workspace and
+analysis after that await, then rebuilds the prompt from the current analysis with
+the two-path target probed synchronously (`buildPromotionPromptForSubject()`). It drafts nothing, and says why, when there
+is no safe target any more, the group's last source is gone, or the current
+group's fingerprint no longer matches the clicked row (it then re-renders), so a
+background refresh cannot swap what gets drafted. It likewise refuses when the workspace now resolves to a
+different repository or checkout than the analysis was read for, and when the
+group's last live source was deleted since the analysis (a targeted re-check of
+just that group's cited files).
+
+Only the network read is cached for the TTL. The extension re-derives everything
+that depends on the checkout — eligibility, live citations, missing documentation
+— from that raw read with `analyzeServerMemoriesForCheckoutAsync()`: the cited
+paths are probed with asynchronous, yielding I/O (`probeCheckoutPathsAsync()`), so
+a store of hundreds of memories never blocks the extension host
+(`docs/adr/ANALYSIS-WORKER.md`, rule 1). That re-check runs in the background at
+most once a minute and re-renders the section only when the result changed. The
+CLI, which has no shared event loop, uses the synchronous
+`analyzeServerMemoriesForCheckout()`; both produce the same analysis (tested).
+Liveness is tracked per memory record rather than per id, since the store can
+repeat an id.
+
+The target file is chosen deterministically by `selectPromotionTarget()`: an
+existing root `AGENTS.md`, else an existing `.github/copilot-instructions.md`, else
+a new root `AGENTS.md`. Scoped `.github/instructions/*.instructions.md` files are
+not matched yet — that needs `applyTo` glob parsing. Each candidate is checked by
+its own probe, `createPromotionTargetProbe()`, not by the citation-staleness
+callback: it reports `exists` (a regular file whose real path stays inside the
+checkout), `absent` (nothing there, not even a dangling link) or `unsafe` (an
+escaping or dangling symlink, a directory, or any inspection error other than
+"not found"). When the file the rule would pick is `unsafe`, no target is offered,
+the rows get no button, and the reports say `none — <path> is not a regular file
+inside this checkout` instead of naming it (`promotionTargetBlockedPath`). When the
+analyzed repository is not checked out here (CLI `--repo` elsewhere), the target is
+reported as not checked.
+
+A subject is a promotion group only if no member is documented and at least one
+member cites a **regular file** that still exists inside the checkout
+(`createRepoRegularFileCheck()`). So `User input:`-only memories, fully stale ones
+(no cited file survives) and ones citing only directories never qualify, in the
+extension or in `--promote`. When that leaves nothing, both surfaces print the same
+explanation (`describeNoPromotionCandidates()`) with the documented / unverifiable /
+fully stale breakdown, rather than claiming every memory is already documented.
+
+## The Workspace Health tab section
+
+- **Scope.** The section names the repository (`owner/name`) and the local checkout
+  it was resolved from. The store is per GitHub repository, shared by everyone
+  working on it, not per VS Code workspace — unlike the local Copilot Memory Files
+  section. In a multi-root workspace only the first folder with a github.com
+  `origin` is used, and the section says so.
+- **Worth adding to AGENTS.md.** The top 10 promotion groups, each with an **Ask
+  Copilot** button (see above).
+- **Already documented.** The first 10 memories that cite an instruction or
+  documentation file, with the file(s) they cite and an **Open file** button for
+  files that resolve inside the checkout ("showing 10 of N" when there are more).
+  A cited file that no longer exists (or is a directory) is marked **missing**: such a
+  memory is not actually written down any more, so the hint says to keep it, and to check
+  the cited file before deleting any memory.
+  "Documented" follows `INSTRUCTION_PATH_PATTERN`, which also matches `docs/` and
+  `.github/skills|agents/`. The stored copy is redundant only once you have confirmed
+  that at least one cited file still exists and still states the fact; when every cited
+  file is missing, or none says it any more, the memory may be the only remaining copy
+  and should be kept. Deletion happens on GitHub (Settings → Copilot → Memory), since this
+  repository deliberately implements no write route.
 
 ## Usage
 
@@ -157,12 +242,12 @@ fields the typed shape does not know about. Use it when the API changes.
 
 | Piece | Location |
 |---|---|
-| Fetch + analysis (shared) | `src/copilotServerMemories.ts` — `fetchRepoMemories()`, `analyzeServerMemories()`, `toServerMemoriesAnalysisView()`, `renderPromotionMarkdown()`, `parseRepoFromRemoteUrl()`, `isValidRepoSlug()`, `isSafeRepoRelativePath()` |
-| Types | `src/types.ts` — `ServerMemory`, `ServerMemoryPromotionGroup`, `ServerMemoryStaleCitation`, `ServerMemoriesAnalysis`, `ServerMemoriesAnalysisView` |
-| Unit tests | `vscode-extension/test/unit/copilotServerMemories.test.ts` (offline — `fetch` and `fileExists` are both injected) |
+| Fetch + analysis (shared) | `src/copilotServerMemories.ts` — `fetchRepoMemories()`, `analyzeServerMemories()`, `toServerMemoriesAnalysisView()`, `renderPromotionMarkdown()`, `selectPromotionTarget()`, `createPromotionTargetProbe()`, `createRepoRegularFileCheck()`, `describePromotionTarget()`, `describeNoPromotionCandidates()`, `buildPromotionPrompt()`, `parseRepoFromRemoteUrl()`, `isValidRepoSlug()`, `isSafeRepoRelativePath()` |
+| Types | `src/types.ts` — `ServerMemory`, `ServerMemoryPromotionGroup`, `ServerMemoryStaleCitation`, `ServerMemoryDocumentedEntry`, `ServerMemoryPromotionTarget`, `ServerMemoriesAnalysis`, `ServerMemoriesAnalysisView` |
+| Unit tests | `vscode-extension/test/unit/copilotServerMemories.test.ts` (offline — `fetch` and `fileExists` are both injected), `vscode-extension/test/unit/webview-serverMemoriesSection.test.ts` (section HTML and click mapping) |
 | CLI | `cli/src/commands/memory-files.ts` — `--server`, `--repo`, `--limit`, `--promote` |
 | Runtime wiring | `vscode-extension/src/extension.ts` — `scheduleServerMemoriesRefresh()`, `decideServerMemoriesRefresh()` (pure, exported), `buildServerMemoriesView()`, `resolveWorkspaceRepoSlug()`, `invalidateServerMemoriesCache()`, TTL `SERVER_MEMORIES_FETCH_TTL_MS` |
-| Tools-tab UI | `vscode-extension/src/webview/usage/serverMemories.ts` — `buildServerMemoriesSectionHtml()`, `sanitizeServerMemoriesAnalysis()`, `#section-server-memories`. Split out of `main.ts`, which would otherwise have crossed the 6000-line `max-lines` ceiling; `main.ts` imports both and holds the cross-refresh cache. |
+| Workspace Health tab UI | `vscode-extension/src/webview/usage/serverMemories.ts` — `buildServerMemoriesSectionHtml()`, `sanitizeServerMemoriesAnalysis()`, `wireServerMemoriesButtons()`, `#section-server-memories`. The buttons post `draftServerMemoryPromotion` (subject key and row fingerprint; the host rebuilds and drafts) and `openServerMemoryCitation` (a repo-relative path; the host opens it only if the current analysis cites it and it is a regular file inside the current checkout, `isOpenableCitedDocument()`). The webview never receives absolute paths. Both tables use the shared data-table component. Kept out of `main.ts`, which is over the 6000-line `max-lines` ceiling; `main.ts` imports both and holds the cross-refresh cache. |
 | Raw probe | `scripts/fetch-copilot-memories.js` |
 | Setting | `aiEngineeringFluency.serverMemories.enabled` (default `true`) |
 

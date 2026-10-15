@@ -52,6 +52,9 @@ jetbrains-plugin/.gradle/
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
 
+# Generated report from the scan-hardcoded-strings skill (never committed)
+hardcoded-strings-report.md
+
 # Terraform (local runs only — CI uses ephemeral runners and a remote backend,
 # but local bootstrap runs like sharing-server/infra/bootstrap leave these
 # behind; state files can contain plaintext secrets, never commit them)
@@ -62,21 +65,16 @@ jetbrains-plugin/.gradle/
 crash.log
 crash.*.log
 
-# Graphify output. manifest.json + cache/ ARE committed so a fresh clone or cloud
-# agent can run `graphify --update` from a warm cache instead of a full rescan.
-# Everything else (graph.json/html, GRAPH_REPORT.md, cost.json) is regenerable, and
-# .graphify_python/.graphify_root are absolute machine-specific paths — never commit those.
-graphify-out/*
-!graphify-out/manifest.json
-!graphify-out/cache/
-!graphify-out/cache/**
+# Graphify default output dir. Nothing in it is committed: CI builds the agent graph
+# into .graphify-agent/ (below), so a local graphify-out/ is only ever a personal cache.
+graphify-out/
 
 # Stray/misplaced graphify cache (wrong working directory on a past run)
 src/graphify-out/
 
 # Graphify graph built by copilot-setup-steps for the Copilot coding agent
-# (GRAPHIFY_OUT=.graphify-agent). Kept out of the default graphify-out/ so the
-# build never touches the committed manifest.json / cache/ above.
+# (GRAPHIFY_OUT=.graphify-agent). Kept out of the default graphify-out/ so agents
+# do not mistake a stale local cache for the CI graph.
 .graphify-agent/
 
 # AI Engineering Fluency canvas (copilot-app/) writes its snapshot and refresh lock to

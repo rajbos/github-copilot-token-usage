@@ -5,7 +5,7 @@ import { SWITCHABLE_TABS } from '../../src/webview/usage/switchableTabs';
 
 // ── Coverage for the Usage Analysis two-level tab strip ──────────────────────
 //
-// The view's ten tabs sit under four group tabs. The grouping is chrome — the leaf tab ids are
+// The view's eleven tabs sit under four group tabs. The grouping is chrome — the leaf tab ids are
 // the viewTabOpened telemetry key, the switchTab payload, and the target of the What's New
 // view's "Take me there" deep links. (activeTab uses them too, but only in module memory:
 // UsageWebviewState stores just aboutCollapsed, so recreating the panel resets the selected tab.)

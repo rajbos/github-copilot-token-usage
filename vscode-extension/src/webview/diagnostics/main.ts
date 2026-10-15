@@ -4,7 +4,7 @@ import { setHtml } from "../shared/domUtils";
 import { renderDataTable, setDataTableState, type DataTableColumn, type DataTableSortValue } from "../shared/dataTable";
 import { wireExtensionPointButtons } from "../shared/extensionPoints";
 import { escapeHtml, formatFileSize, getTimeSince, getEditorIcon } from "../shared/formatUtils";
-import { createPeriodSelector, PERIOD_LABELS, type Period } from "../shared/periodSelector";
+import { createPeriodSelector, type Period } from "../shared/periodSelector";
 import { createViewStateManager } from "../shared/viewState";
 // CSS imported as text via esbuild
 import themeStyles from "../shared/theme.css";
@@ -23,7 +23,7 @@ import { installSurfaceNavigation } from "../shared/surfaceNavigation";
 // Constants
 const LOADING_PLACEHOLDER = "Loading...";
 const SESSION_FILES_SECTION_REGEX =
-  /Session File Locations \(first 20\):[\s\S]*?(?=\n\s*\n|={70})/;
+  /Session File Locations \(first 20\):[\s\S]*?(?=\n\s*\n|={70})/g;
 /**
  * Live-updating loading state for the Report tab, shown while `data.report` is still the
  * LOADING_PLACEHOLDER. `#report-loading-subtext` is updated in place by
@@ -216,7 +216,6 @@ type DiagnosticsViewState = {
   activeTab?: string;
   activeSubtab?: string;
   otelDeltaPeriod?: OtelDeltaPeriod;
-  shareCardPeriod?: Period;
   skillUsageEditorFilter?: string;
   ttftGranularity?: TtftGranularity;
   ttftScanRange?: TtftScanRange;
@@ -248,7 +247,6 @@ const diagState = createViewStateManager<DiagnosticsViewState>(vscode, {
   activeTab: undefined,
   activeSubtab: undefined,
   otelDeltaPeriod: "all",
-  shareCardPeriod: "last14",
   skillUsageEditorFilter: "all",
   ttftGranularity: "day",
   ttftScanRange: "14d",
@@ -258,10 +256,6 @@ let currentOtelComparison: CopilotCliOtelComparison | null | undefined;
 let currentOtelDeltaPeriod: OtelDeltaPeriod = diagState.restore().otelDeltaPeriod ?? "all";
 let currentTtftGranularity: TtftGranularity = diagState.restore().ttftGranularity ?? "day";
 let currentTtftScanRange: TtftScanRange = diagState.restore().ttftScanRange ?? "14d";
-
-// Periods offered by the Share Card's period selector, in display order.
-const SHARE_CARD_PERIOD_ORDER: Period[] = ["last7", "last14", "last30", "last90", "allTime"];
-let currentShareCardPeriod: Period = diagState.restore().shareCardPeriod ?? "last14";
 
 // Session table filtering state (sorting and paging live in the shared data table)
 let currentEditorFilter: string | null = null; // null = show all
@@ -414,7 +408,7 @@ function getRepoDisplayName(repoUrl: string): string {
   }
 
   // Remove .git suffix if present
-  let url = repoUrl.replace(/\.git$/, "");
+  const url = repoUrl.replace(/\.git$/, "");
 
   // Handle SSH URLs like git@github.com:owner/repo
   if (url.includes("@") && url.includes(":")) {
@@ -783,110 +777,6 @@ function renderDebugStateTable(tableId: string, ariaLabel: string, rows: DebugSt
     showHeader: false,
     className: "data-table--key-value data-table--compact",
   });
-}
-
-/** Rolling lookback (in days) for each period the Share Card period selector offers. Periods absent from
- * this map (e.g. "allTime") are treated as "no filtering". */
-const SHARE_CARD_PERIOD_DAYS: Partial<Record<Period, number>> = { last7: 7, last14: 14, last30: 30, last90: 90 };
-
-/** Returns the sessions from `detailedFiles` whose last interaction falls within `period` (allTime = no filtering). */
-function filterFilesByShareCardPeriod(detailedFiles: SessionFileDetails[], period: Period, now: Date = new Date()): SessionFileDetails[] {
-  const days = SHARE_CARD_PERIOD_DAYS[period];
-  if (days === undefined) { return detailedFiles; } // allTime (or any unmapped period): no filtering
-  const cutoff = new Date(now);
-  cutoff.setDate(cutoff.getDate() - days);
-  return detailedFiles.filter((sf) => {
-    if (!sf.lastInteraction) { return false; }
-    const activity = new Date(sf.lastInteraction);
-    return !Number.isNaN(activity.getTime()) && activity >= cutoff && activity <= now;
-  });
-}
-
-/** Lowercase, human-readable phrase describing a Share Card period, for use mid-sentence. */
-function shareCardPeriodPhrase(period: Period): string {
-  return period === "allTime" ? "of all time" : `in the ${PERIOD_LABELS[period].toLowerCase()}`;
-}
-
-/** Builds the plain-text version of the share summary, used by the "Copy Summary Text" button. */
-function buildShareSummaryText(
-  editors: string[],
-  editorStats: Record<string, { count: number; interactions: number }>,
-  totalSessions: number,
-  totalInteractions: number,
-  totalTokens: number,
-  period: Period,
-): string {
-  const editorList = editors
-    .map((editor) => `${getEditorIcon(editor)} ${editor} (${editorStats[editor].count})`)
-    .join(", ");
-  return `My AI Coding Toolbox — ${editors.length} editor${editors.length === 1 ? "" : "s"} detected: ${editorList}. ` +
-    `${totalSessions} sessions, ${totalInteractions} interactions, ${formatTokenCount(totalTokens)} tokens ${shareCardPeriodPhrase(period)}. #AIEngineeringFluency`;
-}
-
-/** Renders a screenshot-friendly "Share Card" tab summarizing the detected editors — meant to be
- * shared in social media posts, mirroring the visual style of the startup loading screen. */
-function renderShareCardTab(detailedFiles: SessionFileDetails[], isLoadingSessions: boolean = false): string {
-  if (isLoadingSessions) {
-    return `<div id="tab-share" class="tab-content">
-      <div class="info-box">
-        <div class="info-box-title">📸 Share Card</div>
-        <div>A snapshot of your AI coding toolbox — screenshot this card to share your editor mix on social media.</div>
-      </div>
-      <div class="loading-state"><div class="loading-spinner">⏳</div><div class="loading-text">Loading session files...</div><div class="loading-subtext" id="share-loading-subtext">Analyzing up to 500 files from the last 14 days</div></div>
-    </div>`;
-  }
-  if (detailedFiles.length === 0) {
-    return `<div id="tab-share" class="tab-content">
-      <div class="info-box">
-        <div class="info-box-title">📸 Share Card</div>
-        <div>No session activity found yet. Once you have some AI coding sessions, a shareable summary card will appear here.</div>
-      </div>
-    </div>`;
-  }
-  const period = currentShareCardPeriod;
-  const filteredFiles = filterFilesByShareCardPeriod(detailedFiles, period);
-  const editorStats = getEditorStats(filteredFiles);
-  const editors = Object.keys(editorStats).sort((a, b) => editorStats[b].count - editorStats[a].count);
-  const totalSessions = filteredFiles.length;
-  const totalInteractions = filteredFiles.reduce((sum, sf) => sum + Number(sf.interactions || 0), 0);
-  const totalTokens = filteredFiles.reduce((sum, sf) => sum + Number(sf.tokens || 0), 0);
-  const pills = editors
-    .map((editor) => `<div class="share-pill"><span>${getEditorIcon(editor)}</span><span>${escapeHtml(editor)}</span><span class="share-pill-count">${editorStats[editor].count}</span></div>`)
-    .join("");
-  const emptyPeriodNotice = totalSessions === 0
-    ? `<div style="margin-top: 8px; font-size: 12px; color: var(--text-muted);">No session activity in this period. Try a wider range.</div>`
-    : "";
-  return `<div id="tab-share" class="tab-content">
-    <div class="info-box">
-      <div class="info-box-title">📸 Share Card</div>
-      <div>A snapshot of your AI coding toolbox — screenshot this card to share your editor mix on social media.</div>
-    </div>
-    <div class="share-card-controls" style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-      <span style="font-size: 12px; color: var(--text-muted);">Period:</span>
-      <span id="share-card-period-selector"></span>
-    </div>
-    <div class="share-card">
-      <div class="share-badge">🤖 AI Engineering Fluency</div>
-      <div class="share-title">My AI Coding Toolbox</div>
-      <div class="share-subtitle">${escapeHtml(PERIOD_LABELS[period])} · ${editors.length} editor${editors.length === 1 ? "" : "s"} detected</div>
-      <div class="share-pills">${pills}</div>
-      <div class="share-stats">
-        <div class="share-stat"><div class="share-stat-value">${totalSessions}</div><div class="share-stat-label">Sessions</div></div>
-        <div class="share-stat"><div class="share-stat-value">${totalInteractions}</div><div class="share-stat-label">Interactions</div></div>
-        <div class="share-stat"><div class="share-stat-value" title="${totalTokens.toLocaleString()} tokens">${formatTokenCount(totalTokens)}</div><div class="share-stat-label">Tokens</div></div>
-        <div class="share-stat"><div class="share-stat-value">${editors.length}</div><div class="share-stat-label">Editors</div></div>
-      </div>
-    </div>
-    ${emptyPeriodNotice}
-    <div class="button-group" style="margin-top: 12px;">
-      <button class="button secondary" id="btn-copy-share-summary"><span>📋</span><span>Copy Summary Text</span></button>
-    </div>
-    <div class="share-buttons" style="margin-top: 12px;">
-      <button id="btn-share-card-linkedin" class="share-btn share-btn-linkedin"><span class="share-btn-icon">💼</span><span>Share on LinkedIn</span></button>
-      <button id="btn-share-card-bluesky" class="share-btn share-btn-bluesky"><span class="share-btn-icon">🦋</span><span>Share on Bluesky</span></button>
-      <button id="btn-share-card-mastodon" class="share-btn share-btn-mastodon"><span class="share-btn-icon">🐘</span><span>Share on Mastodon</span></button>
-    </div>
-  </div>`;
 }
 
 function renderDebugTab(counters: GlobalStateCounters | undefined): string {
@@ -1589,7 +1479,7 @@ const TAB_GROUPS: Record<string, string[]> = {
   // Keep in step with the leaf-tab bars in renderTabBars: a tab rendered in a bar but missing
   // here can never be picked by firstAvailableTabInGroup, and groupOfTab only resolves it by
   // falling through to the "diagnostics" default rather than by actually knowing its group.
-  diagnostics: ["report", "sessions", "cache", "path-analyzer", "share"],
+  diagnostics: ["report", "sessions", "cache", "path-analyzer"],
   research: ["model-usage", "tool-analysis", "skill-usage", "otel-delta", "ttft"],
   settings: ["display", "backend", "github", "debug"],
 };
@@ -2080,69 +1970,10 @@ function wireNavButtons(): void {
   wireExtensionPointButtons(vscode);
 }
 
-/** Renders the Share Card's period dropdown into its placeholder span, reusing the shared period-selector
- * component for visual/state consistency with the other period selectors in this webview (e.g. Model Usage). */
-function renderShareCardPeriodSelector(): void {
-  const wrapper = document.getElementById("share-card-period-selector");
-  if (!wrapper) { return; }
-  wrapper.replaceChildren();
-  const { select } = createPeriodSelector({
-    id: "share-card-period-select",
-    selected: currentShareCardPeriod,
-    periods: SHARE_CARD_PERIOD_ORDER,
-    label: "",
-    onChange: (value) => {
-      currentShareCardPeriod = value as Period;
-      diagState.patch({ shareCardPeriod: currentShareCardPeriod });
-      reRenderShareCard();
-    },
-  });
-  wrapper.append(select);
-}
-
-/** Builds the current Share Card's plain-text summary from live filtered session data, for both
- * the "Copy Summary Text" button and the social share buttons. */
-function buildCurrentShareSummaryText(): string {
-  const filteredFiles = filterFilesByShareCardPeriod(storedDetailedFiles, currentShareCardPeriod);
-  const editorStats = getEditorStats(filteredFiles);
-  const editors = Object.keys(editorStats).sort((a, b) => editorStats[b].count - editorStats[a].count);
-  const totalSessions = filteredFiles.length;
-  const totalInteractions = filteredFiles.reduce((sum, sf) => sum + Number(sf.interactions || 0), 0);
-  const totalTokens = filteredFiles.reduce((sum, sf) => sum + Number(sf.tokens || 0), 0);
-  return buildShareSummaryText(editors, editorStats, totalSessions, totalInteractions, totalTokens, currentShareCardPeriod);
-}
-
-/** Wires the "Copy Summary Text" button, social share buttons, and period selector on the Share
- * Card tab. Re-run after `reRenderShareCard()` replaces the tab's markup, since these elements are recreated. */
-function setupShareSummaryButtonHandler(): void {
-  renderShareCardPeriodSelector();
-  document.getElementById("btn-copy-share-summary")?.addEventListener("click", () => {
-    vscode.postMessage({ command: "copyText", text: buildCurrentShareSummaryText() });
-  });
-  const socialPlatforms: Array<{ id: string; platform: "linkedin" | "bluesky" | "mastodon" }> = [
-    { id: "btn-share-card-linkedin", platform: "linkedin" },
-    { id: "btn-share-card-bluesky", platform: "bluesky" },
-    { id: "btn-share-card-mastodon", platform: "mastodon" },
-  ];
-  for (const { id, platform } of socialPlatforms) {
-    document.getElementById(id)?.addEventListener("click", () => {
-      vscode.postMessage({ command: "shareCardToSocial", platform, text: buildCurrentShareSummaryText() });
-    });
-  }
-}
-
-/** Re-renders the Share Card tab once session files have finished loading, since it is
- * initially rendered with an empty file list before the async load completes. */
-function reRenderShareCard(): void {
-  replaceTabContent("share", renderShareCardTab(storedDetailedFiles), setupShareSummaryButtonHandler);
-}
-
 function setupButtonHandlers(): void {
   document.getElementById("btn-copy")?.addEventListener("click", () => {
     vscode.postMessage({ command: "copyReport" });
   });
-
-  setupShareSummaryButtonHandler();
 
   document.getElementById("btn-issue")?.addEventListener("click", () => {
     vscode.postMessage({ command: "openIssue" });
@@ -2498,9 +2329,6 @@ function handleSessionFilesLoadProgress(message: DiagMessage): void {
   const sessionSubtext = document.getElementById("session-loading-subtext");
   if (sessionSubtext) { sessionSubtext.textContent = progressText; }
 
-  const shareSubtext = document.getElementById("share-loading-subtext");
-  if (shareSubtext) { shareSubtext.textContent = progressText; }
-
   const reportSubtext = document.getElementById("report-loading-subtext");
   if (reportSubtext) { reportSubtext.textContent = progressText; }
 
@@ -2545,7 +2373,6 @@ function handleSessionFilesLoaded(message: DiagMessage): void {
   if (ttftResultsDiv && ttftResultsDiv.innerHTML.trim()) { triggerTtftAnalysis(); }
 
   reRenderTable();
-  reRenderShareCard();
 }
 
 function handleCacheCleared(): void {
@@ -2663,10 +2490,9 @@ function renderDiagCacheTabHtml(data: DiagnosticsData): string {
   return `
 <div id="tab-cache" class="tab-content">
 <div class="info-box">
-<div class="info-box-title">💾 Cache Information</div>
+<div class="info-box-title">💾 ${escapeHtml(localize('diagnostics.cache.infoTitle'))}</div>
 <div>
-The extension caches session file data to improve performance and reduce file system operations.
-Cache is stored in VS Code's global state and persists across sessions.
+${escapeHtml(localize('diagnostics.cache.infoBody'))}
 </div>
 </div>
 <div class="cache-details">
@@ -2695,7 +2521,7 @@ Cache is stored in VS Code's global state and persists across sessions.
 ${data.cacheInfo?.storagePath ? ` <a href="#" class="open-storage-link" data-path="${encodeURIComponent(data.cacheInfo.storagePath)}">Open storage location</a>` : ""}
 </div>
 <p style="color: #999; font-size: 12px; margin-top: 8px;">
-Cache is stored in VS Code's global state (extension storage) and includes:
+${escapeHtml(localize('diagnostics.cache.storedIncludes'))}
 <ul style="margin: 8px 0 0 20px;">
 <li>Token counts per session file</li>
 <li>Interaction counts</li>
@@ -2706,7 +2532,7 @@ Cache is stored in VS Code's global state (extension storage) and includes:
 </p>
 </div>
 <div class="cache-actions">
-<h4>Cache Management</h4>
+<h4>${escapeHtml(localize('diagnostics.cache.management'))}</h4>
 <p style="color: #999; font-size: 12px; margin-bottom: 12px;">
 Clearing the cache will force the extension to re-read and re-analyze all session files on the next update.
 This can help resolve issues with stale or incorrect data.
@@ -3590,9 +3416,8 @@ function renderTabBars(data: DiagnosticsData, detailedFiles: SessionFileDetails[
 <div class="tabs leaf-tabs" data-group="diagnostics" style="display: flex;">
 <button class="tab active" data-tab="report">📋 Report</button>
 <button class="tab" data-tab="sessions">📁 Session Files (${detailedFiles.length})</button>
-<button class="tab" data-tab="cache">💾 Cache</button>
+<button class="tab" data-tab="cache">💾 ${escapeHtml(localize('diagnostics.cache.tab'))}</button>
 <button class="tab" data-tab="path-analyzer">🔬 Path Analyzer</button>
-<button class="tab" data-tab="share">📸 Share Card</button>
 </div>
 
 <div class="tabs leaf-tabs" data-group="research" style="display: none;">
@@ -3655,7 +3480,6 @@ ${data.isDebugMode ? renderDebugTab(data.globalStateCounters) : ''}
 <div id="tab-path-analyzer" class="tab-content">
 ${renderFolderAnalyzerTab()}
 </div>
-${renderShareCardTab(detailedFiles, isLoading)}
 <div id="tab-model-usage" class="tab-content">
 ${renderModelUsageTab(detailedFiles, isLoading)}
 </div>

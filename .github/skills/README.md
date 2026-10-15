@@ -99,7 +99,8 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 **Use this skill when:**
 - The CI step summary's "Code Duplication Analysis" report grows
 - A PR review notes duplicated / copy-pasted code
-- You want to DRY up the codebase (vscode-extension/src, shared src/, cli/src)
+- You want to DRY up the codebase (vscode-extension/src, shared src/, cli/src, sharing-server/src, desktop/src, release-video/src)
+- The CI `duplication-check` ratchet (`scripts/code-duplication-baseline.json`) can be lowered after a cleanup
 
 **Contents:**
 - Step-by-step workflow: list groups → pick one → baseline tests → extract helper → lint → re-run detector → build → commit → PR
@@ -115,7 +116,7 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 - Adding support for a new editor or AI coding tool
 - After modifying `getEditorSourceFromPath` in `cli/src/analysis.ts`
 - After modifying `getEditorTypeFromPath` in `src/workspaceHelpers.ts`
-- After updating `EDITOR_ICON_MAP` in `formatUtils.ts`
+- After updating `EDITOR_ICON_MAP` in `src/editorIcons.ts`
 - When JetBrains or another CLI-based consumer shows raw editor keys instead of friendly names
 
 **Contents:**
@@ -149,7 +150,7 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 **Contents:**
 - `scan-hardcoded-strings.js` — dependency-free Node script that flags string/template literals in UI-rendering positions (`.textContent`/`.innerText`/`.innerHTML`/`.title`/`.placeholder` assignments, `aria-label`/`title`/`placeholder` HTML attributes, and text inside `<div>`/`<button>`/`<label>`/`<h1>`–`<h6>`/`<p>`/`<span>`/`<td>`/`<th>`/`<option>`/`<summary>`/`<caption>` tags)
 - `scan-hardcoded-strings.test.js` — unit tests for the detection helpers
-- Console and Markdown report output (`hardcoded-strings-report.md` at the repo root); always exits `0` — informational, not a CI gate
+- Console and Markdown report output (git-ignored `hardcoded-strings-report.md` at the repo root); always exits `0` — informational, not a CI gate
 
 ### validate-app-db-schema
 
@@ -232,19 +233,19 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 
 ### sync-host-views
 
-**Purpose**: Keep the Visual Studio and JetBrains webview views (screens) in sync with the VS Code views, while preserving the exact set of views each host ships. New VS Code views are detected and surfaced for a human decision — never auto-added.
+**Purpose**: Keep the Visual Studio, JetBrains and desktop-app webview views (screens) in sync with the VS Code views, while preserving the exact set of views each host ships. New VS Code views are detected and surfaced for a human decision — never auto-added.
 
 **Use this skill when:**
 - After building or updating the VS Code webviews (`vscode-extension/esbuild.js` `entryPoints`)
-- Before a Visual Studio or JetBrains release, to ensure their shipped screens are current
+- Before a Visual Studio, JetBrains or desktop release, to ensure their shipped screens are current
 - When you suspect VS Code added a screen a host is missing
-- After changing the host include lists (`AIEngineeringFluency.csproj`, `jetbrains-plugin/build.gradle.kts`)
+- After changing the host include lists (`AIEngineeringFluency.csproj`, `jetbrains-plugin/build.gradle.kts`, `desktop/esbuild.js` `WEBVIEW_BUNDLES` / `desktop/src/main.ts` `PANEL_MENU`)
 
 **Contents:**
-- `sync-host-views.js` — dependency-free Node.js detector that parses the canonical view set from `esbuild.js` and compares it to the Visual Studio (`csproj`) and JetBrains (`build.gradle.kts`) host include lists. Neither host commits webview bundle content to git — both copy it fresh from `dist/webview` at their own build time — so this only tracks view-LIST drift, not bundle content
-- Classifies each view as tracked / NEW (ask the user) / orphan
+- `sync-host-views.js` — dependency-free Node.js detector that parses the canonical view set from `esbuild.js` and compares it to the Visual Studio (`csproj`), JetBrains (`build.gradle.kts`) and desktop app (`WEBVIEW_BUNDLES` + `PANEL_MENU`) host lists. No host commits webview bundle content to git — each copies it fresh from `dist/webview` at its own build time — so this only tracks view-LIST drift, not bundle content. A desktop view counts as shipped only when it is in both of its lists
+- Classifies each view as tracked / NEW (ask the user) / orphan, plus desktop UNREACHABLE (bundled, not in the menu) / UNBUNDLED (in the menu, not bundled)
 - `--json` for CI
-- Exit codes: `0` in sync · `1` mechanical drift (an ORPHAN) · `2` config error · `3` NEW views (human decision required)
+- Exit codes: `0` in sync · `1` mechanical drift (an ORPHAN, or a desktop UNREACHABLE / UNBUNDLED view) · `2` config error · `3` NEW views (human decision required)
 - Workflow for the ask-before-adding procedure for new screens, including the navigation wiring needed in each host
 
 ### visual-view-diff
@@ -262,7 +263,7 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 - `diff-screenshots.js` — per-pixel comparison producing diff images plus `report.md` / `report.json`
 - `lib/harness.js` — rebuilds each panel's HTML shell (`#root`, `window.__INITIAL_*__`, JSON config globals, the real bundle) around a committed fixture, with the `--vscode-*` theme tokens VS Code would normally inject
 - `fixtures/` — one JSON payload per view, using fixed timestamps so unchanged code renders byte-identical screenshots
-- Deliberately does **not** launch VS Code or the Extension Development Host, per "Never Launch a Real Editor/IDE Instance" in `.github/copilot-instructions.md` — it renders the real webview bundles instead
+- Deliberately does **not** launch VS Code or the Extension Development Host, per "Never Launch a Real Editor/IDE Instance" in `AGENTS.md` — it renders the real webview bundles instead
 - Requires Playwright + Chromium, found locally or globally rather than added as an extension dependency
 
 ### pr-risk-review

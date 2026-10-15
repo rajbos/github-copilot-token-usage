@@ -9,7 +9,7 @@ const watchMode = process.argv.includes('--watch');
 // Webview bundles owned by the VS Code extension that the desktop app reuses.
 const WEBVIEW_BUNDLES = [
   'details.js', 'environmental.js', 'chart.js', 'usage.js',
-  'diagnostics.js', 'maturity.js', 'fluency-level-viewer.js',
+  'diagnostics.js', 'maturity.js', 'fluency-level-viewer.js', 'efficiency.js',
 ];
 
 async function main() {
@@ -25,16 +25,14 @@ async function main() {
     target: 'node22',
     minify: production,
     sourcemap: !production,
-    alias: {
-      vscode: path.join(__dirname, '..', 'cli', 'src', 'vscode-stub.ts'),
-    },
     external: ['electron', 'electron-updater'],
     nodePaths: [
       path.join(__dirname, 'node_modules'),
       path.join(__dirname, '..', 'cli', 'node_modules'),
       path.join(__dirname, '..', 'vscode-extension', 'node_modules'),
     ],
-    loader: { '.json': 'json' },
+    // .css is inlined as text: the --vscode-* theme tokens main.ts injects into each page.
+    loader: { '.json': 'json', '.css': 'text' },
     banner: { js: 'var __importMetaUrl = require("url").pathToFileURL(__filename).href;' },
     define: { 'import.meta.url': '__importMetaUrl' },
     logLevel: 'info',
@@ -108,7 +106,7 @@ async function main() {
  * produced by the VS Code extension (each bundle already includes the
  * vscode-elements web components it uses). If those artifacts are missing
  * (e.g. a fresh checkout where only the desktop app was built), build the
- * extension automatically so `npm run build` is self-sufficient instead of
+ * extension automatically so `pnpm run build` is self-sufficient instead of
  * silently producing an app with blank panels.
  */
 function ensureWebviewBundles(extWebviewDir) {
@@ -129,7 +127,7 @@ function ensureWebviewBundles(extWebviewDir) {
     throw new Error(
       'Failed to build the vscode-extension webview bundles automatically.\n' +
       'Build it manually first:\n' +
-      '  cd ../vscode-extension && npm install && npm run compile\n' +
+      '  cd ../vscode-extension && pnpm install && pnpm run compile\n' +
       (stillMissing.length ? `Still missing: ${stillMissing.join(', ')}` : ''),
     );
   }

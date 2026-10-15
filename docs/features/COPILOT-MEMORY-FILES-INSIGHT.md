@@ -1,7 +1,7 @@
 # Copilot Memory Files Insight
 
 Status: **Implemented** — shared analysis module, VS Code insight card, CLI
-command, `extension.ts` runtime wiring, and a Tools-tab UI section are all
+command, `extension.ts` runtime wiring, and a Workspace Health tab UI section are all
 live.
 
 > **Local memory only.** This document covers the Markdown memory files Copilot
@@ -72,7 +72,7 @@ WSL coverage is a two-step combination of both functions, not
 > The section below is the original design proposal written before this
 > feature was implemented. It is kept for historical context; see
 > "What's implemented" further down for the actual shipped surface — a
-> Tools-tab section, not a new panel/tab, and without the linked-session
+> Workspace Health tab section, not a new panel/tab, and without the linked-session
 > cross-reference described here (session data is not correlated back to
 > chat-session logs in the shipped UI).
 
@@ -95,8 +95,8 @@ large**, as a hygiene signal, not to duplicate memowl's read/manage UI.
 
 ## Resolved design decisions
 
-1. **Surface**: a "Copilot Memory Files" section on the existing **Tools tab**
-   (`#section-memory-files`, right after Tool Curation), not a new tab.
+1. **Surface**: a "Copilot Memory Files" section on the existing **Workspace Health tab**
+   (`#section-memory-files`, after Missed Potential), not a new tab.
 2. **Scan scope**: all `workspaceStorage` hashes across every known VS Code
    "User" root on the machine (like the existing multi-workspace session
    scanning), not just the current workspace.
@@ -120,8 +120,8 @@ carries every file's absolute path and session ID) — `toMemoryFilesAnalysisVie
 projects it down to a compact `MemoryFilesAnalysisView` (counts/rollup scalars
 only) first, keeping the full analysis for the host-side insight context and
 the CLI. The webview (`webview/usage/main.ts`) sanitizes and renders that view
-as a "Copilot Memory Files" section on the Tools tab, right after Tool
-Curation, listing per-workspace file counts/size/staleness — following the
+as a "Copilot Memory Files" section on the Workspace Health tab, after Missed
+Potential, listing per-workspace file counts/size/staleness — following the
 same persist-across-refresh caching pattern already used for
 `curationAnalysis`.
 
@@ -131,11 +131,11 @@ same persist-across-refresh caching pattern already used for
 |---|---|
 | Discovery + analysis (pure, shared) | `src/copilotMemoryFiles.ts` — `discoverAllMemoryFiles()`, `discoverMemoryFilesInUserPath()`, `analyzeMemoryFiles()`, `toMemoryFilesAnalysisView()`, `decodeSessionFolderName()` |
 | Types | `src/types.ts` — `MemoryFileEntry`, `MemoryFilesWorkspaceSummary`, `MemoryFilesAnalysis`, `MemoryFilesAnalysisView` (compact webview projection) |
-| Unit tests | `vscode-extension/test/unit/copilotMemoryFiles.test.ts` |
+| Unit tests | `src/test/copilotMemoryFiles.test.ts` |
 | Insight card | `vscode-extension/src/insightsEngine.ts` — id `stale-memory-files`, fires when `InsightContext.memoryFilesAnalysis` has stale or oversized files; tests in `insightsEngine.test.ts` |
 | CLI command | `cli/src/commands/memory-files.ts` — `ai-engineering-fluency memory-files [--json] [--stale-days] [--large-kb]`, registered in `cli/src/program.ts` |
 | Runtime wiring | `vscode-extension/src/extension.ts` — `computeMemoryFilesAnalysis()` (TTL-cached via `isMemoryFilesScanFresh()`), threaded into both insight-context builders and all `updateStats`/initial-payload builders (projected to `MemoryFilesAnalysisView` before being sent) |
-| Tools-tab UI | `vscode-extension/src/webview/usage/main.ts` — `buildMemoryFilesSectionHtml()`, `_sanitizeMemoryFilesAnalysis()`, `#section-memory-files` |
+| Workspace Health tab UI | `vscode-extension/src/webview/usage/main.ts` — `buildMemoryFilesSectionHtml()`, `_sanitizeMemoryFilesAnalysis()`, `#section-memory-files` |
 
 The CLI command scans this machine's real `workspaceStorage`/`globalStorage`
 folders (no fixtures needed) and was manually verified against the memory

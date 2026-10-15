@@ -6,11 +6,13 @@ This document provides top-level guidance for AI agents contributing to this rep
 
 ## Repository Structure
 
+Run `ls -a` (or `git ls-files | cut -d/ -f1 | sort -u`) for the live top level.
+
 ```
 /
 ├── AGENTS.md                    ← This file (the canonical content)
-├── CLAUDE.md                    ← Pointer to this file (`@AGENTS.md`)
-├── build.ps1                    ← Root build orchestrator (all projects)
+├── CLAUDE.md                    ← Claude Code entry point (imports this file and sharing-server/AGENTS.md)
+├── build.ps1 / dev.ps1          ← Root build orchestrator / local dev helper
 ├── src/                         ← Shared TypeScript sources + JSON data files
 │                                   (session parsing, token estimation, adapters —
 │                                    consumed by vscode-extension/ and cli/)
@@ -31,15 +33,23 @@ This document provides top-level guidance for AI agents contributing to this rep
 ├── omp-segment/                 ← Oh My Posh terminal prompt segment showing token usage
 ├── assets/                      ← Logos and other static brand assets
 ├── docs/                        ← Shared documentation
-└── .github/
-    ├── copilot-instructions.md  ← Pointer to this file (`See ../AGENTS.md`)
-    ├── plugin/marketplace.json  ← Copilot plugin marketplace catalog (lists copilot-app/)
-    └── instructions/
-        ├── vscode-extension.instructions.md   ← VS Code extension guide
-        ├── cli.instructions.md                ← CLI guide
-        ├── visualstudio-extension.instructions.md ← Visual Studio extension guide
-        ├── jetbrains-plugin.instructions.md   ← JetBrains plugin guide
-        └── workflows.instructions.md           ← CI/CD workflow security guide
+├── screenshots/                 ← Only a `.vscode/settings.json` pointing the sample-data
+│                                   setting at sample session data. `scripts/capture-screenshots.ps1`
+│                                   (manual, Windows-only, run by `scripts/pre-release.js`) names it
+│                                   but does not currently open it; agents must not run that script
+├── .vscode/                     ← Shared VS Code settings, tasks and launch configs
+│                                   (for human developers; see "Never Launch a Real Editor/IDE Instance")
+├── .devcontainer/               ← Dev container definition (see "DevContainer Terminal Behavior")
+├── .claude/                     ← Claude Code subagents (`agents/`) and skills (`skills/`),
+│                                   mirrored from `.github/` (see the mirroring section)
+├── .github/
+│   ├── copilot-instructions.md  ← Pointer to this file (`See ../AGENTS.md`)
+│   ├── agents/ , skills/        ← Copilot custom agents and Agent Skills (mirrored to `.claude/`)
+│   ├── workflows/               ← CI/CD
+│   ├── plugin/marketplace.json  ← Copilot plugin marketplace catalog (lists copilot-app/)
+│   └── instructions/            ← Folder-specific guides (see the table below)
+└── README.md, CONTRIBUTING.md, CHANGELOG.md, SECURITY.md, SUPPORT.md, LICENSE, and the generated
+    LOC_STATS.md (other generated reports, such as the hardcoded-strings report, are git-ignored)
 ```
 
 ## Sub-project Instructions
@@ -51,6 +61,7 @@ This document provides top-level guidance for AI agents contributing to this rep
 | `visualstudio-extension/` | `.github/instructions/visualstudio-extension.instructions.md` |
 | `jetbrains-plugin/` | `.github/instructions/jetbrains-plugin.instructions.md` |
 | `sharing-server/` | [sharing-server/AGENTS.md](sharing-server/AGENTS.md), `.github/instructions/sharing-server.instructions.md` |
+| `desktop/` | [desktop/README.md](desktop/README.md); checks in [docs/VALIDATION.md](docs/VALIDATION.md#desktop-app) |
 | `.github/workflows/` | `.github/instructions/workflows.instructions.md` |
 
 All sharing-server coding, testing, documentation and downstream customization
@@ -69,8 +80,8 @@ Use the root orchestrator from the repo root:
 
 Individual project builds:
 ```bash
-cd vscode-extension && npm run compile   # VS Code extension
-cd cli && npm run build                   # CLI
+cd vscode-extension && pnpm run compile   # VS Code extension
+cd cli && pnpm run build                   # CLI
 ```
 
 ## Documentation
@@ -98,9 +109,20 @@ AI agents (Claude Code, GitHub Copilot, etc.) must never launch a real, visible 
 
 These steps are documented in places like `.github/instructions/vscode-extension.instructions.md` and `.github/instructions/jetbrains-plugin.instructions.md` **for human developers only**, who can watch the window, click through the UI, and close it when done. An agent has no way to "close" a window it opens and no way to observe it, so these steps are meaningless for automated verification and only cause disruptive side effects.
 
-Instead, verify changes using non-interactive tooling: compile/build scripts (`npm run compile`, `./gradlew build`, `dotnet build`), automated unit test suites (`npm run test:node`, `./gradlew test`, `dotnet test`), and linters/type-checkers. If you are writing or editing a skill, prompt, or instructions file, do not add steps that tell an agent to launch a GUI editor/IDE — mark such steps explicitly as manual/human-only, or omit them entirely from agent-facing docs.
+Instead, verify changes using non-interactive tooling: compile/build scripts (`pnpm run compile`, `./gradlew build`, `dotnet build`), automated unit test suites (`pnpm run test:node`, `./gradlew test`, `dotnet test`), and linters/type-checkers. If you are writing or editing a skill, prompt, or instructions file, do not add steps that tell an agent to launch a GUI editor/IDE — mark such steps explicitly as manual/human-only, or omit them entirely from agent-facing docs.
 
 This also governs `.github/github-app.yml`. Its `code .` script has **no `triggers` entry**, on purpose — that makes it an on-demand action a human clicks in the GitHub App's session UI, not something that fires automatically. **Never attach `triggers: [session.create]` (or any other trigger) to a script that launches an editor/IDE.** `automation.auto_issue_session: true` means sessions can be created unattended (e.g. an issue auto-assigned to Copilot) with nobody there to click anything — a triggered `code .` would pop open a real VS Code window during those unattended sessions too, which is the exact bug this section exists to prevent. Non-GUI setup steps (installing dependencies, compiling) are fine to keep on `session.create` since they have no visible side effect.
+
+## Shared `src/` Is Editor-Neutral
+
+The repo-root `src/` is consumed by the VS Code extension, the CLI and the desktop app, so it must not depend on any of them:
+
+- **No `vscode` imports in `src/`**, and no imports from `vscode-extension/`, `cli/` or `desktop/`. The root `eslint.config.mjs` enforces this with `no-restricted-imports` (an error under `pnpm run lint` in `vscode-extension/`).
+- Editor-host services (extension lookup, settings, app name, ...) are injected through `deps` objects, e.g. `SessionDiscoveryDeps` and `WindsurfHost`; the VS Code implementations live in `vscode-extension/src/srcHostAdapters.ts`.
+- Code the CLI or desktop app needs from the extension and that has no VS Code dependency belongs in `src/`.
+- Unit tests for shared modules live in `src/test/` and run without the VS Code shim (`pnpm run test:src`); they also run in the normal extension test run and CI via `vscode-extension/test/unit/sharedSrcTests.test.ts`. A test that needs the extension (its sources, the `vscode` shim, or repo files via `__dirname`) stays in `vscode-extension/test/unit/`.
+
+See [src/README.md](src/README.md).
 
 ## CLI Must Reuse Shared Functions
 
@@ -113,6 +135,18 @@ The CLI (`cli/`) is a thin consumer of the shared TypeScript modules in the repo
 | Token counts (total, actual, thinking) | `estimateTokensFromJsonlSession()` | `tokenEstimation.ts` |
 | Per-model cost attribution (model usage) | `getModelUsageFromSession()` | `usageAnalysis.ts` |
 | Debug-log token override | `extractAllTokensFromDebugLog()` | `tokenEstimation.ts` |
+| Per-day stats from a session (non-extension hosts) | `addSessionToDailyStats()` + `addSessionEfficiencyToDailyStats()` | `statsHelpers.ts`, `modelEfficiency.ts` |
+| Chart webview payload | `buildChartData()` | `chartDataBuilder.ts` |
+| Efficiency webview payload | `buildEfficiencyViewData()` | `efficiencyViewBuilder.ts` |
+| Usage Analysis webview payload | `buildUsageAnalysisViewData()` (+ `buildWorkspaceCustomization()`, `buildCurationAnalysis()`, `evaluateUsageInsights()` for its inputs) | `usageAnalysisViewBuilder.ts`, `customizationMatrix.ts`, `toolCuration.ts`, `insightsEngine.ts` |
+
+Webview payloads follow the same rule: one function in `src/` builds a payload and
+every host (extension, CLI, desktop) calls it, differing only in how it gathers inputs
+and in host settings. The Chart, Efficiency and Usage Analysis payloads (table above)
+do this today; the Diagnostics payload is still partly assembled per host and is being
+moved over (#2418). Never add a host-side copy of a payload builder,
+and move a payload's assembly to `src/` when you change it — otherwise a field a view
+starts requiring reaches one host and not the others.
 
 **Critical rule**: `estimateTokensFromJsonlSession().modelUsage` must **not** be used as the primary source for model attribution. It returns `{}` for delta-format sessions (VS Code Chat JSONL), causing $0 cost for those sessions. Always call `getModelUsageFromSession()` separately for model attribution — it handles all formats through a single code path.
 
@@ -130,66 +164,23 @@ If you find yourself adding a fallback like "if modelUsage is empty, call X" in 
 
 ## Coding Agent Data Sources
 
-When running as the GitHub Copilot Coding Agent (bootstrapped via `.github/workflows/copilot-setup-steps.yml`), additional data files may be available in the workspace root. They are fetched during the agent's setup phase (the first two from Azure Storage, the third from the GitHub API) and are **not** present in local development.
+When running as the GitHub Copilot Coding Agent (bootstrapped via `.github/workflows/copilot-setup-steps.yml`), extra data may be hydrated into the workspace: `./session-logs/`, `./usage-data/usage-agg-daily.json` and `./usage-data/agent-sessions.json`. They are **not** present in local development, and the Azure-backed ones only exist when the `copilot` GitHub environment has `COPILOT_STORAGE_ACCOUNT` configured (`agent-sessions.json` comes from the GitHub API and does not need it). The `session-log-data` skill (`.github/skills/session-log-data/SKILL.md`) documents the schemas, analysis examples and cost estimation. Check that the files exist before relying on them.
 
-- **`./session-logs/`**: Raw session log files from every uploading editor (last 7 days) from Azure Blob Storage, as both `.json` and `.jsonl` (mostly `.jsonl`); `.editor-types.json` maps each file to its editor.
-- **`./usage-data/usage-agg-daily.json`**: Aggregated daily token usage data (last 30 days) from Azure Table Storage.
-- **`./usage-data/agent-sessions.json`**: Copilot cloud-agent session statistics for this repository, fetched from the **GitHub API** (not Azure Storage) by `scripts/fetch-agent-sessions.js` using the workflow's `GITHUB_TOKEN`; it is therefore present even when `COPILOT_STORAGE_ACCOUNT` is not configured.
-
-These hydrated files are generated output, not source. `session-logs/` and `usage-data/` are git-ignored; **never commit or force-add them** to a PR (they are not on `main`).
-
-The session logs and aggregated usage data are only available when the repository's `copilot` GitHub environment has `COPILOT_STORAGE_ACCOUNT` configured. See the `session-log-data` skill in `.github/skills/session-log-data/SKILL.md` for data schemas, analysis examples, and cost estimation.
-
-To check if data is available:
-```bash
-[ -d ./session-logs ] && echo "Session logs available"
-[ -f ./usage-data/usage-agg-daily.json ] && echo "Aggregated data available"
-```
+These hydrated files are generated output, not source. `session-logs/` and `usage-data/` are git-ignored; **never commit or force-add them** to a PR.
 
 ### Code knowledge graph (graphify)
 
-`copilot-setup-steps.yml` also builds a graphify knowledge graph of the repository's
-code before the agent starts, at **`.graphify-agent/graph.json`** (order of
-10k nodes; the exact size tracks the repo, so don't read a precise figure into
-it). It needs no secrets — it is local AST parsing (`--code-only`).
-The build runs early — before the Azure session-log and usage-data hydration —
-so that graphify's dependency tree is installed and executed while there is no
-sensitive data on disk for a compromised wheel to read. The pinned Playwright
-install and Chromium download that the webview harnesses need sit in the same
-early slot for the same reason. That covers graphify and Playwright only: the
-azure-storage-loader's own npm dependencies and
-`scripts/fetch-agent-sessions.js` still run *after* those files exist, so this
-is one contained path rather than a supply-chain boundary for the whole job.
-The build is deliberately non-blocking (every step is `continue-on-error`),
-which is what lets it run first without a PyPI outage costing the hydration
-that follows. Treat the graph as normally available rather than guaranteed, and
-check for it before relying on it.
-
-Query it instead of fanning `grep`/read across the tree when the question is
-structural — what calls a symbol, what a change reaches, how two areas connect:
+The same setup workflow builds a code-only graphify knowledge graph at **`.graphify-agent/graph.json`** (local AST parsing, no secrets, non-blocking — it can be missing if the build failed; then fall back to ordinary file search). For structural questions (what calls a symbol, what a change reaches) prefer it over fanning `grep` across the tree:
 
 ```bash
-export GRAPHIFY_OUT=.graphify-agent          # or pass --graph .graphify-agent/graph.json
-
-graphify query "how does the CLI attribute per-model cost"   # BFS context for a question
-graphify explain "getModelUsageFromSession"                  # one node and its neighbors
-graphify affected "src/tokenEstimation.ts"                   # reverse traversal: blast radius
-graphify path "extension.ts" "modelPricing.json"             # shortest path between two nodes
+export GRAPHIFY_OUT=.graphify-agent
+graphify query "how does the CLI attribute per-model cost"
+graphify explain "getModelUsageFromSession"
+graphify affected "src/tokenEstimation.ts"     # blast radius
+graphify path "extension.ts" "modelPricing.json"
 ```
 
-Notes:
-- The graph covers **code only**. Docs, PDFs and images are skipped — semantic
-  extraction needs an LLM backend and an API key, which this setup deliberately
-  does not use. Read docs directly.
-- It is a snapshot from setup time. After large edits, refresh by re-running the
-  build: `GRAPHIFY_OUT=.graphify-agent graphify extract . --code-only --no-viz`
-  (also LLM-free). Do **not** use `graphify update .` for this: it honours
-  `GRAPHIFY_OUT` for the graph itself but still rewrites the committed
-  `graphify-out/cache/stat-index.json`, leaving a tracked modification behind.
-- Never build into the default `graphify-out/` — that directory's `manifest.json`
-  and `cache/` are committed, and a newer graphify prunes them as a stale version.
-- If `.graphify-agent/graph.json` is missing the build failed; fall back to
-  ordinary file search.
+The graph is a setup-time snapshot and covers code only (not docs). Refresh it with `GRAPHIFY_OUT=.graphify-agent graphify extract . --code-only --no-viz`. CI builds into `.graphify-agent/`; never build into the default `graphify-out/` (it is git-ignored, nothing in it is committed, and a stale local copy there is not the CI graph), and do not use `graphify update .` for this.
 
 ## Agent Changes to CI and Agent Configuration Need a Human
 
@@ -251,108 +242,40 @@ When you add or change a skill script, classify it in the same PR. A change that
 
 ## DevContainer Terminal Behavior
 
-This repository uses a devcontainer (`.devcontainer/devcontainer.json`). When working inside the devcontainer, **terminal output capture is unreliable** — commands execute successfully but the `run_in_terminal` tool often returns empty or truncated output. This is a known limitation of the remote filesystem layer.
+Inside the devcontainer (`.devcontainer/devcontainer.json`), terminal output capture can be unreliable — commands run but their output comes back empty or truncated (a remote filesystem limitation). Don't retry-loop, poll, redirect to temp files, or delegate to a subagent hoping for cleaner output; none of that converges. Instead:
 
-### What NOT to do
-
-Terminal output capture in this devcontainer is unreliable (remote filesystem
-limitation). Don't retry-loop, poll, redirect to temp files, or delegate to a
-subagent hoping for cleaner output — none of that converges. Use the npm
-scripts and `get_errors` below instead.
-
-### What to do instead
-
-1. **Use `npm` scripts for standard operations** (from inside `vscode-extension/`):
-   - `npm run compile` — build the extension bundles
-   - `npm run validate` — type-check + lint + build
-   - `npm run compile-tests` — compile test files to `out/`
-   - `npm run test:node` — compile + run unit tests
-   - `npm run test:coverage` — compile + run tests with coverage thresholds
-
-2. **Use `get_errors` to validate compilation.** After edits, call `get_errors` on the changed files instead of running `tsc` in the terminal.
-
-3. **Run tests in small batches.** Instead of running all test files in one command, run one file at a time:
+1. **Use the package scripts (pnpm)** (from `vscode-extension/`): `pnpm run compile`, `pnpm run validate` (type-check + lint + build), `pnpm run compile-tests`, `pnpm run test:node`, `pnpm run test:coverage`, and `pnpm run test:src` (only the shared `src/test` suite; needs no VS Code shim).
+2. **Check compile errors with the project's type-check/validate script** or your tool's diagnostics, rather than running `tsc` by hand. (Copilot users: the `get_errors` tool.)
+3. **Run tests one file at a time**, e.g.
    ```bash
    cd vscode-extension
-   node --require ./out/vscode-extension/test/unit/vscode-shim-register.js --test out/vscode-extension/test/unit/sessionParser.test.js
+   node --require ./out/vscode-extension/test/unit/vscode-shim-register.js --test out/vscode-extension/test/unit/l10n.test.js
    ```
-
-4. **Accept a single run.** If a test command runs without returning output, do **not** re-run it.
-
-5. **Write output to the workspace (not `/tmp/`).** If you must capture output to a file, write it inside the workspace where `read_file` can reliably access it.
+   Tests for shared `src/` modules live in `src/test/` and run without the shim:
+   ```bash
+   node --test out/src/test/sessionParser.test.js
+   ```
+4. **Accept a single run.** If a command returns no output, don't re-run it.
+5. If you must capture output to a file, write it inside the workspace, not `/tmp/`, so your file-read tool can reach it. (Copilot users: `run_in_terminal` / `read_file`.)
 
 ## Webview changes must be validated by clicking, not by reading
 
-The `postMessage` wire between a webview panel and the extension host is untyped
-by construction, and a `<button>` nobody attached a listener to is
-indistinguishable from a working one in the source. Two checks close that gap —
-run both after any change under `vscode-extension/src/webview/**` or to a panel's
-message handling in `extension.ts`:
+The `postMessage` wire between a webview panel and the extension host is untyped by construction, and a `<button>` nobody attached a listener to looks identical to a working one in the source. After any change under `vscode-extension/src/webview/**` or to a panel's message handling in `extension.ts`, run both checks (they render the real bundles headlessly and never open an editor window, so they are safe for agents):
 
 ```bash
 cd vscode-extension
-npm run check:contract      # every posted message has a handler on the other side
-npm run check:interaction   # clicks every control in every panel, headlessly
+pnpm run check:contract      # every posted message has a handler on the other side
+pnpm run check:interaction   # clicks every control in every panel
 ```
 
-`check:contract` also runs in CI and as a unit test, so a regression fails the
-normal suite. `check:interaction` renders the real bundles headlessly via the
-`visual-view-diff` harness — it never opens an editor window, so it is safe for
-agents to run (see "Never Launch a Real Editor/IDE Instance" above).
+For any change that alters what a panel *looks like*, also run `pnpm run visual:diff` and read `../visual-output/diff/report.md` (repo-root `visual-output/`) plus the diff PNGs: the views you changed should show as changed and nothing else should. Name the expected views/tabs in the PR body. CI posts the before/after/diff screenshots on the PR itself: the `ui-checks` job renders and uploads them, and the separate `ui-checks-comment.yml` `workflow_run` workflow (it runs from the default branch, where the upload secret lives) attaches them as one comment, replaced on every push. Do not commit PNGs or upload images by hand.
 
-### UI changes come with before/after screenshots
+Registry rules (a miss fails nothing, so they are easy to forget):
 
-A reviewer cannot judge a UI change from a diff of template strings. For any
-change that alters what a panel *looks like*, also run the visual diff and look
-at the result before opening the PR:
+- **A new webview panel must be added to `.github/skills/visual-view-diff/views.config.json`**, with a fixture for its `__INITIAL_*__` payload. That one registry feeds the visual diff, the CI screenshots, the interaction crawl and `release-video/`.
+- **A new tab or mode on an existing panel needs a `state`** in the same file, or it diffs as "unchanged" and ships without a screenshot. (`release-video/` falls back to the `.tab-button[data-tab="…"]` / `#tab-panel-…` convention for catalogued tabs without a state, but only a registered state gets the tab into the diff, screenshots and crawl.)
 
-```bash
-cd vscode-extension
-npm run visual:diff        # renders merge base vs working tree
-```
-
-The output lands at the **repository root**, in `visual-output/` (so
-`../visual-output/` from `vscode-extension/`). Read
-`visual-output/diff/report.md` there and the diff PNGs. The views you changed
-should show as changed and nothing else should — an unexpected "changed" row is
-a regression to fix before pushing, and an expected change showing as
-"unchanged" means the harness is not looking at what you built (see the next
-paragraph). Then, in the PR body, name the views and tabs you expect to change.
-
-CI posts the screenshots for you: the `ui-checks` job runs the same diff and
-attaches the before/after/diff images as one comment on the PR, replaced on
-every push (`gh pr comment --attach`, via
-`.github/workflows/scripts/visual-diff-comment.js`). Do not commit PNGs to the
-repo and do not try to upload images by hand; make the CI comment say what the
-PR body promised. Uploading needs a user token, so the workflow uses the
-`GH_PAT` secret and falls back to an image-free comment without it.
-
-**Adding a new webview panel means adding it to
-`.github/skills/visual-view-diff/views.config.json`**, with a fixture capturing
-its `__INITIAL_*__` payload. That one registry feeds the visual diff, the CI
-screenshots and the interaction crawl — a view missing from it is silently
-unvalidated by all three. **Adding a tab or mode to an existing panel means
-adding a `state` for it** in the same file — the harness screenshots a view in
-its initial render plus its declared states only, so a new section on a tab
-with no state diffs as "unchanged" and ships without a screenshot.
-
-That registry now feeds a fourth consumer: `release-video/` screenshots each
-release's features by looking up the `view` and `tab` from its **What's New**
-catalog entry in this same file, where a `state` id *is* the `data-tab` value.
-A catalogued tab with no matching `state` does **not** fail the build: the
-video generator falls back to the convention every registered state already
-uses — click `.tab-button[data-tab="…"]`, expect `#tab-panel-…`. That fallback
-exists because a panel's *initial* tab is deliberately absent from `states`
-(the harness captures the initial render separately), and several older
-catalog entries point at exactly such a tab. What still fails, hard, is a tab
-that cannot actually be opened — which is the guarantee that matters, since
-the alternative is a release video that silently shows the wrong screen.
-
-Registering a state is still worth doing: it is what gets the tab into the
-visual diff, the CI screenshots and the interaction crawl.
-
-The full picture of what each check catches, and the one-command release
-preflight, is in [docs/VALIDATION.md](docs/VALIDATION.md).
+What each check catches, and the one-command release preflight, is in [docs/VALIDATION.md](docs/VALIDATION.md).
 
 ## Localization changes require test coverage
 
@@ -360,7 +283,16 @@ When adding or changing runtime localization keys (entries in `vscode-extension/
 
 ## File-size ceiling (`max-lines`)
 
-`vscode-extension/eslint.config.mjs` enforces `"max-lines": ["warn", { max: 6000, ... }]` alongside the existing complexity rules. The per-function rules (`max-lines-per-function`, `complexity`, `sonarjs/cognitive-complexity`) were all satisfied while `vscode-extension/src/extension.ts` grew to 12,332 lines and 553 methods — proof that small functions alone don't stop a file from becoming unmanageable. New code should not push any linted file past 6000 lines; if you're about to, split it instead. `extension.ts` is today's sole (known) outlier, and stays that way on purpose until it's decomposed — see `docs/adr/EXTENSION-TS-DECOMPOSITION.md` for the extraction plan. Ratchet the 6000 number down as files shrink; don't raise it to accommodate growth.
+`vscode-extension/eslint.config.mjs` enforces a `max-lines` ceiling (the threshold and severity live in that file) alongside the per-function complexity rules. Small functions alone don't stop a file from becoming unmanageable, so new code should not push any linted file past the ceiling — split instead. Run `cd vscode-extension && pnpm run lint` to see the current offenders; `vscode-extension/src/extension.ts` is by far the largest offender (other large files, such as the usage webview's `main.ts`, may also show up). `max-lines` is an `error`, and a per-file override in that config pins `extension.ts` at its current size, so it cannot grow and no second file can cross the ceiling. Ratchet the threshold (and that pin) down as files shrink; don't raise either to accommodate growth.
+
+### Where the `extension.ts` decomposition stands
+
+`docs/adr/EXTENSION-TS-DECOMPOSITION.md` is a **plan**, not a description of the code, and the figures inside it are a snapshot that has since drifted. Its destinations fall into two groups:
+
+- **Already exist** (extraction folds code into them): the shared `src/tokenEstimation.ts` and `src/sessionParser.ts`, and in `vscode-extension/src/` `backend/rollups.ts`, `agentSessionsService.ts`, `cacheManager.ts`, `githubPrService.ts`, `onboarding.ts`, `hookManager.ts`, `extensionPoints.ts`, `viewRegression.ts` and `backend/services/*`.
+- **Not created yet** (the new per-panel UI modules and services the ADR proposes, for example `backend/ui/diagnosticsPanel.ts`, `backend/services/worktreeService.ts`, `statusBarPresenter.ts`): check with `ls` before assuming one is there.
+
+`extension.ts` is still one large `CopilotTokenTracker` class. Do not add new feature logic to it: put it in a new or existing module and call it from there. Do not move existing code out opportunistically either; follow the ADR's extraction order and batch sizes: one cluster per PR at most, and a large cluster (such as session parsing) is moved in several small PRs rather than all at once.
 
 ## Pre-PR self-review checklist
 

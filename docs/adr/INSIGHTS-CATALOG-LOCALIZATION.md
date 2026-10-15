@@ -1,5 +1,7 @@
 # Localizing the personalized Insights catalog
 
+> **Status:** Implemented · **Decided/added:** 2026-09-19 · **Verified against code on:** 2026-10-11 (the catalog in `vscode-extension/src/insightsEngine.ts` still has 53 entries). Violation counts below are as measured when the change landed.
+
 Issue [#2081](https://github.com/rajbos/ai-engineering-fluency/issues/2081).
 
 ## The problem

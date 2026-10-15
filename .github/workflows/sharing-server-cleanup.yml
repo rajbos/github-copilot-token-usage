@@ -43,7 +43,7 @@ jobs:
       ARM_USE_OIDC:        "true"
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
@@ -64,11 +64,22 @@ jobs:
       # so the state key resolves to the same tfstate file.
       - name: Compute state key for branch
         id: env
+        # Branch names / dispatch inputs are attacker-controlled: pass via env, never interpolate.
+        env:
+          EVENT_NAME:   ${{ github.event_name }}
+          EVENT_REF:    ${{ github.event.ref }}
+          INPUT_BRANCH: ${{ github.event.inputs.branch }}
         run: |
-          if [[ "${{ github.event_name }}" == "delete" ]]; then
-            BRANCH="${{ github.event.ref }}"
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "delete" ]]; then
+            BRANCH="$EVENT_REF"
           else
-            BRANCH="${{ github.event.inputs.branch }}"
+            BRANCH="$INPUT_BRANCH"
+          fi
+          # Allowlist before the value reaches $GITHUB_OUTPUT or any state_key/app_name computation.
+          if [[ ! "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            echo "::error::Branch name contains characters outside [A-Za-z0-9._/-]; refusing to compute a destroy target."
+            exit 1
           fi
           echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
           SLUG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//;s/-$//')
@@ -86,12 +97,14 @@ jobs:
         if: steps.prereqs.outputs.configured == 'true'
         id: init
         working-directory: sharing-server/infra
+        env:
+          STATE_KEY: ${{ steps.env.outputs.state_key }}
         run: |
           terraform init -reconfigure \
             -backend-config="resource_group_name=${{ vars.TF_STATE_RESOURCE_GROUP }}" \
             -backend-config="storage_account_name=${{ vars.TF_STATE_STORAGE_ACCOUNT }}" \
             -backend-config="container_name=${{ vars.TF_STATE_CONTAINER }}" \
-            -backend-config="key=${{ steps.env.outputs.state_key }}"
+            -backend-config="key=${STATE_KEY}"
 
       # Azure CLI login is needed to detach custom domain bindings and delete managed
       # certs before Terraform destroy. ACA rejects cert deletion while a hostname
@@ -156,13 +169,15 @@ jobs:
           TF_VAR_github_client_id:    ${{ secrets.SHARING_GITHUB_CLIENT_ID }}
           TF_VAR_github_client_secret: ${{ secrets.SHARING_GITHUB_CLIENT_SECRET }}
           TF_VAR_session_secret:      ${{ secrets.SHARING_SESSION_SECRET }}
+          APP_NAME: ${{ steps.env.outputs.app_name }}
+          BRANCH:   ${{ steps.env.outputs.branch }}
         run: |
           RESOURCE_COUNT=$(terraform state list 2>/dev/null | wc -l)
           if [ "$RESOURCE_COUNT" -gt 0 ]; then
             echo "Found ${RESOURCE_COUNT} resource(s) in state — running destroy..."
             terraform destroy -auto-approve
-            echo "✅ Environment destroyed: ${{ steps.env.outputs.app_name }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "✅ Environment destroyed: ${APP_NAME}" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "No resources found in state for branch '${{ steps.env.outputs.branch }}' — nothing to destroy."
-            echo "ℹ️ No resources found for branch \`${{ steps.env.outputs.branch }}\` — nothing to destroy." >> "$GITHUB_STEP_SUMMARY"
+            echo "No resources found in state for branch '${BRANCH}' — nothing to destroy."
+            echo "ℹ️ No resources found for branch \`${BRANCH}\` — nothing to destroy." >> "$GITHUB_STEP_SUMMARY"
           fi

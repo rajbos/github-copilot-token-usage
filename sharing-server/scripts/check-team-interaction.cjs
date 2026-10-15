@@ -17,6 +17,7 @@ async function main() {
 	let closeDb;
 	try {
 		process.env.LOCAL_DATA_DIR = scratch;
+		process.env.NODE_ENV = 'test';
 		process.env.SESSION_SECRET = 'headless-fixture-session-key-not-a-real-secret';
 		process.env.CHART_JS_PATH = path.join(path.dirname(require.resolve('chart.js')), 'chart.umd.min.js');
 		delete process.env.ADMIN_GITHUB_LOGINS;

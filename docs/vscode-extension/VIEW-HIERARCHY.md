@@ -64,7 +64,7 @@ not user settings.
 |---|---|---|
 | 📊 **Usage** | **My Activity** | *(three bands — see below)* |
 | | **Recent Sessions** | Lookback selector · filter pills · sessions table (sortable, configurable columns) |
-| 📁 **Workspace** | **Tools & Integrations** | Tool Usage (3 periods) · Multi-Model Usage · MCP Tools · Tool Curation · unknown-tool banner |
+| 📁 **Workspace** | **Tools & Integrations** | Tool Usage (3 periods) · MCP Tools · Tool Curation · unknown-tool banner |
 | | **Workspace Health** | Copilot Customization Files table (20 per page, sortable, filter to workspaces with no customization files; path on hover) |
 | | **AI Readiness** | Per-repo readiness overview (collapsible) · Copilot Chat drafts |
 | | **Worktrees** | scan controls · roots list · progress · results table |
@@ -94,14 +94,14 @@ Analysis. Copy it when a view outgrows one row of tabs.
 
 | Group | Leaf tabs |
 |---|---|
-| 🩺 Diagnostics | Report · Session Files · Cache · Path Analyzer · Share Card |
+| 🩺 Diagnostics | Report · Session Files · Session Cache · Path Analyzer |
 | 🔬 Research | Model Usage · Tool Analysis · Skill Usage · OTel Delta · TTFT |
 | ⚙️ Settings | Display · Backend Storage · GitHub Auth · Debug (debug mode only) |
 
 ### Efficiency (`efficiency`)
 
 Flat tab strip, defined as a single array — the cheapest sub-view structure in the codebase:
-Trends · Tools & Skills · Month vs Month · Cost Attribution · Prompt Cache · Models · Value ·
+Trends · Skills · Month vs Month · Cost Attribution · Prompt Cache · Models · Value ·
 Combined.
 
 ### Views with no sub-views
@@ -110,7 +110,7 @@ Combined.
 |---|---|
 | Details | plan badge · provider panel · metrics table (grouped rows) · Editor Usage (with "Other" disclosure) · Model Usage (with "Other" disclosure) · estimates footnote |
 | Chart | header · summary cards · period toggles · time-window/metric/split/rolling controls · chart canvas · editor cards · language heatmap |
-| Fluency Score | radar chart · category cards · agentic sparkline · Stage Reference · Share card · About |
+| Fluency Score | radar chart · category cards · agentic sparkline · Stage Reference · Share score · Share AI coding toolbox card · About |
 | Environmental | impact cards (per period, with analogies) · estimates footnote |
 | Team Dashboard | *Azure Dashboard* tab: personal section · team section · model breakdown · leaderboard · fluency detail — *Team Server* tab: launch card |
 | Log Viewer | session header · turns overview · Hydra fusion section · turn detail |

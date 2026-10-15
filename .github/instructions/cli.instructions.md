@@ -10,16 +10,16 @@ The CLI (`cli/`) is a standalone command-line tool that **shares the session dis
 
 - **`cli/src/helpers.ts`**: Shared helper functions — session discovery, file processing, stats aggregation. Imports all data access classes from `src/`.
 - **`cli/src/commands/`**: One file per sub-command (`stats`, `usage`, `environmental`, `fluency`, `diagnostics`).
-- **`cli/esbuild.js`**: Build script. Copies JSON data files from `src/` to a temp location before bundling, then removes them.
+- **`cli/esbuild.js`**: Build script (esbuild bundles for the CLI and the `session` library entry). The shared JSON data files are imported straight from `../src` and inlined by esbuild — nothing is copied, and the shared `src/` imports no `vscode`, so no `vscode` alias/stub is needed.
 - **`cli/tsconfig.json`**: `paths` alias points to `../src/*`.
 
 ## Developer Workflow
 
 ```bash
 cd cli
-npm install
-npm run build            # development build
-npm run build:production # minified release build
+pnpm install
+pnpm run build            # development build
+pnpm run build:production # minified release build
 ```
 
 Or from the repo root:
@@ -61,6 +61,6 @@ Then in `cli/src/helpers.ts` add only the routing/processing hooks:
 - [ ] `cli/src/commands/stats.ts` — `getEditorDisplayName()` entry
 - [ ] `cli/README.md` — "Data Sources" section updated
 - [ ] `docs/vscode-extension/README.md` — add the new editor to the "Supported editors shown in the chart" list in the **Chart View** section
-- [ ] `npm run build` passes (from `cli/`)
+- [ ] `pnpm run build` passes (from `cli/`)
 - [ ] CLI `stats` command shows the new editor in the session list
 - [ ] Token counts are non-zero and plausible

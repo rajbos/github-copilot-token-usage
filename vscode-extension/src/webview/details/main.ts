@@ -149,7 +149,7 @@ let modelOtherExpanded: boolean = (_initSort?.modelOtherExpanded) ?? false;
 let editorOtherExpanded: boolean = (_initSort?.editorOtherExpanded) ?? false;
 let editorSectionCollapsed: boolean = (_initSort?.editorSectionCollapsed) ?? false;
 /** Billing-group (provider) names deselected in the "Cost by Provider" filter. Empty = all providers included. */
-let excludedProviders: Set<string> = new Set(_initSort?.excludedProviders ?? []);
+const excludedProviders: Set<string> = new Set(_initSort?.excludedProviders ?? []);
 /** The subset of `excludedProviders` that applies to the current render — see `getActiveExcludedProviders`. */
 let activeExcludedProviders: Set<string> = new Set();
 /** Last rendered stats, kept so provider-filter toggles can trigger a full re-render. */
@@ -1136,32 +1136,6 @@ const note = el('div', 'empty-state-note',
 
 inner.append(title, desc, toolsLabel, toolsList, stepsLabel, steps, note);
 section.append(inner);
-return section;
-}
-
-function buildEstimatesSection(): HTMLElement {
-const section = el('div', 'section');
-const heading = iconHeading('h3', 'lightbulb', 'Calculation & Estimates');
-section.append(heading);
-
-const notes = document.createElement('ul');
-notes.className = 'notes';
-
-const items = [
-'Cost (UBB) uses GitHub Copilot AI Credit rates (1 credit = $0.01) — this is what you are billed under Usage Based Billing.',
-'"Estimated cost (all/selected providers)" and the Total card sum estimated spend across the currently included providers (GitHub Copilot, Anthropic, Google, OpenAI, …) — all of them by default; when the Cost by Provider section is shown, click a provider card there to include/exclude it. Non-Copilot providers (e.g. Claude Code) are priced at their public API rates as an API-equivalent estimate, even when you use them through a flat-rate subscription.',
-'Estimated CO₂ is based on ~0.2 g CO₂e per 1,000 tokens.',
-'Estimated water usage is based on ~0.3 L per 1,000 tokens.',
-'Tree equivalent represents the fraction of a single mature tree\'s annual CO₂ absorption (~21 kg/year).'
-];
-
-items.forEach(text => {
-const li = document.createElement('li');
-li.textContent = text;
-notes.append(li);
-});
-
-section.append(notes);
 return section;
 }
 

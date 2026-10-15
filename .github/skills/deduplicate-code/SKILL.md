@@ -1,11 +1,12 @@
 ---
 name: deduplicate-code
-description: Detect copy-pasted code blocks across the shared source (vscode-extension/src, the repo-root src/, cli/src) with the dependency-free check-code-duplication.js detector, then pick one duplicate group and extract a shared helper to eliminate it, keeping all tests green. Use when a PR review notes duplication, when the CI step summary's "Code Duplication Analysis" grows, or when asked to reduce code duplication / DRY up the codebase.
+description: Detect copy-pasted code blocks across the shared source (vscode-extension/src, the repo-root src/, cli/src, sharing-server/src, desktop/src, release-video/src) with the dependency-free check-code-duplication.js detector, then pick one duplicate group and extract a shared helper to eliminate it, keeping all tests green. Use when a PR review notes duplication, when the CI step summary's "Code Duplication Analysis" grows, or when asked to reduce code duplication / DRY up the codebase.
 ---
 # Deduplicate Code
 
 The CI step summary runs `check-code-duplication.js` and reports copy-pasted
-blocks across the three TypeScript source trees every PR. A growing "Code
+blocks across the six TypeScript source trees every PR (the CI `duplication-check` job also fails when the
+count grows past `scripts/code-duplication-baseline.json`, so remediating lets you lower that baseline). A growing "Code
 Duplication Analysis" section (or a review finding of "this is duplicated")
 is the signal this skill remediates: it finds the duplicate groups, picks
 **one**, extracts a single shared helper in their place, and verifies nothing
@@ -14,12 +15,12 @@ diff stays reviewable and a regression points at a single extraction.
 
 ## What the detector does
 
-`scripts/check-code-duplication.js` (run as `npm run check:duplicates` from
+`scripts/check-code-duplication.js` (run as `pnpm run check:duplicates` from
 `vscode-extension/`) normalizes source lines (whitespace collapsed, comment-only
 and blank lines dropped so re-indented or re-commented copies are still caught),
 hashes sliding windows of a minimum length, groups identical windows, and
 extends each group to its **maximal shared block**. It reports clone groups as
-Markdown (for the step summary) or `--json`. It is **report-only by default**;
+Markdown (for the step summary) or `--json`. It is **report-only by default** (CI gates it only through `--baseline`);
 this skill does the remediation the report asks for.
 
 A "duplicate group" is a normalized sequence of >= `--min-lines` lines that
@@ -93,9 +94,9 @@ Establish a green baseline before changing anything:
 
 ```bash
 cd vscode-extension
-npm ci --ignore-scripts
+pnpm install --frozen-lockfile --ignore-scripts
 node_modules/.bin/tsc --noEmit        # type-check
-npm run test:node                     # unit tests
+pnpm run test:node                     # unit tests
 ```
 
 Record which tests cover the target files so you know what to watch.
@@ -146,7 +147,7 @@ of copying.
 ```bash
 cd vscode-extension
 node_modules/.bin/tsc --noEmit        # type-check
-npm run test:node                     # unit tests
+pnpm run test:node                     # unit tests
 node esbuild.js --production          # production bundle
 ```
 
@@ -192,7 +193,7 @@ Open a pull request to `main`. The PR description should:
 ## Related files
 
 - `scripts/check-code-duplication.js` \u2014 the detector this skill drives.
-- `vscode-extension/package.json` \u2014 `npm run check:duplicates` script.
+- `vscode-extension/package.json` \u2014 `pnpm run check:duplicates` script.
 - `.github/workflows/ci.yml` \u2014 the CI step that publishes the "Code
   Duplication Analysis" report to the step summary.
 - `.github/skills/refactor-large-function/SKILL.md` \u2014 the companion skill

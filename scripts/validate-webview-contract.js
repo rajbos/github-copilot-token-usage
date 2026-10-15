@@ -23,7 +23,7 @@
  * an `=== 'literal'` comparison and a `Record<string, Handler>` dispatch map
  * all count). The *handled* side is additionally widened by a plain-text scan,
  * which also picks up handlers living inside inline `<script>` template
- * literals (loadingHtml.ts, backend/configPanel.ts). Widening the handled set
+ * literals (src/loadingHtml.ts, vscode-extension/src/backend/configPanel.ts). Widening the handled set
  * can only ever hide a finding, never invent one — that asymmetry is
  * deliberate, because a checker that cries wolf gets switched off.
  *
@@ -95,6 +95,21 @@ function parseFile(file) {
   return ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
 }
 
+/** Strips parentheses, `as` / `<T>` casts, `!` and `satisfies`, which do not change the value posted. */
+function unwrapExpression(node) {
+  let current = node;
+  while (
+    ts.isParenthesizedExpression(current) ||
+    ts.isAsExpression(current) ||
+    ts.isNonNullExpression(current) ||
+    ts.isTypeAssertionExpression(current) ||
+    (ts.isSatisfiesExpression && ts.isSatisfiesExpression(current))
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
 function lineOf(sourceFile, node) {
   return sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
 }
@@ -113,7 +128,9 @@ function collectPostedCommands(files) {
 
     const visit = (node) => {
       if (ts.isCallExpression(node) && /(^|\.)postMessage$/.test(node.expression.getText(sourceFile))) {
-        for (const arg of node.arguments) {
+        for (const rawArg of node.arguments) {
+          // `({ … })`, `{ … } as Msg` and `{ … } satisfies Msg` post the same message.
+          const arg = unwrapExpression(rawArg);
           if (!ts.isObjectLiteralExpression(arg)) {
             continue;
           }
@@ -122,8 +139,9 @@ function collectPostedCommands(files) {
               continue;
             }
             const key = prop.name.getText(sourceFile).replace(/['"]/g, '');
-            if ((key === 'command' || key === 'type') && ts.isStringLiteralLike(prop.initializer)) {
-              const name = prop.initializer.text;
+            const value = unwrapExpression(prop.initializer);
+            if ((key === 'command' || key === 'type') && ts.isStringLiteralLike(value)) {
+              const name = value.text;
               if (!posted.has(name)) {
                 posted.set(name, []);
               }
@@ -295,9 +313,11 @@ function main() {
   const direction = args.includes('--direction') ? directionArg : 'both';
 
   const webviewFiles = collectTsFiles(WEBVIEW_DIR);
+  // src/loadingHtml.ts lives in the shared repo-root src/ (also used by the desktop app) but is
+  // still extension-side code that ships inline <script> handlers, so it is scanned too.
   const extensionFiles = collectTsFiles(path.join(EXT_DIR, 'src')).filter(
     (file) => !file.startsWith(WEBVIEW_DIR + path.sep)
-  );
+  ).concat(path.join(REPO_ROOT, 'src', 'loadingHtml.ts'));
 
   if (webviewFiles.length === 0 || extensionFiles.length === 0) {
     console.error('❌ Found no sources to check — is this running from the repo root?');
@@ -380,4 +400,6 @@ module.exports = {
   collectHandledCommandsFromAst,
   widenHandledFromText,
   collectTsFiles,
+  unwrapExpression,
+  ts,
 };

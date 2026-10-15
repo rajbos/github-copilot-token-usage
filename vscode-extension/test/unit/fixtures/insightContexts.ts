@@ -14,7 +14,7 @@
  * contexts collectively fire most of the catalog, so an insight added without a
  * matching fixture is caught instead of silently going unrendered.
  */
-import type { InsightContext } from '../../../src/insightsEngine';
+import type { InsightContext } from '../../../../src/insightsEngine';
 import type { Translate } from '../../../src/l10nCore';
 import type { UsageAnalysisPeriod, TodaySessionSummary } from '../../../../src/types';
 

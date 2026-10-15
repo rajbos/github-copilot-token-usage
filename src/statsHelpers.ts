@@ -5,7 +5,7 @@
  * imported by extension.ts and exercised in isolation by unit tests.
  */
 
-import type { ModelUsage, EditorUsage, DailyTokenStats, SessionFileCache, LanguageUsage, DailyRollupEntry } from './types';
+import type { ModelUsage, EditorUsage, DailyTokenStats, SessionFileCache, LanguageUsage, DailyRollupEntry, SessionUsageAnalysis } from './types';
 import type { TaskCategory, TaskCategoryBreakdown } from './taskClassification';
 import { isUnsafeObjectKey } from './utils/protoGuard';
 import { toLocalDayKey } from './utils/dayKeys';
@@ -69,7 +69,8 @@ for (const [model, usage] of Object.entries(source)) {
 // Defense in depth: a source built from parsed JSON can carry an own "__proto__"
 // key (e.g. via a computed property) — see protoGuard.ts.
 if (isUnsafeObjectKey(model)) { continue; }
-if (!target[model]) { target[model] = { inputTokens: 0, outputTokens: 0, sessions: 0 }; }
+// Own-property check: a model id such as "toString" must not resolve to an inherited member.
+if (!Object.hasOwn(target, model) || !target[model]) { target[model] = { inputTokens: 0, outputTokens: 0, sessions: 0 }; }
 target[model].inputTokens += usage.inputTokens;
 target[model].outputTokens += usage.outputTokens;
 if (usage.cachedReadTokens !== undefined) {
@@ -347,10 +348,22 @@ export function distributeExactCostToDays(
  */
 export function addLanguageUsage(target: LanguageUsage, source: LanguageUsage): void {
 	for (const [ext, usage] of Object.entries(source)) {
-		if (!target[ext]) { target[ext] = { linesAdded: 0, linesRemoved: 0 }; }
+		// Extensions come from parsed session data and caches — see protoGuard.ts.
+		if (isUnsafeObjectKey(ext)) { continue; }
+		if (!Object.hasOwn(target, ext) || !target[ext]) { target[ext] = { linesAdded: 0, linesRemoved: 0 }; }
 		target[ext].linesAdded += usage.linesAdded;
 		target[ext].linesRemoved += usage.linesRemoved;
 	}
+}
+
+/**
+ * The `repositoryUsage` key for a session's repository: "Unknown" when there is none, and also
+ * when the name is an unsafe object key. Repository names come from session metadata and
+ * workspace folder names, so `__proto__` would otherwise index Object.prototype and pollute
+ * every plain object in the process — see protoGuard.ts. Every daily-stats path uses this.
+ */
+export function repositoryKey(repository: string | undefined | null): string {
+	return repository && !isUnsafeObjectKey(repository) ? repository : 'Unknown';
 }
 
 function updateLocUsage(usage: { linesAdded?: number; linesRemoved?: number }, linesAdded: number, linesRemoved: number): void {
@@ -359,17 +372,35 @@ function updateLocUsage(usage: { linesAdded?: number; linesRemoved?: number }, l
 }
 
 /**
+ * The session-level lines-of-code fields a host stores from a usage analysis: present when the
+ * session changed any lines — added or removed. A deletion-only session (e.g. an `edit` with an
+ * empty `new_str`) counts too, or Chart / Efficiency undercount changed lines and per-language
+ * activity. Shared by the extension's session analyzer and the CLI.
+ */
+export function sessionLocFromUsageAnalysis(usageAnalysis: Pick<SessionUsageAnalysis, 'editScope'> | undefined): Pick<SessionFileCache, 'linesAdded' | 'linesRemoved' | 'languageUsage'> {
+	const editScope = usageAnalysis?.editScope;
+	const linesAdded = Math.max(0, editScope?.linesAdded ?? 0);
+	const linesRemoved = Math.max(0, editScope?.linesRemoved ?? 0);
+	if (!editScope || (linesAdded === 0 && linesRemoved === 0)) { return {}; }
+	return {
+		linesAdded,
+		linesRemoved,
+		...(editScope.languageUsage ? { languageUsage: editScope.languageUsage } : {}),
+	};
+}
+
+/**
  * Attributes session-level LOC data to the given daily stats entry.
  * Updates totals, editorUsage LOC fields, repositoryUsage LOC fields, and languageUsage.
  */
-function attributeLocToDay(dailyEntry: DailyTokenStats, sessionData: SessionFileCache, editorType: string, repository: string): void {
+function attributeLocToDay(dailyEntry: DailyTokenStats, sessionData: Pick<SessionFileCache, 'linesAdded' | 'linesRemoved' | 'languageUsage'>, editorType: string, repository: string): void {
 	const linesAdded = sessionData.linesAdded ?? 0;
 	const linesRemoved = sessionData.linesRemoved ?? 0;
 	if (linesAdded === 0 && linesRemoved === 0) { return; }
 	updateLocUsage(dailyEntry, linesAdded, linesRemoved);
-	if (!dailyEntry.editorUsage[editorType]) { dailyEntry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
+	if (!Object.hasOwn(dailyEntry.editorUsage, editorType) || !dailyEntry.editorUsage[editorType]) { dailyEntry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
 	updateLocUsage(dailyEntry.editorUsage[editorType], linesAdded, linesRemoved);
-	if (!dailyEntry.repositoryUsage[repository]) { dailyEntry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
+	if (!Object.hasOwn(dailyEntry.repositoryUsage, repository) || !dailyEntry.repositoryUsage[repository]) { dailyEntry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
 	updateLocUsage(dailyEntry.repositoryUsage[repository], linesAdded, linesRemoved);
 	if (sessionData.languageUsage) {
 		if (!dailyEntry.languageUsage) { dailyEntry.languageUsage = {}; }
@@ -378,12 +409,15 @@ function attributeLocToDay(dailyEntry: DailyTokenStats, sessionData: SessionFile
 }
 
 /**
- * Each call increments `sessions` by 1 regardless of token count.
+ * Each call increments `sessions` by 1 regardless of token count, unless `countSession` is
+ * false (a later day of a session this period already counted). `interactions` accumulates
+ * only when supplied, so callers that don't track it leave the field unset.
  */
-export function addEditorUsage(target: EditorUsage, editorType: string, tokens: number): void {
-if (!target[editorType]) { target[editorType] = { tokens: 0, sessions: 0 }; }
+export function addEditorUsage(target: EditorUsage, editorType: string, tokens: number, interactions?: number, countSession: boolean = true): void {
+if (!Object.hasOwn(target, editorType) || !target[editorType]) { target[editorType] = { tokens: 0, sessions: 0 }; }
 target[editorType].tokens += tokens;
-target[editorType].sessions += 1;
+if (countSession) { target[editorType].sessions += 1; }
+if (interactions !== undefined) { target[editorType].interactions = (target[editorType].interactions ?? 0) + interactions; }
 }
 
 /** UTC date-range keys derived from a single reference instant (`now`). */
@@ -479,10 +513,10 @@ function _apsBumpDailyEntry(entry: DailyTokenStats, tokens: number, interactions
 	entry.tokens += tokens;
 	entry.sessions += 1;
 	entry.interactions += interactions;
-	if (!entry.editorUsage[editorType]) { entry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
+	if (!Object.hasOwn(entry.editorUsage, editorType) || !entry.editorUsage[editorType]) { entry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
 	entry.editorUsage[editorType].tokens += tokens;
 	entry.editorUsage[editorType].sessions += 1;
-	if (!entry.repositoryUsage[repository]) { entry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
+	if (!Object.hasOwn(entry.repositoryUsage, repository) || !entry.repositoryUsage[repository]) { entry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
 	entry.repositoryUsage[repository].tokens += tokens;
 	entry.repositoryUsage[repository].sessions += 1;
 	addModelUsage(entry.modelUsage, modelUsage);
@@ -493,7 +527,7 @@ function _apsBumpDailyEntry(entry: DailyTokenStats, tokens: number, interactions
 		entry.modelUsage[model].sessions += 1;
 	}
 	if (!entry.editorModelUsage) { entry.editorModelUsage = {}; }
-	if (!entry.editorModelUsage[editorType]) { entry.editorModelUsage[editorType] = {}; }
+	if (!Object.hasOwn(entry.editorModelUsage, editorType) || !entry.editorModelUsage[editorType]) { entry.editorModelUsage[editorType] = {}; }
 	addModelUsage(entry.editorModelUsage[editorType], modelUsage);
 	for (const model of Object.keys(modelUsage)) {
 		if (isUnsafeObjectKey(model)) { continue; }
@@ -510,7 +544,7 @@ function _apsBumpPeriod(acc: PeriodAccumulator, f: ApsDayFields, freshSession: b
 	acc.cachedTokens += f.cachedTokens;
 	acc.interactions += f.interactions;
 	if (freshSession) { acc.sessions += 1; }
-	addEditorUsage(acc.editorUsage, f.editorType, f.tokens);
+	addEditorUsage(acc.editorUsage, f.editorType, f.tokens, f.interactions, freshSession);
 	addModelUsage(acc.modelUsage, f.modelUsage);
 }
 
@@ -538,7 +572,7 @@ function _apsProcessRollupDay(dayKey: string, dr: DailyRollupEntry, ranges: UtcD
 
 function _apsProcessRollupSession(sessionInput: SessionAggregateInput, ranges: UtcDateRanges, accs: ApsRollupAccs): { addedToLast30Days: boolean; addedToLastMonth: boolean } {
 	const { editorType, sessionData } = sessionInput;
-	const repository = sessionData.repository || 'Unknown';
+	const repository = repositoryKey(sessionData.repository);
 	const flags: ApsSessionFlags = { last30Days: false, month: false, lastMonth: false, today: false };
 	for (const [dayKey, dr] of Object.entries(sessionData.dailyRollups!)) {
 		_apsProcessRollupDay(dayKey, dr, ranges, accs, editorType, repository, flags);
@@ -595,7 +629,7 @@ function _apsProcessFallbackPeriods(lastActivityUtcKey: string, ranges: UtcDateR
 
 function _apsProcessFallbackSession(sessionInput: SessionAggregateInput, ranges: UtcDateRanges, accs: ApsRollupAccs): boolean {
 	const { editorType, sessionData, mtime, lastInteraction } = sessionInput;
-	const repository = sessionData.repository || 'Unknown';
+	const repository = repositoryKey(sessionData.repository);
 	const lastActivity = lastInteraction ? new Date(lastInteraction) : new Date(mtime);
 	const lastActivityUtcKey = toLocalDayKey(lastActivity);
 	const inLast30Days = lastActivityUtcKey >= ranges.last30DaysUtcStartKey;
@@ -720,7 +754,7 @@ export function addTaskCategoryToDailyEntry(entry: DailyTokenStats, tokens: numb
 	const safeTaskCategory = taskCategory && !isUnsafeObjectKey(taskCategory) ? taskCategory : undefined;
 	if (safeTaskCategory) {
 		if (!entry.taskCategoryUsage) { entry.taskCategoryUsage = {}; }
-		if (!entry.taskCategoryUsage[safeTaskCategory]) { entry.taskCategoryUsage[safeTaskCategory] = { tokens: 0, sessions: 0 }; }
+		if (!Object.hasOwn(entry.taskCategoryUsage, safeTaskCategory) || !entry.taskCategoryUsage[safeTaskCategory]) { entry.taskCategoryUsage[safeTaskCategory] = { tokens: 0, sessions: 0 }; }
 		entry.taskCategoryUsage[safeTaskCategory].tokens += tokens;
 		entry.taskCategoryUsage[safeTaskCategory].sessions += 1;
 	}
@@ -740,22 +774,24 @@ export function addTaskCategoryToDailyEntry(entry: DailyTokenStats, tokens: numb
 		const share = Number(shareRaw) || 0;
 		if (share <= 0) { continue; }
 		const cat = category as TaskCategory;
-		entry.taskCategoryTokens[cat] = (entry.taskCategoryTokens[cat] || 0) + (tokens * share);
-		entry.taskCategorySessions[cat] = (entry.taskCategorySessions[cat] || 0) + share;
-		if (!entry.taskCategoryModelUsage[cat]) { entry.taskCategoryModelUsage[cat] = {}; }
+		// Own-property reads: a parsed or cached category such as "toString" must not resolve to an
+		// inherited member (adding a number to a function would store a string).
+		entry.taskCategoryTokens[cat] = ((Object.hasOwn(entry.taskCategoryTokens, cat) && entry.taskCategoryTokens[cat]) || 0) + (tokens * share);
+		entry.taskCategorySessions[cat] = ((Object.hasOwn(entry.taskCategorySessions, cat) && entry.taskCategorySessions[cat]) || 0) + share;
+		if (!Object.hasOwn(entry.taskCategoryModelUsage, cat) || !entry.taskCategoryModelUsage[cat]) { entry.taskCategoryModelUsage[cat] = {}; }
 		addModelUsage(entry.taskCategoryModelUsage[cat]!, scaleModelUsage(modelUsage, share));
 	}
 }
 
 function addToDailyEntry(entry: DailyTokenStats, tokens: number, interactions: number, editorType: string, repository: string, modelUsage: ModelUsage, taskCategory?: TaskCategory, taskCategoryShares?: TaskCategoryBreakdown): void {
 	entry.tokens += tokens; entry.sessions += 1; entry.interactions += interactions;
-	if (!entry.editorUsage[editorType]) { entry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
+	if (!Object.hasOwn(entry.editorUsage, editorType) || !entry.editorUsage[editorType]) { entry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
 	entry.editorUsage[editorType].tokens += tokens; entry.editorUsage[editorType].sessions += 1;
 	// Keep the per-editor turn count in step with the day total. The Efficiency
 	// view's editor filter divides by it, so a path that updated the day but not
 	// the editor slice would silently read as "0 turns" for that editor.
 	entry.editorUsage[editorType].interactions = (entry.editorUsage[editorType].interactions ?? 0) + interactions;
-	if (!entry.repositoryUsage[repository]) { entry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
+	if (!Object.hasOwn(entry.repositoryUsage, repository) || !entry.repositoryUsage[repository]) { entry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
 	entry.repositoryUsage[repository].tokens += tokens; entry.repositoryUsage[repository].sessions += 1;
 	addModelUsage(entry.modelUsage, modelUsage);
 	for (const model of Object.keys(modelUsage)) {
@@ -765,7 +801,7 @@ function addToDailyEntry(entry: DailyTokenStats, tokens: number, interactions: n
 		entry.modelUsage[model].sessions += 1;
 	}
 	if (!entry.editorModelUsage) { entry.editorModelUsage = {}; }
-	if (!entry.editorModelUsage[editorType]) { entry.editorModelUsage[editorType] = {}; }
+	if (!Object.hasOwn(entry.editorModelUsage, editorType) || !entry.editorModelUsage[editorType]) { entry.editorModelUsage[editorType] = {}; }
 	addModelUsage(entry.editorModelUsage[editorType], modelUsage);
 	for (const model of Object.keys(modelUsage)) {
 		if (isUnsafeObjectKey(model)) { continue; }
@@ -773,6 +809,81 @@ function addToDailyEntry(entry: DailyTokenStats, tokens: number, interactions: n
 		entry.editorModelUsage[editorType][model].sessions += 1;
 	}
 	addTaskCategoryToDailyEntry(entry, tokens, modelUsage, taskCategory, taskCategoryShares);
+}
+
+/**
+ * One session's contribution to the per-day stats that feed `buildChartData()`
+ * (src/chartDataBuilder.ts), for hosts that do not keep a `SessionFileCache` —
+ * the CLI, and the desktop app through it.
+ *
+ * `dailyFractions` maps a local day key ("YYYY-MM-DD") to the share of the session
+ * that day carries; the shares should sum to 1.
+ */
+export interface DailyStatsSessionContribution {
+	editorType: string;
+	/** Repository URL or name; empty/absent is recorded as "Unknown", as in the extension. */
+	repository?: string;
+	/** Effective session tokens — see {@link preferActualTokens}. */
+	tokens: number;
+	interactions: number;
+	modelUsage: ModelUsage;
+	dailyFractions: Record<string, number>;
+	taskCategory?: TaskCategory;
+	taskCategoryShares?: TaskCategoryBreakdown;
+	linesAdded?: number;
+	linesRemoved?: number;
+	languageUsage?: LanguageUsage;
+}
+
+/**
+ * Folds one session into `dailyStatsMap` (keyed by day), splitting tokens, model usage and
+ * interactions across its days the same way the extension's per-day rollups do, and landing
+ * session-level lines of code on the session's last active day.
+ *
+ * This is the daily aggregation every non-extension host must use, so the Chart view gets the
+ * same repository / language / task-category / lines-of-code data everywhere (#2316).
+ */
+/**
+ * The days a session was active on — keys of `dailyFractions` with a positive share, oldest
+ * first, as `[dayKey, fraction]`. Its last entry is the session's last active day, where
+ * session-level signals (lines of code, efficiency counters) are attributed. Choosing that day
+ * from the stats map instead could land on a day another session created but this one had no
+ * share of.
+ */
+export function activeSessionDays(dailyFractions: Record<string, number>): Array<[string, number]> {
+	return Object.keys(dailyFractions)
+		.filter(k => !isUnsafeObjectKey(k))
+		.map((k): [string, number] => [k, Number(dailyFractions[k]) || 0])
+		.filter(([, fraction]) => fraction > 0)
+		.sort(([a], [b]) => a.localeCompare(b));
+}
+
+export function addSessionToDailyStats(dailyStatsMap: Map<string, DailyTokenStats>, session: DailyStatsSessionContribution): void {
+	const repository = repositoryKey(session.repository);
+	const activeDays = activeSessionDays(session.dailyFractions);
+	// Same per-day interaction split as the extension's fraction-based rollups
+	// (computeRollupsFromFractions in vscode-extension/src/analysis/sessionFileAnalyzer.ts).
+	const totalInteractions = Math.max(1, session.interactions);
+	for (const [dayKey, fraction] of activeDays) {
+		const entry = getOrCreateDailyEntry(dailyStatsMap, dayKey);
+		addToDailyEntry(
+			entry,
+			Math.round(session.tokens * fraction),
+			Math.max(1, Math.round(totalInteractions * fraction)),
+			session.editorType,
+			repository,
+			scaleModelUsage(session.modelUsage, fraction),
+			session.taskCategory,
+			session.taskCategoryShares,
+		);
+	}
+	const lastDay = activeDays.at(-1)?.[0];
+	if (lastDay) { attributeLocToDay(dailyStatsMap.get(lastDay)!, session, session.editorType, repository); }
+}
+
+/** The values of a day-keyed stats map, oldest first — the input shape `buildChartData()` takes. */
+export function sortedDailyStats(dailyStatsMap: Map<string, DailyTokenStats>): DailyTokenStats[] {
+	return Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /**
@@ -795,9 +906,9 @@ function accumulatePeriod(acc: PeriodAccumulator, tokens: number, estimated: num
 	acc.tokens += tokens; acc.estimatedTokens += estimated; acc.actualTokens += actual;
 	acc.thinkingTokens += thinking; acc.cachedTokens += cached; acc.interactions += interactions;
 	if (countSession) { acc.sessions += 1; }
-	addEditorUsage(acc.editorUsage, editorType, tokens);
+	addEditorUsage(acc.editorUsage, editorType, tokens, interactions, countSession);
 	addModelUsage(acc.modelUsage, modelUsage);
-	if (!acc.editorModelUsage[editorType]) { acc.editorModelUsage[editorType] = {}; }
+	if (!Object.hasOwn(acc.editorModelUsage, editorType) || !acc.editorModelUsage[editorType]) { acc.editorModelUsage[editorType] = {}; }
 	addModelUsage(acc.editorModelUsage[editorType], modelUsage);
 	if (copilotExactCostDollars !== undefined) {
 		acc.exactCopilotCostDollars += copilotExactCostDollars;
@@ -855,7 +966,7 @@ function bumpSubAgentSessions(sessionData: SessionFileCache, acc: PeriodAccumula
 
 function processRollupPath(input: SessionAggregateInput, acc: PeriodAccumulators, dates: UtcDateRanges, dailyStatsMap: Map<string, DailyTokenStats>): boolean {
 	const { editorType, sessionData } = input;
-	const repository = sessionData.repository || 'Unknown';
+	const repository = repositoryKey(sessionData.repository);
 	const flags = { addedToLast30Days: false, addedToMonth: false, addedToLastMonth: false, addedToToday: false };
 	for (const [dayKey, dayRollup] of Object.entries(sessionData.dailyRollups!)) {
 		processOneRollupDay(dayKey, dayRollup, flags, acc, dates, editorType, dailyStatsMap, repository, sessionData.taskCategory);
@@ -877,7 +988,7 @@ function subAgentFlagsForFallback(lastActivityUtcKey: string, dates: UtcDateRang
 
 function processFallbackPath(input: SessionAggregateInput, acc: PeriodAccumulators, dates: UtcDateRanges, dailyStatsMap: Map<string, DailyTokenStats>): boolean {
 	const { editorType, sessionData, mtime, lastInteraction } = input;
-	const repository = sessionData.repository || 'Unknown';
+	const repository = repositoryKey(sessionData.repository);
 	const estimatedTokens = sessionData.tokens;
 	const actualTokens = sessionData.actualTokens || 0;
 	const tokens = actualTokens > 0 ? actualTokens : estimatedTokens;
