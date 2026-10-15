@@ -1931,3 +1931,26 @@ test('flashing a second card while the first is still lit restores both', async 
 	assert.equal(harness.window.document.getElementById(first).style.boxShadow, before.first);
 	assert.equal(harness.window.document.getElementById(second).style.boxShadow, before.second);
 });
+
+test('missedPotential keeps only well-formed workspace rows when sanitizing the payload', async () => {
+	const stats = buildStats();
+	stats.missedPotential = [
+		{ workspacePath: '/repos/keep-me', workspaceName: 'keep-me', sessionCount: 3, interactionCount: 30, nonCopilotFiles: [] },
+		null,
+		'not-an-object',
+		{ workspaceName: 'no-path', sessionCount: 1, interactionCount: 1, nonCopilotFiles: [] },
+	];
+	const harness = await bootWebview(stats);
+	const section = harness.window.document.getElementById('section-missed-potential');
+
+	assert.ok(section, 'the Missed Potential section must render');
+	assert.ok(section.textContent.includes('keep-me'), 'the well-formed workspace is listed');
+	assert.ok(!section.textContent.includes('no-path'), 'a row without a workspacePath is dropped');
+	assert.equal(section.querySelectorAll('tbody tr').length, 1, 'only the valid row survives');
+});
+
+test('a payload with no curationAnalysis still renders instead of throwing in the sanitizer', async () => {
+	const harness = await bootWebview(buildStats());
+
+	assert.ok(harness.window.document.getElementById('section-missed-potential'), 'the layout renders without curation data');
+});
