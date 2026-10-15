@@ -123,6 +123,17 @@ test('toolCurationTables: source labels cover workspace, user, and plugin skills
 	assert.equal(estimateToolOverheadTokens('name', 'description'), Math.round(('name'.length + 'description'.length + 10) / 4));
 });
 
+test('toolCurationTables: source labels normalize Windows workspace paths and preserve plugin precedence', () => {
+	for (const directory of ['.github', '.claude', '.agents']) {
+		assert.equal(getSkillSourceLabel(tool('workspace', 'skill', {
+			skillPath: `${directory}\\skills\\example\\SKILL.md`,
+		})), `Workspace (${directory})`);
+	}
+	assert.equal(getSkillSourceLabel(tool('plugin', 'skill', {
+		pluginName: 'demo', skillPath: '.github\\skills\\example\\SKILL.md',
+	})), 'Plugin: demo');
+});
+
 test('toolCurationTables: MCP action buttons retain command and path metadata', () => {
 	const servers: ToolCurationAnalysis['underusedMcpServers'] = [
 		{ server: 'file', availableToolCount: 1, usedToolCount: 0, configFiles: ['.vscode/mcp.json'] },

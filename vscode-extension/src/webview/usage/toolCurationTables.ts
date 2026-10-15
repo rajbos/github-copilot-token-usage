@@ -17,9 +17,10 @@ export function estimateToolOverheadTokens(name: string, description: string | u
 export function getSkillSourceLabel(skill: AvailableToolEntry): string {
 	if (skill.pluginName) { return localizeFormat('usage.toolCuration.source.plugin', skill.pluginName); }
 	if (!skill.skillPath) { return '—'; }
-	if (skill.skillPath.startsWith('.github/skills')) { return localize('usage.toolCuration.source.workspaceGithub'); }
-	if (skill.skillPath.startsWith('.claude/skills')) { return localize('usage.toolCuration.source.workspaceClaude'); }
-	if (skill.skillPath.startsWith('.agents/skills')) { return localize('usage.toolCuration.source.workspaceAgents'); }
+	const skillPath = skill.skillPath.replace(/\\/g, '/');
+	if (skillPath.startsWith('.github/skills')) { return localize('usage.toolCuration.source.workspaceGithub'); }
+	if (skillPath.startsWith('.claude/skills')) { return localize('usage.toolCuration.source.workspaceClaude'); }
+	if (skillPath.startsWith('.agents/skills')) { return localize('usage.toolCuration.source.workspaceAgents'); }
 	return localize('usage.toolCuration.source.user');
 }
 
