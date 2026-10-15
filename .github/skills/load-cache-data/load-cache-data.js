@@ -273,6 +273,17 @@ function sanitizeCacheEntry(cacheEntry) {
                 );
             }
         }
+        // Custom agent names are user-defined labels that can carry a private project or customer
+        // name. Keep only how many agents were used and how many requests they handled.
+        if (isPlainObject(safeUsageAnalysis.agentUsage)) {
+            const agents = isPlainObject(safeUsageAnalysis.agentUsage.byAgent)
+                ? Object.values(safeUsageAnalysis.agentUsage.byAgent).filter(isPlainObject)
+                : [];
+            safeUsageAnalysis.agentUsage = {
+                agents: agents.length,
+                requests: agents.reduce((sum, agent) => sum + (typeof agent.requests === 'number' ? agent.requests : 0), 0)
+            };
+        }
         if (Array.isArray(safeUsageAnalysis.correctionMoments)) {
             // Allowlist: snippet (message text), tool (session tool name) and file (local path)
             // and any future field are dropped

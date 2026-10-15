@@ -930,7 +930,7 @@ function renderAgentUsageList(agentUsage: AgentUsage | undefined, title: string)
 	const entries = Object.entries(agentUsage?.byAgent ?? {}).sort((a, b) => b[1].requests - a[1].requests || a[0].localeCompare(b[0]));
 	const total = entries.reduce((sum, [, e]) => sum + e.requests, 0);
 	const bars = entries.length === 0
-		? '<div class="bar-label"><span>No custom agent used</span></div>'
+		? `<div class="bar-label"><span>${escapeHtml(localize('usage.customAgents.none'))}</span></div>`
 		: entries.map(([name, e]) => {
 			const source = AGENT_SOURCE_LABELS[e.source];
 			const label = `⚡ ${escapeHtml(name)}${source ? ` <span style="opacity: 0.7;">(${escapeHtml(source)})</span>` : ''}`;
@@ -949,8 +949,8 @@ function buildCustomAgentsSectionHtml(stats: UsageAnalysisStats): string {
 	if (!stats.today.agentUsage && !stats.last30Days.agentUsage) { return ''; }
 	return `
 			<div class="section" id="section-custom-agents">
-				<div class="section-title"><span>⚡</span><span>Custom Agents</span></div>
-				<div class="section-subtitle">Requests that ran under a custom agent you selected, shown with the name the session records. The same agent defined in .github/agents and in .claude/agents appears as two separate agents.</div>
+				<div class="section-title"><span>⚡</span><span>${escapeHtml(localize('usage.customAgents.title'))}</span></div>
+				<div class="section-subtitle">${escapeHtml(localize('usage.customAgents.subtitle'))}</div>
 				<div class="two-column">
 					${renderAgentUsageList(stats.today.agentUsage, '📅 Today')}
 					${renderAgentUsageList(stats.last30Days.agentUsage, '📊 Last 30 Days')}
