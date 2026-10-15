@@ -1,5 +1,12 @@
 import * as vscode from 'vscode';
-import { MIN_LOOKBACK_DAYS, MAX_LOOKBACK_DAYS, DEFAULT_LOOKBACK_DAYS } from './constants';
+import {
+	MIN_LOOKBACK_DAYS,
+	MAX_LOOKBACK_DAYS,
+	DEFAULT_LOOKBACK_DAYS,
+	DEFAULT_DATASET_ID,
+	DEFAULT_AGG_TABLE,
+	DEFAULT_EVENTS_TABLE,
+} from './constants';
 import type { BackendUserIdentityMode } from './identity';
 import { parseBackendSharingProfile, type BackendSharingProfile } from './sharingProfile';
 import { inferSharingProfile } from './settingsValidation';
@@ -92,7 +99,7 @@ export function getBackendSettings(): BackendSettings {
 		enabled: config.get<boolean>('backend.enabled', false),
 		backend: config.get<BackendType>('backend.backend', 'storageTables'),
 		authMode: config.get<BackendAuthMode>('backend.authMode', 'entraId'),
-		datasetId: config.get<string>('backend.datasetId', 'default').trim() || 'default',
+		datasetId: config.get<string>('backend.datasetId', DEFAULT_DATASET_ID).trim() || DEFAULT_DATASET_ID,
 		sharingProfile: inferredSharingProfile,
 		shareWithTeam,
 		shareWorkspaceMachineNames: config.get<boolean>('backend.shareWorkspaceMachineNames', false),
@@ -103,8 +110,8 @@ export function getBackendSettings(): BackendSettings {
 		subscriptionId: config.get<string>('backend.subscriptionId', ''),
 		resourceGroup: config.get<string>('backend.resourceGroup', ''),
 		storageAccount: config.get<string>('backend.storageAccount', ''),
-		aggTable: config.get<string>('backend.aggTable', 'usageAggDaily'),
-		eventsTable: config.get<string>('backend.eventsTable', 'usageEvents'),
+		aggTable: config.get<string>('backend.aggTable', DEFAULT_AGG_TABLE),
+		eventsTable: config.get<string>('backend.eventsTable', DEFAULT_EVENTS_TABLE),
 		lookbackDays: Math.max(MIN_LOOKBACK_DAYS, Math.min(MAX_LOOKBACK_DAYS, config.get<number>('backend.lookbackDays', DEFAULT_LOOKBACK_DAYS))),
 		includeMachineBreakdown: config.get<boolean>('backend.includeMachineBreakdown', false),
 		// Blob upload settings
