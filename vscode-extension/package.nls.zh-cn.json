@@ -954,5 +954,18 @@
   "usage.worktreeCleanup.copied": "✅ 已复制！",
   "usage.worktreeCleanup.starterPrompt": "此 git 工作树（分支“{0}”）无法自动删除。请检查其当前状态：运行 git status，并对比其上游或基础分支运行 git diff，总结改动内容及原因，并告诉我这些工作是否已合并或已推送到别处，以便我判断是否可以安全删除此工作树。",
   "usage.worktreeCleanup.unknownError": "未知错误",
+  "usage.worktreeCleanup.open": "📂 打开",
+  "usage.worktreeCleanup.openTitle": "在系统文件管理器中显示此文件夹",
+  "usage.worktreeCleanup.deleteBtn": "🗑️ 删除",
+  "usage.worktreeCleanup.deleteBtnTitle": "通过 git worktree remove 移除（需要确认）",
+  "usage.worktreeCleanup.deletingBtn": "⏳ 正在删除…",
+  "usage.worktreeCleanup.queuedBtn": "⏱ 已排队",
+  "usage.worktreeCleanup.queuedBtnTitle": "属于正在运行的清理",
+  "usage.worktreeCleanup.badgeCleaning": "⏳ 正在清理…",
+  "usage.worktreeCleanup.badgeQueued": "⏱ 已排队（{0}）",
+  "usage.worktreeCleanup.nowDeleting": "⏳ 正在删除 {1} 中的 {0}{2}",
+  "usage.worktreeCleanup.unknownRepo": "未知仓库",
+  "usage.worktreeCleanup.progress": "已处理 {0} / {1}",
+  "usage.worktreeCleanup.progressWaiting": "已处理 {0} / {1} · 队列中还有 {2} 个等待",
   "usage.worktreeCleanup.revealMissing": "“{0}”在磁盘上已不存在。"
 }

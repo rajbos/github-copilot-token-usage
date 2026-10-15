@@ -1167,13 +1167,73 @@ background: var(--bg-tertiary);
 	font-size: 11px;
 }
 
-.worktree-delete-link {
-	margin-left: 8px;
-	color: var(--vscode-errorForeground, #f14c4c);
+.worktree-row-actions {
+	display: flex;
+	gap: 6px;
+	justify-content: flex-start;
 }
 
-.worktree-delete-link:hover {
-	text-decoration: underline;
+.worktree-row-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 10px;
+	font-size: 12px;
+	color: var(--text-primary);
+	background: var(--bg-tertiary);
+	border: 1px solid var(--border-subtle);
+	border-radius: 4px;
+	cursor: pointer;
+}
+
+.worktree-row-btn:hover:not(:disabled) {
+	border-color: var(--link-color);
+}
+
+.worktree-row-btn.danger {
+	color: var(--vscode-errorForeground);
+	border-color: var(--vscode-errorForeground);
+	background: transparent;
+}
+
+.worktree-row-btn.danger:hover:not(:disabled) {
+	background: var(--vscode-errorForeground);
+	color: var(--vscode-editor-background);
+}
+
+.worktree-row-btn:disabled {
+	opacity: 0.6;
+	cursor: default;
+}
+
+.worktree-repo-badge {
+	display: inline-block;
+	margin-right: 8px;
+	font-size: 12px;
+	color: var(--text-muted);
+}
+
+.worktree-repo-badge.active {
+	color: var(--link-color);
+	font-weight: 600;
+}
+
+/* Stays visible while the user scrolls the (long) repository table during a cleanup. */
+.worktree-cleanup-sticky {
+	position: sticky;
+	top: 0;
+	z-index: 5;
+	background: var(--bg-secondary, var(--bg-tertiary));
+}
+
+.worktree-cleanup-current {
+	margin: 4px 0 8px;
+}
+
+.worktree-cleanup-recovered {
+	margin-top: 4px;
+	font-size: 15px;
+	font-weight: 600;
 }
 
 .worktree-caret {

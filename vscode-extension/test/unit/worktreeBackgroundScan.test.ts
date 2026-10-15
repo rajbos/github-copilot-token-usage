@@ -7,6 +7,7 @@ import {
 	sumWorktreeBytes,
 	parseCleanupPushedWorktreesMessage,
 	buildCleanupConfirmTitle,
+	enqueueCleanupCandidates,
 	validateWorktreeRepoRootFromSessionPaths,
 	WORKTREE_BACKGROUND_SCAN_INTERVAL_MS,
 	WORKTREE_SCAN_NOTIFY_MIN_BYTES,
@@ -266,4 +267,25 @@ test('validateWorktreeRepoRootFromSessionPaths: rejects unrelated session worksp
 		),
 		undefined,
 	);
+});
+
+// ---------------------------------------------------------------------------
+// enqueueCleanupCandidates
+// ---------------------------------------------------------------------------
+
+test('enqueueCleanupCandidates: appends new paths and returns only those added', () => {
+	const queue = [{ path: 'C:\wt\a', branch: 'a', repoLabel: 'r1' }];
+	const added = enqueueCleanupCandidates(queue, [
+		{ path: 'c:\WT\A', branch: 'a', repoLabel: 'r1' },
+		{ path: 'C:\wt\b', branch: 'b', repoLabel: 'r2' },
+		{ path: 'C:\wt\b', branch: 'b', repoLabel: 'r2' },
+	]);
+	assert.deepEqual(added.map((c) => c.path), ['C:\wt\b']);
+	assert.deepEqual(queue.map((c) => c.path), ['C:\wt\a', 'C:\wt\b']);
+});
+
+test('enqueueCleanupCandidates: nothing new -> empty result, queue untouched', () => {
+	const queue = [{ path: '/wt/a', branch: 'a', repoLabel: 'r' }];
+	assert.deepEqual(enqueueCleanupCandidates(queue, [{ path: '/wt/a', branch: 'a', repoLabel: 'r' }]), []);
+	assert.equal(queue.length, 1);
 });

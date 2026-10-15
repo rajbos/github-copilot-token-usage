@@ -532,6 +532,14 @@ const worktreeRetryState = new Map<string, WorktreeRetryState>();
 const worktreeDeletedBytes = new Map<string, number>();
 type WorktreeCleanupLogEntry = { path: string; branch: string; repoLabel: string; status: WorktreeCleanupOutcome; reason?: string; diagnostics?: WorktreeCleanupDiagnostics };
 let worktreeCleanupLog: WorktreeCleanupLogEntry[] = [];
+/** One worktree of the running cleanup: processed, current or still waiting. */
+type WorktreeCleanupTarget = { path: string; branch: string; repoLabel: string };
+/** Every worktree of the running cleanup in processing order; clicks while it runs append to it. */
+let worktreeCleanupQueue: WorktreeCleanupTarget[] = [];
+/** The worktree being deleted right now (null between items and while idle). */
+let worktreeCleanupCurrent: WorktreeCleanupTarget | null = null;
+/** Not-yet-finished worktrees per repository label, rebuilt on each repository-table render. */
+let worktreeCleanupWaitingByRepo = new Map<string, number>();
 
 function numField(v: unknown): number { return Number(v ?? 0) || 0; }
 
@@ -1985,7 +1993,8 @@ function startWorktreeScan(): void {
  * `repoLabel` to scope the cleanup to one repository's row; omit it for the global card.
  */
 function startWorktreeCleanup(repoLabel?: string): void {
-	if (worktreeCleanupInProgress || worktreeCleanupConfirmPending || worktreeScanInProgress) { return; }
+	// While a run is in flight this queues the repository behind it (the extension appends to its loop).
+	if (worktreeCleanupConfirmPending || worktreeScanInProgress) { return; }
 	const targets = getCleanupCandidates(repoLabel);
 	if (targets.length === 0) { return; }
 	worktreeCleanupConfirmPending = true;
@@ -2234,10 +2243,39 @@ function handleCleanupDeclined(): void {
 	updateWorktreeResults();
 }
 
+/** Normalizes a worktree list from the extension; entries without a path are dropped. */
+function sanitizeCleanupTargets(raw: unknown): WorktreeCleanupTarget[] {
+	if (!Array.isArray(raw)) { return []; }
+	return raw
+		.filter((t) => t && typeof t.path === "string" && t.path)
+		.map((t) => ({ path: String(t.path), branch: String(t.branch ?? "?"), repoLabel: String(t.repoLabel ?? "") }));
+}
+
+/** The extension appended another request to the running cleanup (the user queued more while it ran). */
+function handleCleanupQueued(message: Record<string, unknown>): void {
+	worktreeCleanupConfirmPending = false;
+	worktreeCleanupQueue.push(...sanitizeCleanupTargets(message.added));
+	worktreeCleanupStatus = { ...worktreeCleanupStatus, total: numField(message.total) };
+	updateWorktreeResults();
+}
+
+/** The extension began deleting this worktree; show it as the current one. */
+function handleCleanupWorktreeStarted(message: Record<string, unknown>): void {
+	worktreeCleanupCurrent = sanitizeCleanupTargets([message])[0] ?? null;
+	updateWorktreeResults();
+}
+
+/** Whether the running cleanup already owns this worktree (processed, current or waiting). */
+function isWorktreeInCleanupQueue(p: string): boolean {
+	return worktreeCleanupInProgress && worktreeCleanupQueue.some((t) => t.path === p);
+}
+
 function handleCleanupStarted(message: any): void {
 	worktreeCleanupConfirmPending = false;
 	worktreeCleanupInProgress = true;
 	worktreeCleanupStatus = { processed: 0, total: numField(message.total) };
+	worktreeCleanupQueue = sanitizeCleanupTargets(message.worktrees);
+	worktreeCleanupCurrent = null;
 	worktreeCleanupLog = [];
 	worktreeRetryState.clear();
 	worktreeDeletedBytes.clear();
@@ -2310,12 +2348,16 @@ function handleWorktreeDeleteResult(message: any): void {
 
 function handleCleanupComplete(): void {
 	worktreeCleanupInProgress = false;
+	worktreeCleanupCurrent = null;
+	worktreeCleanupQueue = [];
 	updateWorktreeResults();
 }
 
 function handleCleanupCancelled(): void {
 	worktreeCleanupInProgress = false;
 	worktreeCleanupConfirmPending = false;
+	worktreeCleanupCurrent = null;
+	worktreeCleanupQueue = [];
 	updateWorktreeResults();
 }
 
@@ -2391,6 +2433,8 @@ const _worktreeMessageHandlers: Record<string, (message: any) => void> = {
 	worktreeBackgroundResults: handleWorktreeBackgroundResults,
 	cleanupDeclined: () => handleCleanupDeclined(),
 	cleanupStarted: handleCleanupStarted,
+	cleanupQueued: handleCleanupQueued,
+	cleanupWorktreeStarted: handleCleanupWorktreeStarted,
 	cleanupWorktreeResult: handleCleanupWorktreeResult,
 	cleanupComplete: () => handleCleanupComplete(),
 	cleanupCancelled: () => handleCleanupCancelled(),
@@ -3955,10 +3999,23 @@ const WORKTREE_DETAIL_COLUMNS: DataTableColumn<WorktreeResult>[] = [
 	},
 	{
 		id: "actions", label: "Actions",
-		render: (w) => ({ html: `<a href="#" class="worktree-reveal-link" data-path="${encodeURIComponent(w.path)}">Open</a>
-      <a href="#" class="worktree-delete-link" data-path="${encodeURIComponent(w.path)}" data-branch="${encodeURIComponent(w.branch)}" data-repo="${encodeURIComponent(w.repoLabel)}" data-pushed="${escapeHtml(w.pushed)}" title="Remove via git worktree remove (asks for confirmation)">🗑️ Delete</a>` }),
+		render: (w) => ({ html: `<div class="worktree-row-actions">
+      <button type="button" class="worktree-row-btn worktree-reveal-link" data-path="${encodeURIComponent(w.path)}" title="${escapeHtml(localize("usage.worktreeCleanup.openTitle"))}">${escapeHtml(localize("usage.worktreeCleanup.open"))}</button>
+      ${buildWorktreeDeleteButtonHtml(w)}
+    </div>` }),
 	},
 ];
+
+/** Row "Delete" button; swapped for a disabled status while the running cleanup owns that worktree. */
+function buildWorktreeDeleteButtonHtml(w: WorktreeResult): string {
+	if (worktreeCleanupCurrent?.path === w.path && worktreeCleanupInProgress) {
+		return `<button type="button" class="worktree-row-btn" disabled>${escapeHtml(localize("usage.worktreeCleanup.deletingBtn"))}</button>`;
+	}
+	if (isWorktreeInCleanupQueue(w.path)) {
+		return `<button type="button" class="worktree-row-btn" disabled title="${escapeHtml(localize("usage.worktreeCleanup.queuedBtnTitle"))}">${escapeHtml(localize("usage.worktreeCleanup.queuedBtn"))}</button>`;
+	}
+	return `<button type="button" class="worktree-row-btn danger worktree-delete-link" data-path="${encodeURIComponent(w.path)}" data-branch="${encodeURIComponent(w.branch)}" data-repo="${encodeURIComponent(w.repoLabel)}" data-pushed="${escapeHtml(w.pushed)}" title="${escapeHtml(localize("usage.worktreeCleanup.deleteBtnTitle"))}">${escapeHtml(localize("usage.worktreeCleanup.deleteBtn"))}</button>`;
+}
 
 /** The per-worktree details table shown when a repository row is expanded; one stable table per repository. */
 function buildWorktreeDetailsTableHtml(repoLabel: string, worktrees: WorktreeResult[]): string {
@@ -3987,11 +4044,36 @@ function worktreeSizeText(worktrees: WorktreeResult[]): string {
  * every render.
  */
 function buildWorktreeRepoCleanupButtonHtml(repoLabel: string, worktrees: WorktreeResult[]): string {
-	const pushedCount = worktrees.filter((w) => w.pushed === "yes" && !isWorktreePending(w)).length;
-	const disabled = worktreeCleanupInProgress || worktreeCleanupConfirmPending || worktreeScanInProgress || pushedCount === 0;
-	return `<button type="button" class="button secondary worktree-repo-cleanup-btn" data-repo="${encodeURIComponent(repoLabel)}"
-    title="Remove this repository's pushed worktrees via git worktree remove (asks for confirmation)" ${disabled ? "disabled" : ""}
-    >🧹 Clean up (${pushedCount})</button>`;
+	const pushedCount = worktrees.filter((w) => w.pushed === "yes" && !isWorktreePending(w) && !isWorktreeInCleanupQueue(w.path)).length;
+	const disabled = worktreeCleanupConfirmPending || worktreeScanInProgress || pushedCount === 0;
+	const label = worktreeCleanupInProgress ? `➕ Queue (${pushedCount})` : `🧹 Clean up (${pushedCount})`;
+	const title = worktreeCleanupInProgress
+		? "Add this repository's pushed worktrees to the running cleanup (asks for confirmation)"
+		: "Remove this repository's pushed worktrees via git worktree remove (asks for confirmation)";
+	return `${buildWorktreeRepoCleanupBadge(repoLabel)}<button type="button" class="button secondary worktree-repo-cleanup-btn" data-repo="${encodeURIComponent(repoLabel)}"
+    title="${title}" ${disabled ? "disabled" : ""}
+    >${label}</button>`;
+}
+
+/** "Cleaning…" / "Queued (n)" marker so the repository table shows where the running cleanup is. */
+function buildWorktreeRepoCleanupBadge(repoLabel: string): string {
+	if (!worktreeCleanupInProgress) { return ""; }
+	if (worktreeCleanupCurrent?.repoLabel === repoLabel) {
+		return `<span class="worktree-repo-badge active" role="status">${escapeHtml(localize("usage.worktreeCleanup.badgeCleaning"))}</span>`;
+	}
+	const waiting = worktreeCleanupWaitingByRepo.get(repoLabel) ?? 0;
+	return waiting > 0 ? `<span class="worktree-repo-badge">${escapeHtml(localizeFormat("usage.worktreeCleanup.badgeQueued", String(waiting)))}</span>` : "";
+}
+
+/** Counts, per repository, the queued worktrees the running cleanup has not reached yet. */
+function countWaitingCleanupByRepo(): Map<string, number> {
+	const waiting = new Map<string, number>();
+	if (!worktreeCleanupInProgress) { return waiting; }
+	for (const t of worktreeCleanupQueue.slice(worktreeCleanupStatus.processed)) {
+		if (t.path === worktreeCleanupCurrent?.path) { continue; }
+		waiting.set(t.repoLabel, (waiting.get(t.repoLabel) ?? 0) + 1);
+	}
+	return waiting;
 }
 
 /** Sum of the known (enriched) bytes across a repository's worktrees. */
@@ -4008,6 +4090,7 @@ type WorktreeRepoGroup = { repo: string; worktrees: WorktreeResult[] };
  */
 function buildWorktreeRepoTableHtml(groups: Map<string, WorktreeResult[]>): string {
 	// Pre-sorted by name so repositories with equal counts or sizes keep a stable, alphabetical order.
+	worktreeCleanupWaitingByRepo = countWaitingCleanupByRepo();
 	const rows: WorktreeRepoGroup[] = [...groups.entries()]
 		.map(([repo, worktrees]) => ({ repo, worktrees }))
 		.sort((a, b) => a.repo.localeCompare(b.repo));
@@ -4043,14 +4126,15 @@ function buildWorktreeRepoTableHtml(groups: Map<string, WorktreeResult[]>): stri
  */
 function getCleanupCandidates(repoLabel?: string): WorktreeResult[] {
 	return worktreeResults.filter((w) =>
-		w.pushed === "yes" && !isWorktreePending(w) && (repoLabel === undefined || w.repoLabel === repoLabel));
+		w.pushed === "yes" && !isWorktreePending(w) && !isWorktreeInCleanupQueue(w.path) && (repoLabel === undefined || w.repoLabel === repoLabel));
 }
 
 /** The cleanup trigger, rendered as its own card inside the hero summary-cards row (to the right of Worktrees/Repositories/Total Size). */
 function renderWorktreeCleanupCard(): string {
 	const pushedCount = getCleanupCandidates().length;
-	const disabled = worktreeCleanupInProgress || worktreeCleanupConfirmPending || worktreeScanInProgress || pushedCount === 0;
-	const label = worktreeCleanupConfirmPending ? "⏳ Waiting…" : `🧹 Clean Up (${pushedCount})`;
+	const disabled = worktreeCleanupConfirmPending || worktreeScanInProgress || pushedCount === 0;
+	const idleLabel = worktreeCleanupInProgress ? `➕ Queue all (${pushedCount})` : `🧹 Clean Up (${pushedCount})`;
+	const label = worktreeCleanupConfirmPending ? "⏳ Waiting…" : idleLabel;
 	return `<div class="summary-card worktree-cleanup-card">
     <div class="summary-label">Pushed Worktrees</div>
     <div class="worktree-cleanup-card-actions">
@@ -4226,13 +4310,30 @@ function getCleanupRecoveredBytes(): number {
 	return total;
 }
 
+/** "Now deleting: branch in repo" line so the user can tell which repository the cleanup is working on. */
+function renderWorktreeCleanupCurrent(): string {
+	const cur = worktreeCleanupCurrent;
+	if (!cur) { return ""; }
+	const size = worktreeResults.find((w) => w.path === cur.path);
+	const sizeText = size && knownBytes(size) > 0 ? ` (${formatFileSize(knownBytes(size))})` : "";
+	return `<div class="worktree-cleanup-current">
+      <div>${localizeFormat("usage.worktreeCleanup.nowDeleting", `<strong>${escapeHtml(cur.branch)}</strong>`, `<strong>${escapeHtml(cur.repoLabel || localize("usage.worktreeCleanup.unknownRepo"))}</strong>`, escapeHtml(sizeText))}</div>
+      <div class="worktree-cleanup-log-path">${escapeHtml(cur.path)}</div>
+    </div>`;
+}
+
 function renderWorktreeCleanupStatus(): string {
 	if (worktreeCleanupInProgress) {
 		const { processed, total } = worktreeCleanupStatus;
 		const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
-		return `<div class="info-box" style="margin-top: 12px;">
+		const waiting = [...countWaitingCleanupByRepo().values()].reduce((s, n) => s + n, 0);
+		const progressText = waiting > 0
+			? localizeFormat("usage.worktreeCleanup.progressWaiting", String(processed), String(total), String(waiting))
+			: localizeFormat("usage.worktreeCleanup.progress", String(processed), String(total));
+		return `<div class="info-box worktree-cleanup-sticky" style="margin-top: 12px;">
       <div class="info-box-title">🧹 Cleaning up pushed worktrees…</div>
-      <div>${processed} / ${total} processed</div>
+      ${renderWorktreeCleanupCurrent()}
+      <div>${escapeHtml(progressText)}</div>
       <div>${escapeHtml(localizeFormat("usage.worktreeCleanup.recovered", formatFileSize(getCleanupRecoveredBytes())))}</div>
       <div class="worktree-progress-bar"><div class="worktree-progress-fill" style="width: ${pct}%;"></div></div>
     </div>${renderWorktreeCleanupLog()}`;
@@ -4246,7 +4347,7 @@ function renderWorktreeCleanupStatus(): string {
 	return `<div class="info-box" style="margin-top: 12px;">
     <div class="info-box-title">🧹 Cleanup finished</div>
     <div>✅ ${deleted} deleted · ⏭️ ${skipped} skipped (uncommitted/unpushed) · ${errors > 0 ? `❌ ${errors} error${errors === 1 ? "" : "s"}` : "0 errors"}</div>
-    <div>💾 ${escapeHtml(localizeFormat("usage.worktreeCleanup.recovered", formatFileSize(getCleanupRecoveredBytes())))}</div>
+    <div class="worktree-cleanup-recovered" title="${escapeHtml(localizeFormat("usage.worktreeCleanup.sizeChipTitle", getCleanupRecoveredBytes().toLocaleString()))}">💾 ${escapeHtml(localizeFormat("usage.worktreeCleanup.recovered", formatFileSize(getCleanupRecoveredBytes())))}</div>
   </div>${renderWorktreeCleanupLog()}`;
 }
 
