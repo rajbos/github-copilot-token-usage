@@ -907,6 +907,7 @@
       "worstFillPercent": 99
     }
   },
+  "monthBillingGroupCosts": { "GitHub Copilot": 18.4, "Anthropic": 6.2 },
   "accountBudgets": [
     {
       "accountId": "fixture-account-1",

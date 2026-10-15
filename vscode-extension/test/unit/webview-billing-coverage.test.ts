@@ -3,6 +3,7 @@ import * as assert from 'node:assert/strict';
 import {
 	billingOtherSessionsCostUsd,
 	billingExtGroupCostsHtml,
+	billingTabBodyHtml,
 } from '../../src/webview/usage/billingCoverage';
 import type { CopilotApiBalance } from '../../src/webview/usage/billingStatsSanitizer';
 import { setFormatLocale } from '../../src/webview/shared/formatUtils';
@@ -116,5 +117,19 @@ describe('billingExtGroupCostsHtml', () => {
 		assert.match(body, /<tr class="data-table-muted"><td>GitHub Copilot - other sessions/);
 		assert.match(html, /<tfoot><tr class="data-table-footer-row"><td>Total<\/td><td class="data-table-align-right">\$19\.00<\/td><\/tr><\/tfoot>/);
 		assert.ok(!html.includes('data-table-sort='), 'a bounded summary with a meaningful row order is not sortable');
+	});
+});
+
+describe('billingTabBodyHtml', () => {
+	test('no billing data (signed out): renders the GitHub authentication hint', () => {
+		const html = billingTabBodyHtml('');
+		assert.match(html, /id="section-billing-coverage"/);
+		assert.match(html, /GitHub authentication required/);
+		assert.match(html, /Sign in with GitHub \(via the Diagnostics tab\)/);
+	});
+
+	test('billing data present: passes the gated section through unchanged', () => {
+		const section = '<div class="section" id="section-billing-coverage">data</div>';
+		assert.equal(billingTabBodyHtml(section), section);
 	});
 });

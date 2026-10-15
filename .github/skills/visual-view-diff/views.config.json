@@ -266,6 +266,20 @@
           "expect": "#agent-sessions-content .data-table"
         },
         {
+          "id": "billing",
+          "title": "GitHub › Billing tab",
+          "$comment": [
+            "AI Billing Coverage moved here from My Activity. It renders from the initial",
+            "stats payload (account budgets and month group costs in the fixture), so no",
+            "host `post` is needed."
+          ],
+          "steps": [
+            { "click": ".group-tab[data-group=\"github\"]" },
+            { "click": ".tab-button[data-tab=\"billing\"]" }
+          ],
+          "expect": "#tab-panel-billing #section-billing-coverage"
+        },
+        {
           "id": "worktrees",
           "title": "Workspace › Worktrees tab",
           "steps": [{ "click": ".group-tab[data-group=\"workspace\"]" }, { "click": ".tab-button[data-tab=\"worktrees\"]" }],

@@ -47,6 +47,7 @@ export function usageLeafTabButtons(input: UsageTabStripInput): Record<string, s
 		health: btn('health', 'server-environment'),
 		repos: btn('repos', 'git-pull-request'),
 		agent: btn('agent', 'cloud'),
+		billing: btn('billing', 'credit-card'),
 		readiness: input.readinessAvailable ? btn('readiness', 'shield') : '',
 		worktrees: btn('worktrees', 'git-branch'),
 		insights: btn('insights', 'lightbulb', tabBadgeHtml(input.newInsightCount, 'rgba(96,165,250,0.4)')),

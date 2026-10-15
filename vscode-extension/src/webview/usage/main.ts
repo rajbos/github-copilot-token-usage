@@ -52,7 +52,7 @@ import { sanitizeToolOutcomeMaps, sanitizeMcpOutcomeMaps } from './toolOutcomeSa
 import { renderContextRefTable } from './contextRefTableHtml';
 import { shouldListAccountBudgets } from '../../githubAccountBudgets';
 import { applyBillingFields, sanitizeAccountBudgets, sanitizeCopilotApiBalance, type AccountBudgetView, type CopilotApiBalance } from './billingStatsSanitizer';
-import { billingExtGroupCostsHtml } from './billingCoverage';
+import { billingExtGroupCostsHtml, billingTabBodyHtml } from './billingCoverage';
 import { type ContextRefRow } from './contextRefRows';
 import { sanitizeAgentSessionsData, toSafeNumber, toSafeHttpUrl, type AgentRepoSummary, type AgentSessionsResult } from './agentSessionsSanitizer';
 import { isSwitchableTab } from './switchableTabs';
@@ -3809,6 +3809,7 @@ function buildUsageRootHtml(
 			${safeSectionHtml('Tools & Integrations', () => buildToolsTabPanelHtml(stats))}
 			${safeSectionHtml('Workspace Health', () => buildHealthTabPanelHtml(customizationHtml, stats))}
 			${safeSectionHtml('Repository PRs & Cloud Agent', () => buildReposAndAgentTabPanelsHtml())}
+			${safeSectionHtml('AI Billing', () => buildBillingTabPanelHtml(stats))}
 			${safeSectionHtml('AI Readiness', () => darkFactoryTab.panel(activeTab))}
 			${safeSectionHtml('Worktrees', () => buildWorktreesTabPanelHtml())}
 			${safeSectionHtml('Insights', () => buildInsightsTabPanelHtml(stats.insights ?? []))}
@@ -4458,6 +4459,17 @@ function billingSectionHasContent(stats: UsageAnalysisStats): boolean {
 	return !!stats.copilotApiBalance || shouldListAccountBudgets(stats.accountBudgets ?? [], !!stats.copilotApiBalance) || (!!groupCosts && Object.keys(groupCosts).length > 0);
 }
 
+/**
+ * The GitHub › Billing tab. The section holds GitHub API data (credit balance, per-account
+ * budgets), so like the Repository PRs and Cloud Agent tabs it shows a sign-in hint when there is
+ * nothing to display; the section itself stays gated on data presence.
+ */
+function buildBillingTabPanelHtml(stats: UsageAnalysisStats): string {
+	const sectionHtml = safeSectionHtml('AI Billing Coverage', () => buildBillingComparisonSectionHtml(stats));
+	const body = billingTabBodyHtml(sectionHtml);
+	return `<div id="tab-panel-billing" class="tab-panel"${activeTab !== 'billing' ? ' style="display:none"' : ''}>${body}</div>`;
+}
+
 function buildBillingComparisonSectionHtml(stats: UsageAnalysisStats): string {
 	if (!billingSectionHasContent(stats)) { return ''; }
 	const api = stats.copilotApiBalance;
@@ -4517,7 +4529,6 @@ function buildActivityTabPanelHtml(
 	// shape it doesn't expect) renders an inline error card for that section only, instead of
 	// throwing out of this template literal and blanking the entire Activity tab.
 	const modelCostHtml = safeSectionHtml('Model Cost', () => buildModelCostSectionHtml(stats));
-	const billingComparisonHtml = safeSectionHtml('AI Billing Coverage', () => buildBillingComparisonSectionHtml(stats));
 	const modeUsageHtml = safeSectionHtml('Interaction Modes', () => `
 			<div class="section" id="section-interaction-modes">
 				<div class="section-title"><span>🎯</span><span>Interaction Modes</span></div>
@@ -4542,7 +4553,6 @@ function buildActivityTabPanelHtml(
 			${modeUsageHtml}
 
 			${sectionGroupHeadingHtml('💵', 'usage.band.spend.title', 'usage.band.spend.subtitle')}
-			${billingComparisonHtml}
 			${modelCostHtml}
 			${multiModelHtml}
 			${modelEfficiencyHtml}
