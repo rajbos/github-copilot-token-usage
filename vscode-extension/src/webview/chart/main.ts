@@ -71,10 +71,6 @@ async function loadChartModule(): Promise<void> {
 	const mod = await import('chart.js/auto');
 	Chart = mod.default;
 }
-// Named so module-level annotations get the full union: `typeof currentMetric` here would be
-// narrowed by control flow to the initial literal ('tokens' / 'total').
-type ChartMetric = 'tokens' | 'output' | 'cost' | 'sessions';
-type ChartSplit = 'total' | 'model' | 'editor' | 'repository' | 'language' | 'provider' | 'task' | 'taskCategory';
 let currentMetric: ChartMetric = 'tokens';
 let currentSplit: ChartSplit = 'total';
 let currentPeriod: ChartPeriod = 'day';
@@ -200,7 +196,7 @@ function getActivePeriodData(data: InitialChartData): ChartPeriodData {
 			avgCostPerPeriod: 0,
 		};
 	}
-	return filterPeriodByTimeWindow(period, currentTimeWindow, currentPeriod) as ChartPeriodData;
+	return filterPeriodByTimeWindow(period, currentTimeWindow, currentPeriod);
 }
 
 const PERIOD_LABELS: Record<ChartPeriod, { title: string; footer: string; countLabel: string; avgLabel: string; aggregationLabel: string; costTitle: string; avgCostLabel: string; outputTitle: string; avgLocLabel: string; sessionsTitle: string; avgSessionsLabel: string }> = {
