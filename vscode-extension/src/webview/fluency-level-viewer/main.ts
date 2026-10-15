@@ -1,7 +1,7 @@
 // Fluency Level Viewer webview
 import { buttonHtml } from '../shared/buttonConfig';
 import { setHtml } from '../shared/domUtils';
-import { escapeHtml, markdownToHtml, STAGE_DESCRIPTIONS } from '../shared/formatUtils';
+import { escapeHtml, markdownToHtml } from '../shared/formatUtils';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
