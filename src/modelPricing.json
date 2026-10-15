@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "Model pricing data - costs per million tokens. Each model has direct provider/API pricing at the top level (used as a reference); models billed through GitHub Copilot AI Credits also include a `copilotPricing` block reflecting GitHub's published per-token rates (1 AI credit = $0.01).",
   "metadata": {
-    "lastUpdated": "2026-10-08",
+    "lastUpdated": "2026-10-15",
     "sources": [
       {
         "name": "OpenAI API Pricing",
@@ -1388,6 +1388,16 @@
       ],
       "cachedInputCostPerMillion": 0.01,
       "cacheCreationCostPerMillion": 0.125
+    },
+    "gemini-4-argon": {
+      "inputCostPerMillion": 2.0,
+      "outputCostPerMillion": 10.0,
+      "category": "Google Gemini models",
+      "tier": "standard",
+      "displayNames": [
+        "Gemini 4 Argon"
+      ],
+      "cachedInputCostPerMillion": 0.1
     }
   }
 }
