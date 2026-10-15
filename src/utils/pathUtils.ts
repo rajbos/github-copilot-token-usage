@@ -108,6 +108,12 @@ export function dedupeByNormalizedKeyKeepGreatest<T>(
  * and the input's separator style is preserved.
  */
 export function normalizeToRepoRoot(p: string): string {
+	// Home-level agent stores: "<home>/.claude/worktrees/<repo>/<name>" and
+	// "<home>/.copilot/worktrees/<repo>/<name>" put the repo folder *after* the marker.
+	// Only recognised directly under a user home dir so it cannot shadow the
+	// "<repo>/.claude/worktrees/<name>" form below.
+	const homeStore = p.match(/^((?:[A-Za-z]:)?[\\/](?:Users|home)[\\/][^\\/]+[\\/]\.(?:claude|copilot)[\\/]worktrees[\\/][^\\/]+)(?:[\\/].*)?$/i);
+	if (homeStore) { return homeStore[1]; }
 	const appStore = p.match(/^(.+?[\\/]\.copilot[\\/]copilot-worktrees[\\/][^\\/]+)(?:[\\/].*)?$/i);
 	if (appStore) { return appStore[1]; }
 	const copilot = p.match(/^(.+?)[\\/]copilot-worktrees[\\/][^\\/]+(?:[\\/].*)?$/i);

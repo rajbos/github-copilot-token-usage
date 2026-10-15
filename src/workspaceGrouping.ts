@@ -307,9 +307,11 @@ function sameFolder(a: string, b: string): boolean {
 	return key(a) === key(b);
 }
 
-/** `<root>/copilot-worktrees/<repo>/<name>[/…]`. */
+/** `<root>/copilot-worktrees/<repo>/<name>[/…]` or the newer `<root>/.copilot/worktrees/<repo>/<name>[/…]`. */
 function matchCopilotWorktree(segments: string[], sep: string, pathExists?: (p: string) => boolean): ConventionMatch | undefined {
-	const idx = segments.map(s => s.toLowerCase()).lastIndexOf('copilot-worktrees');
+	const lower = segments.map(s => s.toLowerCase());
+	let idx = lower.length - 1;
+	while (idx >= 0 && !(lower[idx] === 'copilot-worktrees' || (lower[idx] === 'worktrees' && lower[idx - 1] === '.copilot'))) { idx--; }
 	if (idx === -1 || idx + 2 >= segments.length || segments[idx + 2] === '') { return undefined; }
 	const repoName = segments[idx + 1];
 	const reposPath = joinSegments([...segments.slice(0, idx), 'repos', repoName], sep);

@@ -108,6 +108,19 @@ const CORPUS: CorpusRow[] = [
 		expected: [{ name: 'acme-api', canonical: 'C:\\Users\\dev\\.copilot\\repos\\acme-api', members: ['C:\\Users\\dev\\.copilot\\copilot-worktrees\\acme-api\\copilot-fix-123'] }],
 	},
 	{
+		name: 'Copilot app worktrees (.copilot/worktrees/<repo>/<name>) fold into ~/.copilot/repos/<repo>',
+		platform: 'win32',
+		entries: [entry('C:\\Users\\dev\\.copilot\\worktrees\\acme-api\\local-supreme-enigma', 2, 8)],
+		existing: ['C:\\Users\\dev\\.copilot\\repos\\acme-api'],
+		expected: [{ name: 'acme-api', canonical: 'C:\\Users\\dev\\.copilot\\repos\\acme-api', members: ['C:\\Users\\dev\\.copilot\\worktrees\\acme-api\\local-supreme-enigma'] }],
+	},
+	{
+		name: 'Copilot app .copilot/worktrees folder whose repos checkout is gone stays named after the repo',
+		platform: 'darwin',
+		entries: [entry('/Users/dev/.copilot/worktrees/acme-api/local-supreme-enigma', 2, 8)],
+		expected: [{ name: 'acme-api', canonical: '/Users/dev/.copilot/worktrees/acme-api/local-supreme-enigma', members: ['/Users/dev/.copilot/worktrees/acme-api/local-supreme-enigma'] }],
+	},
+	{
 		name: 'Copilot app worktree whose repos checkout is gone stays named after the repo',
 		platform: 'darwin',
 		entries: [entry('/Users/dev/.copilot/copilot-worktrees/acme-api/copilot-fix-123', 2, 8)],

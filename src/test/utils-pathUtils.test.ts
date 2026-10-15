@@ -173,6 +173,22 @@ test('normalizeToRepoRoot: ignores an unrelated "worktrees" folder without the .
 	);
 });
 
+test('normalizeToRepoRoot: home-level ~/.claude/worktrees/<repo>/<name> keeps the repo folder', () => {
+	assert.equal(
+		normalizeToRepoRoot('C:\\Users\\me\\.claude\\worktrees\\my-repo\\friendly-ritchie-c20e1c'),
+		'C:\\Users\\me\\.claude\\worktrees\\my-repo'
+	);
+	assert.equal(
+		normalizeToRepoRoot('/home/me/.copilot/worktrees/my-repo/local-supreme-enigma/src'),
+		'/home/me/.copilot/worktrees/my-repo'
+	);
+});
+
+test('getRepoNameFromWorkspacePath: home-level agent worktrees resolve to the repo, not the worktree name', () => {
+	assert.equal(getRepoNameFromWorkspacePath('C:\\Users\\me\\.claude\\worktrees\\my-repo\\friendly-ritchie-c20e1c'), 'my-repo');
+	assert.equal(getRepoNameFromWorkspacePath('/home/me/.copilot/worktrees/my-repo/desktop-app-release-33c7b8'), 'my-repo');
+});
+
 test('normalizeToRepoRoot: strips Copilot App "<repo>.worktrees" sibling folder (Windows)', () => {
 	assert.equal(
 		normalizeToRepoRoot('C:\\Users\\me\\repos\\rajbos\\proj.worktrees\\copilot-worktree-2026-02-07T20-38-48'),
