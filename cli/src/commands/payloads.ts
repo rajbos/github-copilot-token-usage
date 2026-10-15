@@ -80,6 +80,7 @@ export function createDetailsPayload(stats: DetailedStats) {
  * the stats.
  * Intentionally machine-readable: each period may carry an optional `autonomyUsage`
  * ({ autonomous, supervised, plan, other } prompt counts); it is absent when no session reported a mode.
+ * It may also carry `agentUsage.byAgent` ({ [agent name as logged]: { sessions, requests, source } }), absent when no custom agent was used.
  */
 export function createUsageAnalysisPayload(stats: UsageAnalysisStats, now = new Date()) {
 	const locale = Intl.DateTimeFormat().resolvedOptions().locale;

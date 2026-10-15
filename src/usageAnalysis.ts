@@ -24,6 +24,7 @@ import type {
 	LatencyHistogram,
 } from './types';
 import { mergeAutonomyUsage, recordAutonomy } from './autonomy';
+import { advanceCliAgentState, createCliAgentState, mergeAgentUsage, readVsCodeModeId, recordVsCodeRequestAgents, type CliAgentState } from './agentUsage';
 import {
 	classifySessionTurns,
 	createEmptyTaskClassificationResult,
@@ -112,6 +113,8 @@ value?: { fsPath?: string; path?: string; external?: string };
 /** A request entry in a session file */
 interface SessionRequestRaw {
 requestId?: string;
+/** VS Code per-request mode: carries the selected custom agent's name and file URI. */
+modeInfo?: unknown;
 timestamp?: number;
 timeSpentWaiting?: number;
 agent?: { id?: string };
@@ -1057,6 +1060,7 @@ function processJsonSessionRequests(
 	analysis: SessionUsageAnalysis
 ): void {
 	if (!sessionContent.requests || !Array.isArray(sessionContent.requests)) { return; }
+	recordVsCodeRequestAgents(analysis, sessionContent.requests as SessionRequestRaw[], sessionContent.requests.map(() => sessionContent.mode?.id));
 	const taskTurns: TaskTurnSignal[] = [];
 	for (const requestRaw of sessionContent.requests) {
 		_pjsrProcessRequest(deps, requestRaw as SessionRequestRaw, sessionContent, analysis, taskTurns);
@@ -1385,6 +1389,7 @@ function _muaMergeModeUsage(period: UsageAnalysisPeriod, analysis: SessionUsageA
 	period.modeUsage.claudeDesktop = (period.modeUsage.claudeDesktop ?? 0) + (analysis.modeUsage.claudeDesktop ?? 0);
 	period.modeUsage.claudeVsCode = (period.modeUsage.claudeVsCode ?? 0) + (analysis.modeUsage.claudeVsCode ?? 0);
 	mergeAutonomyUsage(period, analysis.autonomyUsage);
+	mergeAgentUsage(period, analysis.agentUsage);
 }
 
 /**
@@ -2258,6 +2263,8 @@ type AsuCliState = {
 	editedFilePaths: Set<string>;
 	/** Per-user-turn tool-call sequences for model efficiency metrics (issue #1649). */
 	efficiencyTurns: EfficiencyTurn[];
+	/** Which custom agent the user has selected (Copilot CLI `subagent.selected`). */
+	agent: CliAgentState;
 };
 
 /** Append a tool call to the current (or an implicit first) efficiency turn. */
@@ -2292,18 +2299,23 @@ function _asuReconstructAndProcessDeltaState(
 	// permissionLevel (autopilot vs default) can be toggled mid-session, so remember the value in
 	// force when each request first appeared rather than only the final one.
 	const levelByRequest: (string | undefined)[] = [];
+	// Same for the selected agent (`inputState.mode.id`), used when a request carries no `modeInfo`.
+	let modeId: string | undefined;
+	const modeIdByRequest: (string | undefined)[] = [];
 	for (const line of lines) {
 		try {
 			const delta = JSON.parse(line);
 			sessionState = applyDelta(sessionState, delta) as DeltaSessionState;
 			permissionLevel = _asuReadPermissionLevel(delta) ?? permissionLevel;
+			modeId = readVsCodeModeId(delta) ?? modeId;
 			const requestCount = Array.isArray(sessionState.requests) ? sessionState.requests.length : 0;
-			while (levelByRequest.length < requestCount) { levelByRequest.push(permissionLevel); }
+			while (levelByRequest.length < requestCount) { levelByRequest.push(permissionLevel); modeIdByRequest.push(modeId); }
 		} catch { /* skip invalid lines */ }
 	}
 	processDeltaSessionAnalysis(deps, sessionState, lines, analysis);
 	if (Array.isArray(sessionState.requests)) {
 		(sessionState.requests as SessionRequestRaw[]).forEach((req, i) => { if (req?.requestId) { recordAutonomy(analysis, levelByRequest[i]); } });
+		recordVsCodeRequestAgents(analysis, sessionState.requests as SessionRequestRaw[], modeIdByRequest);
 	}
 }
 
@@ -2480,6 +2492,7 @@ function _asuProcessCliEvents(event: any, cliState: AsuCliState, analysis: Sessi
 	if (event.type === 'session.start' && event.data) { _asuHandleSessionStartEvent(event.data as Record<string, unknown>, cliState); }
 	if (event.type === 'session.model_change' && typeof event.data?.newModel === 'string') { cliState.defaultModel = event.data.newModel; }
 	_asuAccumulateAssistantText(event, cliState);
+	advanceCliAgentState(cliState.agent, analysis, event);
 	if (event.type === 'user.message') {
 		cliState.requestCount++;
 		const effort = typeof event.data?.reasoningEffort === 'string' ? event.data.reasoningEffort : cliState.defaultEffort;
@@ -2762,7 +2775,7 @@ async function _asuProcessNonDeltaJsonl(
 	const modeState: AsuModeState = { sessionMode: 'ask' };
 	const cliState: AsuCliState = {
 		defaultModel: 'unknown', defaultEffort: null, requestCount: 0, effortByRequest: {},
-		pendingToolCalls: new Map(), editedFilePaths: new Set(), efficiencyTurns: [],
+		pendingToolCalls: new Map(), editedFilePaths: new Set(), efficiencyTurns: [], agent: createCliAgentState(),
 	};
 	const isJetBrains = isJetBrainsSessionPath(sessionFile);
 	const jetBrainsMode: JetBrainsMode | null = isJetBrains ? detectJetBrainsModeFromContent(fileContent) : null;

@@ -28,6 +28,7 @@ import {
 import { withErrorRecoverySync } from './utils/errors';
 import { isGuidMcpTool, lookupKnownToolName } from './utils/toolUtils';
 import { isCopilotAppClientName } from './copilotCliStore';
+import { isCustomAgentFile } from './agentUsage';
 
 export {
 	dedupeByNormalizedKeyKeepGreatest,
@@ -374,7 +375,7 @@ export function scanWorkspaceCustomizationFiles(workspaceFolderPath: string): Cu
 function getModeFromAgentKind(id: string | undefined): 'agent' | 'plan' | 'customAgent' {
 	if (!id || id === 'agent') { return 'agent'; }
 	if (id.includes('plan-agent/Plan.agent.md')) { return 'plan'; }
-	if (id.includes('.agent.md')) { return 'customAgent'; }
+	if (isCustomAgentFile(id)) { return 'customAgent'; }
 	return 'agent';
 }
 

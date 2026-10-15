@@ -408,6 +408,7 @@
       "customAgent": 1,
       "cli": 0
     },
+    "agentUsage": { "byAgent": { "Product Owner": { "sessions": 1, "requests": 3, "source": "github" }, "Product Owner[Claude]": { "sessions": 1, "requests": 1, "source": "claude" } } },
     "contextReferences": {
       "file": 42,
       "selection": 11,
@@ -637,6 +638,7 @@
       "customAgent": 11,
       "cli": 0
     },
+    "agentUsage": { "byAgent": { "Product Owner": { "sessions": 4, "requests": 21, "source": "github" }, "Product Owner[Claude]": { "sessions": 2, "requests": 9, "source": "claude" }, "Repo Status": { "sessions": 1, "requests": 5, "source": "other" } } },
     "contextReferences": {
       "file": 462,
       "selection": 121,
