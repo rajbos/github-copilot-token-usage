@@ -206,6 +206,8 @@ import {
   sumWorktreeBytes as _sumWorktreeBytes,
   parseCleanupPushedWorktreesMessage as _parseCleanupPushedWorktreesMessage,
   buildCleanupConfirmTitle as _buildCleanupConfirmTitle,
+  enqueueCleanupCandidates as _enqueueCleanupCandidates,
+  type CleanupWorktreeCandidate,
   validateWorktreeRepoRootFromSessionPaths as _validateWorktreeRepoRootFromSessionPaths,
   type WorktreeBackgroundScanResult,
 } from './worktreeBackgroundScan';
@@ -1220,6 +1222,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private worktreeScanId: number = 0;
 	// Incremented on each cleanup start/cancel; an in-flight cleanup loop checks this to stop early
 	private worktreeCleanupId: number = 0;
+	// Candidates of the cleanup run in flight (undefined when idle); later requests append to it.
+	private worktreeCleanupQueue: CleanupWorktreeCandidate[] | undefined;
 	// Incremented on each background worktree scan start/dispose; the in-flight drip scan checks this to stop early
 	private backgroundWorktreeScanId: number = 0;
 	// True while a daily background worktree scan is in flight in this window, to avoid starting a second one concurrently
@@ -14250,6 +14254,7 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
 
   private diagHandleCancelCleanupPushedWorktrees(): void {
     this.worktreeCleanupId++;
+    this.worktreeCleanupQueue = undefined;
     if (this.analysisPanel && this.isPanelOpen(this.analysisPanel)) {
       this.analysisPanel.webview.postMessage({ command: "cleanupCancelled" });
     }
@@ -14291,15 +14296,24 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
       return;
     }
 
+    const send = (msg: Record<string, unknown>) => { if (this.isPanelOpen(panel)) { panel.webview.postMessage(msg); } };
+    // A run is already in flight (checked after the modal, since it may have finished meanwhile): queue behind it.
+    if (this.worktreeCleanupQueue) {
+      const added = _enqueueCleanupCandidates(this.worktreeCleanupQueue, candidates);
+      send({ command: "cleanupQueued", added, total: this.worktreeCleanupQueue.length });
+      return;
+    }
+
     const cleanupId = ++this.worktreeCleanupId;
     const isActive = () => cleanupId === this.worktreeCleanupId;
-    const send = (msg: Record<string, unknown>) => { if (this.isPanelOpen(panel)) { panel.webview.postMessage(msg); } };
+    const queue = this.worktreeCleanupQueue = [...candidates];
 
-    send({ command: "cleanupStarted", total: candidates.length });
+    send({ command: "cleanupStarted", total: queue.length, worktrees: queue });
     let deleted = 0, skipped = 0, errors = 0;
-    for (let i = 0; i < candidates.length; i++) {
+    for (let i = 0; i < queue.length; i++) {
       if (!isActive()) { break; }
-      const target = candidates[i];
+      const target = queue[i];
+      send({ command: "cleanupWorktreeStarted", ...target });
       const outcome = await this.cleanupSinglePushedWorktree(target.path);
       if (outcome.status === "deleted") { deleted++; send({ command: "worktreeDeleted", path: target.path }); }
       else if (outcome.status === "skipped") { skipped++; }
@@ -14310,10 +14324,11 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
         command: "cleanupWorktreeResult",
         path: target.path, branch: target.branch, repoLabel: target.repoLabel,
         status: outcome.status, reason: outcome.reason, diagnostics,
-        processed: i + 1, total: candidates.length,
+        processed: i + 1, total: queue.length,
       });
     }
 
+    if (this.worktreeCleanupQueue === queue) { this.worktreeCleanupQueue = undefined; }
     send({ command: "cleanupComplete", deleted, skipped, errors, cancelled: !isActive() });
     this.log(`🧹 Worktree cleanup finished: ${deleted} deleted, ${skipped} skipped, ${errors} error(s)`);
   }
