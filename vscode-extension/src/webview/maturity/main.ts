@@ -5,12 +5,18 @@ import { setHtml } from '../shared/domUtils';
 import { escapeHtml, markdownToHtml, STAGE_LABELS, STAGE_DESCRIPTIONS } from '../shared/formatUtils';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
 import { buildShareCardHeaderHtml, shareCardContainerStyle } from './shareCard';
+import { buildToolboxCardHtml, buildToolboxSummaryText, TOOLBOX_SHARE_ID_PREFIX } from './toolboxCard';
+import { createPeriodSelector, type Period } from '../shared/periodSelector';
+import { socialShareButtonsHtml, wireSocialShareButtons, type SocialPlatform } from '../shared/socialShare';
+import type { ShareCardPeriodData } from '../../shareCardData';
 import type { McpToolUsage, ModeUsage, ModelSwitchingAnalysis, ToolCallUsage, CategoryLevelData } from '../shared/types';
 import themeStyles from '../shared/theme.css';
 import dataTableStyles from '../shared/dataTable.css';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
 import { applyWebviewLocale } from '../shared/webviewLocale';
+import { localize } from '../shared/localization';
+import { createViewStateManager } from '../shared/viewState';
 import { installSurfaceNavigation } from '../shared/surfaceNavigation';
 
 type UsageAnalysisPeriod = {
@@ -55,6 +61,8 @@ type MaturityData = {
 	fluencyLevels?: CategoryLevelData[];
 	backendConfigured?: boolean;
 	installedHooks?: string[];
+	/** Per-period editor/session/token totals for the "My AI Coding Toolbox" card. */
+  shareCard?: ShareCardPeriodData[];
 };
 
 // Maps a category name to the hook id that provides a session reminder for it
@@ -70,7 +78,9 @@ declare function acquireVsCodeApi<TState = unknown>(): {
 	getState: () => TState | undefined;
 };
 
-const vscode = acquireVsCodeApi();
+type MaturityViewState = { toolboxPeriod: ShareCardPeriodData['period'] };
+
+const vscode = acquireVsCodeApi<MaturityViewState>();
 installSurfaceNavigation(vscode, 'maturity');
 const initialData = getWindowData<MaturityData & { localization?: Record<string, string> }>('__INITIAL_MATURITY__');
 
@@ -425,9 +435,7 @@ function buildShareSectionHtml(): string {
     <div class="share-header"><span class="share-icon">📢</span><span class="share-title">Share Your AI Engineering Fluency Score</span></div>
     <div class="share-description">Share your progress with the community and inspire others to level up their AI engineering skills!</div>
     <div class="share-buttons">
-      <button id="btn-share-linkedin" class="share-btn share-btn-linkedin"><span class="share-btn-icon">💼</span><span>Share on LinkedIn</span></button>
-      <button id="btn-share-bluesky" class="share-btn share-btn-bluesky"><span class="share-btn-icon">🦋</span><span>Share on Bluesky</span></button>
-      <button id="btn-share-mastodon" class="share-btn share-btn-mastodon"><span class="share-btn-icon">🐘</span><span>Share on Mastodon</span></button>
+      ${socialShareButtonsHtml('btn-share')}
       <div class="export-dropdown-container">
         <button id="btn-export-toggle" class="share-btn share-btn-download"><span class="share-btn-icon">💾</span><span>Export Fluency Score</span><span class="dropdown-arrow">▼</span></button>
         <div id="export-dropdown" class="export-dropdown-menu" style="display: none;">
@@ -438,6 +446,58 @@ function buildShareSectionHtml(): string {
       </div>
     </div>
   </div>`;
+}
+
+// ── "My AI Coding Toolbox" share card ──────────────────────────────────
+
+// Selected toolbox period survives the panel being hidden (retainContextWhenHidden is false).
+const viewState = createViewStateManager<MaturityViewState>(vscode, { toolboxPeriod: 'last30' });
+let toolboxPeriod: ShareCardPeriodData['period'] = viewState.restore().toolboxPeriod;
+
+function currentToolboxData(data: MaturityData): ShareCardPeriodData | undefined {
+  return data.shareCard?.find(p => p.period === toolboxPeriod) ?? data.shareCard?.[0];
+}
+
+function buildToolboxSectionHtml(data: MaturityData): string {
+  const current = currentToolboxData(data);
+  const body = current
+    ? buildToolboxCardHtml(current)
+    : `<div class="share-description">${escapeHtml(localize('share.toolbox.unavailable'))}</div>`;
+  return `
+  <div class="share-section toolbox-section">
+    <div class="share-header"><span class="share-icon">📸</span><span class="share-title">${escapeHtml(localize('share.toolbox.title'))}</span></div>
+    <div class="share-description">${escapeHtml(localize('share.toolbox.description'))}</div>
+    <div id="toolbox-body">${body}</div>
+  </div>`;
+}
+
+/** Wires the toolbox card's period dropdown, copy button and social buttons (re-run after each re-render). */
+function wireToolboxCard(data: MaturityData, current: ShareCardPeriodData): void {
+  document.getElementById('toolbox-period-selector')?.appendChild(createPeriodSelector({
+    id: 'toolbox-period-select',
+    label: '',
+    selected: current.period,
+    periods: (data.shareCard ?? []).map(p => p.period as Period),
+    onChange: (value) => {
+      toolboxPeriod = value as ShareCardPeriodData['period'];
+      viewState.patch({ toolboxPeriod });
+      renderToolboxBody(data);
+    },
+  }).wrapper);
+  document.getElementById('btn-copy-toolbox-summary')?.addEventListener('click', () => {
+    vscode.postMessage({ command: 'copyText', text: buildToolboxSummaryText(current) });
+  });
+  wireSocialShareButtons(TOOLBOX_SHARE_ID_PREFIX, (platform) => { void handleShareToSocial(platform, 'toolbox'); });
+}
+
+/** Re-renders the toolbox card for the selected period. */
+function renderToolboxBody(data: MaturityData): void {
+  const body = document.getElementById('toolbox-body');
+  const current = currentToolboxData(data);
+  if (!body || !current) { return; }
+  toolboxPeriod = current.period;
+  setHtml(body, buildToolboxCardHtml(current));
+  wireToolboxCard(data, current);
 }
 
 function buildMaturityRootHtml(
@@ -499,6 +559,7 @@ function buildMaturityRootHtml(
         ${dismissedTips.length > 0 ? `<button id="btn-reset-tips" class="reset-tips-btn" title="Show all dismissed improvement suggestions again">🔄 Reset Dismissed Tips</button>` : ''}
       </div>
       ${buildShareSectionHtml()}
+      ${buildToolboxSectionHtml(data)}
       <div class="beta-footer">
         <span class="beta-footer-icon">⚠️</span>
         <div class="beta-footer-content"><strong>Beta</strong> — This screen is still in beta. If you have feedback or suggestions for improvements, please <a href="https://github.com/rajbos/ai-engineering-fluency/issues" class="beta-link">create an issue</a> on the repository.</div>
@@ -597,7 +658,7 @@ async function handleScreenshotExport(command: 'exportPdf' | 'exportPptx'): Prom
   vscode.postMessage({ command, data: images });
 }
 
-async function handleShareToSocial(platform: 'linkedin' | 'bluesky' | 'mastodon'): Promise<void> {
+async function handleShareToSocial(platform: SocialPlatform, kind: 'score' | 'toolbox' = 'score'): Promise<void> {
   const data = initialData;
   if (!data) { return; }
 
@@ -610,7 +671,14 @@ async function handleShareToSocial(platform: 'linkedin' | 'bluesky' | 'mastodon'
   const stageColors = ['#93c5fd', '#a78bfa', '#3b82f6', '#22d3ee'];
   const stageColor = stageColors[data.overallStage - 1] || '#58a6ff';
 
-  setHtml(card, `
+  const toolboxCard = kind === 'toolbox' ? document.querySelector('.toolbox-card') : null;
+  if (toolboxCard) {
+    // Frame the live toolbox card (same markup the user sees) on the standard 1200x630 share canvas.
+    const clone = toolboxCard.cloneNode(true) as HTMLElement;
+    clone.style.cssText = 'width:900px;max-width:none;box-sizing:border-box;';
+    card.appendChild(clone);
+  } else {
+    setHtml(card, `
     <div style="text-align:center;color:#fff;padding:48px;">
       <div style="font-size:28px;margin-bottom:12px;">🎯 AI Engineering Fluency Score</div>
       <div style="font-size:14px;color:#b8b8c8;margin-bottom:32px;text-transform:uppercase;letter-spacing:2px;">Overall AI Engineering Fluency</div>
@@ -620,6 +688,7 @@ async function handleShareToSocial(platform: 'linkedin' | 'bluesky' | 'mastodon'
       <div style="font-size:14px;color:#7a7a8a;">Track your AI usage with AI Engineering Fluency</div>
     </div>
   `);
+  }
 
   document.body.appendChild(card);
   try {
@@ -665,9 +734,7 @@ function wireMaturityActionButtons(): void {
     });
   });
   document.getElementById('btn-reset-tips')?.addEventListener('click', () => { vscode.postMessage({ command: 'resetDismissedTips' }); });
-  document.getElementById('btn-share-linkedin')?.addEventListener('click', () => { void handleShareToSocial('linkedin'); });
-  document.getElementById('btn-share-bluesky')?.addEventListener('click', () => { void handleShareToSocial('bluesky'); });
-  document.getElementById('btn-share-mastodon')?.addEventListener('click', () => { void handleShareToSocial('mastodon'); });
+  wireSocialShareButtons('btn-share', (platform) => { void handleShareToSocial(platform); });
 }
 
 function wireExportHandlers(): void {
@@ -718,6 +785,8 @@ function renderLayout(data: MaturityData): void {
   wireMaturityNavButtons();
   wireMaturityActionButtons();
   wireExportHandlers();
+  const toolbox = currentToolboxData(data);
+  if (toolbox) { wireToolboxCard(data, toolbox); }
 
   if (data.isDebugMode) {
     wireDemoControls(data);

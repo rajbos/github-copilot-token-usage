@@ -94,7 +94,7 @@ Analysis. Copy it when a view outgrows one row of tabs.
 
 | Group | Leaf tabs |
 |---|---|
-| 🩺 Diagnostics | Report · Session Files · Session Cache · Path Analyzer · Share Card |
+| 🩺 Diagnostics | Report · Session Files · Session Cache · Path Analyzer |
 | 🔬 Research | Model Usage · Tool Analysis · Skill Usage · OTel Delta · TTFT |
 | ⚙️ Settings | Display · Backend Storage · GitHub Auth · Debug (debug mode only) |
 
@@ -110,7 +110,7 @@ Combined.
 |---|---|
 | Details | plan badge · provider panel · metrics table (grouped rows) · Editor Usage (with "Other" disclosure) · Model Usage (with "Other" disclosure) · estimates footnote |
 | Chart | header · summary cards · period toggles · time-window/metric/split/rolling controls · chart canvas · editor cards · language heatmap |
-| Fluency Score | radar chart · category cards · agentic sparkline · Stage Reference · Share card · About |
+| Fluency Score | radar chart · category cards · agentic sparkline · Stage Reference · Share score · Share AI coding toolbox card · About |
 | Environmental | impact cards (per period, with analogies) · estimates footnote |
 | Team Dashboard | *Azure Dashboard* tab: personal section · team section · model breakdown · leaderboard · fluency detail — *Team Server* tab: launch card |
 | Log Viewer | session header · turns overview · Hydra fusion section · turn detail |

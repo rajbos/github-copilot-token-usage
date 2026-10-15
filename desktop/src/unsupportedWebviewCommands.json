@@ -93,15 +93,13 @@
       "hiddenBy": ["#btn-reset-debug-counters"],
       "reason": "Diagnostics: debug counters live in VS Code global state."
     },
-    "shareCardToSocial": {
-      "status": "hidden",
-      "hiddenBy": ["#btn-share-card-linkedin", "#btn-share-card-bluesky", "#btn-share-card-mastodon"],
-      "reason": "Diagnostics: social sharing is not wired up in the desktop app."
-    },
     "shareToSocial": {
       "status": "hidden",
-      "hiddenBy": ["#btn-share-linkedin", "#btn-share-bluesky", "#btn-share-mastodon"],
-      "reason": "Fluency Score: social sharing is not wired up in the desktop app."
+      "hiddenBy": [".share-btn-linkedin", ".share-btn-bluesky", ".share-btn-mastodon"],
+      "unresolvedControlSites": {
+        "vscode-extension/src/webview/maturity/main.ts#handleShareToSocial": "Both share rows (the score and the AI coding toolbox card) get their buttons from shared/socialShare.ts, whose ids are built per row; every one carries a .share-btn-<platform> class, which is what hides them."
+      },
+      "reason": "Fluency Score: social sharing (score and toolbox card) is not wired up in the desktop app."
     },
     "saveChartImage": {
       "status": "hidden",

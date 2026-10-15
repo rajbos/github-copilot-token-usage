@@ -2000,6 +2000,48 @@ test('worktree cleanup delete-feedback keys resolve in zh-cn', () => {
 	}
 });
 
+// Fluency Score "My AI Coding Toolbox" card (moved from Diagnostics) — guards raw keys
+// resurfacing in the panel and in the copied summary for every locale.
+const TOOLBOX_KEYS_EN: Record<string, string> = {
+	'share.summaryCopied': 'Summary copied to clipboard',
+	'share.toolbox.title': 'Share Your AI Coding Toolbox',
+	'share.toolbox.cardTitle': 'My AI Coding Toolbox',
+	'share.toolbox.period': 'Period:',
+	'share.toolbox.editorsDetectedOne': '1 editor detected',
+	'share.toolbox.editorsDetected': '{0} editors detected',
+	'share.toolbox.copy': '📋 Copy Summary Text',
+	'share.toolbox.phrase.today': 'today',
+	'share.toolbox.phrase.last30': 'in the last 30 days',
+	'share.linkedin': 'Share on LinkedIn',
+	'share.bluesky': 'Share on Bluesky',
+	'share.mastodon': 'Share on Mastodon',
+};
+
+test('l10n: toolbox card keys resolve in English', () => {
+	for (const [key, english] of Object.entries(TOOLBOX_KEYS_EN)) {
+		assert.equal(t(key), english, `English value for ${key}`);
+	}
+});
+
+test('l10n: toolbox card keys resolve in zh-cn and differ from English', () => {
+	mock.setLanguage('zh-cn');
+	try {
+		const expected: Record<string, string> = {
+			'share.summaryCopied': '摘要已复制到剪贴板',
+			'share.toolbox.title': '分享您的 AI 编码工具箱',
+			'share.toolbox.cardTitle': '我的 AI 编码工具箱',
+			'share.toolbox.period': '时间段：',
+			'share.toolbox.phrase.today': '今天',
+			'share.linkedin': '在 LinkedIn 上分享',
+		};
+		for (const [key, chinese] of Object.entries(expected)) {
+			assert.equal(t(key), chinese, `zh-cn value for ${key}`);
+		}
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
 test('l10n: Diagnostics Session Cache strings resolve in English and zh-cn and stay distinct from Prompt Cache', () => {
 	mock.setLanguage('en');
 	try {

@@ -409,12 +409,15 @@ function attributeLocToDay(dailyEntry: DailyTokenStats, sessionData: Pick<Sessio
 }
 
 /**
- * Each call increments `sessions` by 1 regardless of token count.
+ * Each call increments `sessions` by 1 regardless of token count, unless `countSession` is
+ * false (a later day of a session this period already counted). `interactions` accumulates
+ * only when supplied, so callers that don't track it leave the field unset.
  */
-export function addEditorUsage(target: EditorUsage, editorType: string, tokens: number): void {
+export function addEditorUsage(target: EditorUsage, editorType: string, tokens: number, interactions?: number, countSession: boolean = true): void {
 if (!Object.hasOwn(target, editorType) || !target[editorType]) { target[editorType] = { tokens: 0, sessions: 0 }; }
 target[editorType].tokens += tokens;
-target[editorType].sessions += 1;
+if (countSession) { target[editorType].sessions += 1; }
+if (interactions !== undefined) { target[editorType].interactions = (target[editorType].interactions ?? 0) + interactions; }
 }
 
 /** UTC date-range keys derived from a single reference instant (`now`). */
@@ -541,7 +544,7 @@ function _apsBumpPeriod(acc: PeriodAccumulator, f: ApsDayFields, freshSession: b
 	acc.cachedTokens += f.cachedTokens;
 	acc.interactions += f.interactions;
 	if (freshSession) { acc.sessions += 1; }
-	addEditorUsage(acc.editorUsage, f.editorType, f.tokens);
+	addEditorUsage(acc.editorUsage, f.editorType, f.tokens, f.interactions, freshSession);
 	addModelUsage(acc.modelUsage, f.modelUsage);
 }
 
@@ -903,7 +906,7 @@ function accumulatePeriod(acc: PeriodAccumulator, tokens: number, estimated: num
 	acc.tokens += tokens; acc.estimatedTokens += estimated; acc.actualTokens += actual;
 	acc.thinkingTokens += thinking; acc.cachedTokens += cached; acc.interactions += interactions;
 	if (countSession) { acc.sessions += 1; }
-	addEditorUsage(acc.editorUsage, editorType, tokens);
+	addEditorUsage(acc.editorUsage, editorType, tokens, interactions, countSession);
 	addModelUsage(acc.modelUsage, modelUsage);
 	if (!Object.hasOwn(acc.editorModelUsage, editorType) || !acc.editorModelUsage[editorType]) { acc.editorModelUsage[editorType] = {}; }
 	addModelUsage(acc.editorModelUsage[editorType], modelUsage);

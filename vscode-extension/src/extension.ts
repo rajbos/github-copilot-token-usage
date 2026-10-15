@@ -82,6 +82,7 @@ import type {
   ServerMemoriesAnalysis,
   ServerMemoriesAnalysisView,
 } from '../../src/types';
+import { buildShareCardData, type ShareCardPeriodData } from './shareCardData';
 import {
 	ensureContextPressure,
 	hasContextSignal,
@@ -1023,7 +1024,7 @@ export function formatProviderCostTable(
 
 // ── extension.ts module-level helpers ────────────────────────────────────────
 
-/** Type guard for the social platforms supported by `shareTextToSocialPlatform`. */
+/** Type guard for the social platforms supported by `maturityHandleShareToSocial`. */
 function isSharePlatform(value: unknown): value is 'linkedin' | 'bluesky' | 'mastodon' {
 	return value === 'linkedin' || value === 'bluesky' || value === 'mastodon';
 }
@@ -6230,7 +6231,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			: undefined;
 		if (!this.mayPublishAt(originGeneration)) { return; }
 		if (this.maturityPanel && !silent && freshMaturityData) {
-			this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, freshMaturityData);
+			this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...freshMaturityData, shareCard: buildShareCardData(this.currentDetailedStats) });
 		}
 		if (!this.backend) { return; }
 		const settings = this.backend.getSettings();
@@ -11275,10 +11276,12 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 				this.calculateMaturityScores(true),
 				this.getDismissedFluencyTips(),
 			]);
+			const shareCard = await this.loadShareCardData();
 			if (this.maturityPanel !== panel) { return; }
 			const fluencyLevels = isDebugMode ? this.getFluencyLevelData(isDebugMode).categories : undefined;
 			panel.webview.html = this.getMaturityHtml(panel.webview, {
 				...maturityData,
+				shareCard,
 				dismissedTips,
 				isDebugMode,
 				fluencyLevels,
@@ -11317,8 +11320,14 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 			case 'saveChartImage': if (message.data) { await this.dispatch('saveChartImage', () => this.saveChartImageData(message.data)); } break;
 			case 'exportPdf': if (message.data) { await this.dispatch('exportPdf', () => this.exportFluencyScorePdf(message.data)); } break;
 			case 'exportPptx': if (message.data) { await this.dispatch('exportPptx', () => this.exportFluencyScorePptx(message.data)); } break;
-			case 'shareToSocial': if (message.dataUrl && isSharePlatform(message.platform)) { await this.dispatch('shareToSocial', () => this.maturityHandleShareToSocial(message.platform, message.dataUrl)); } break;
+			case 'copyText': if (typeof message.text === 'string') { await this.dispatch('copyText:maturity', () => this.maturityHandleCopyText(message.text)); } break;
+				case 'shareToSocial': if (message.dataUrl && isSharePlatform(message.platform)) { await this.dispatch('shareToSocial', () => this.maturityHandleShareToSocial(message.platform, message.dataUrl)); } break;
 		}
+	}
+
+	private async maturityHandleCopyText(text: string): Promise<void> {
+		await vscode.env.clipboard.writeText(text);
+		void vscode.window.showInformationMessage(l10n.t('share.summaryCopied'));
 	}
 
 	private async maturityHandleInstallHook(hookId: string): Promise<void> {
@@ -11359,6 +11368,20 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 		await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
 	}
 
+/**
+ * Aggregated per-period editor/session/token totals for the Fluency Score share card. Uses the
+ * cached all-session aggregate, computing it when absent, so every offered period is truthful.
+ */
+private async loadShareCardData(): Promise<ShareCardPeriodData[] | undefined> {
+	try {
+		const stats = this.currentDetailedStats ?? (await this.calculateDetailedStats()).stats;
+		return buildShareCardData(stats);
+	} catch (err) {
+		this.warn(`Share card data unavailable: ${err}`);
+		return undefined;
+	}
+}
+
 private async refreshMaturityPanel(): Promise<void> {
 	if (!this.maturityPanel) {
 		return;
@@ -11367,9 +11390,11 @@ private async refreshMaturityPanel(): Promise<void> {
 	this.log('🔄 Refreshing Copilot Fluency Score dashboard');
 	const maturityData = await this.calculateMaturityScores(false); // Force recalculation on refresh
 	const dismissedTips = await this.getDismissedFluencyTips();
+	const shareCard = await this.loadShareCardData();
+	if (!this.maturityPanel) { return; }
 	const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
 	const fluencyLevels = isDebugMode ? this.getFluencyLevelData(isDebugMode).categories : undefined;
-	this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips, isDebugMode, fluencyLevels, installedHooks: this.hookManager.getInstalledHooks() });
+	this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, shareCard, dismissedTips, isDebugMode, fluencyLevels, installedHooks: this.hookManager.getInstalledHooks() });
 	this.log('✅ Copilot Fluency Score dashboard refreshed');
 }
 
@@ -11390,70 +11415,6 @@ private async resetDismissedFluencyTips(): Promise<void> {
 	await this.context.globalState.update('dismissedFluencyTips', []);
 	this.log('Reset all dismissed fluency tips');
 }
-
-/**
- * Copies `shareText` to the clipboard and opens the given social platform's compose/share page
- * in the browser, so the user can paste it in. Used by the diagnostics Share Card view.
- */
-private async shareTextToSocialPlatform(shareText: string, platform: 'linkedin' | 'bluesky' | 'mastodon'): Promise<void> {
-    const marketplaceUrl = 'https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency';
-    switch (platform) {
-      case "linkedin": {
-        // LinkedIn share URL - opens in browser for user to add their own commentary
-        const shareUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(marketplaceUrl)}`;
-
-        // Copy share text to clipboard for easy pasting
-        await vscode.env.clipboard.writeText(shareText);
-        const selection = await vscode.window.showInformationMessage(
-          "Share text copied to clipboard! Paste it into your LinkedIn post.",
-          "Open LinkedIn",
-        );
-        if (selection === "Open LinkedIn") {
-          await vscode.env.openExternal(vscode.Uri.parse(shareUrl));
-        }
-        break;
-      }
-
-      case "bluesky": {
-        // Copy share text to clipboard, then open Bluesky compose
-        await vscode.env.clipboard.writeText(shareText);
-        const selection = await vscode.window.showInformationMessage(
-          "Share text copied to clipboard! Paste it into your Bluesky post.",
-          "Open Bluesky",
-        );
-        if (selection === "Open Bluesky") {
-          await vscode.env.openExternal(
-            vscode.Uri.parse("https://bsky.app/intent/compose"),
-          );
-        }
-        break;
-      }
-
-      case "mastodon": {
-        // Mastodon share - ask user for their instance
-        const instance = await vscode.window.showInputBox({
-          prompt: "Enter your Mastodon instance (e.g., mastodon.social)",
-          placeHolder: "mastodon.social",
-          value: "mastodon.social",
-        });
-
-        if (instance) {
-          // Copy share text to clipboard, then open Mastodon compose
-          await vscode.env.clipboard.writeText(shareText);
-          const selection = await vscode.window.showInformationMessage(
-            "Share text copied to clipboard! Paste it into your Mastodon post.",
-            "Open Mastodon",
-          );
-          if (selection === "Open Mastodon") {
-            await vscode.env.openExternal(
-              vscode.Uri.parse(`https://${instance}/share`),
-            );
-          }
-        }
-        break;
-      }
-    }
-  }
 
   /**
    * Saves the generated share-card image to a temp file, copies the caption to the clipboard,
@@ -11786,6 +11747,7 @@ private async shareTextToSocialPlatform(shareText: string, platform: 'linkedin' 
       period: UsageAnalysisPeriod;
       lastUpdated: string;
       agenticTrend?: AgenticTrendPoint[];
+      shareCard?: ShareCardPeriodData[];
       dismissedTips?: string[];
       isDebugMode?: boolean;
       installedHooks?: string[];
@@ -13222,29 +13184,12 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
         if (typeof message.key === 'string' && typeof message.value === 'number') { await this.dispatch('setDebugCounter:diagnostics', () => this.diagHandleSetDebugCounter(message.key, message.value)); } break;
       case "setDebugFlag":
         if (typeof message.key === 'string' && typeof message.value === 'boolean') { await this.dispatch('setDebugFlag:diagnostics', () => this.diagHandleSetDebugFlag(message.key, message.value)); } break;
-      case "copyText":
-        if (typeof message.text === 'string') { await this.dispatch('copyText:diagnostics', () => this.diagHandleCopyText(message.text)); } break;
-      case "shareCardToSocial":
-        if (typeof message.text === 'string' && isSharePlatform(message.platform)) {
-          await this.dispatch('shareCardToSocial:diagnostics', () => this.diagHandleShareCardToSocial(message.text, message.platform));
-        }
-        break;
     }
   }
 
   private async diagHandleCopyReport(): Promise<void> {
     await vscode.env.clipboard.writeText(this.lastDiagnosticReport);
     vscode.window.showInformationMessage("Diagnostic report copied to clipboard");
-  }
-
-  private async diagHandleCopyText(text: string): Promise<void> {
-    await vscode.env.clipboard.writeText(text);
-    vscode.window.showInformationMessage("Summary copied to clipboard");
-  }
-
-  private async diagHandleShareCardToSocial(text: string, platform: 'linkedin' | 'bluesky' | 'mastodon'): Promise<void> {
-    await this.shareTextToSocialPlatform(text, platform);
-    this.log(`Shared Share Card to ${platform}`);
   }
 
   private async diagHandleOpenIssue(): Promise<void> {

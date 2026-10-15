@@ -306,6 +306,7 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 			{ id: 'maturity.radar', title: 'Radar chart', description: 'Your stage per category on one chart, with the stage reference.', nav: { selector: '.radar-wrapper' } },
 			{ id: 'maturity.categories', title: 'Categories', description: 'Prompt engineering, context engineering, agentic, tool usage, customization and workflow integration, each with evidence and next steps.', keywords: ['next steps', 'tips'], nav: { selector: '.category-grid' } },
 			{ id: 'maturity.share', title: 'Share your score', description: 'Share to social media or export your score as an image or presentation.', keywords: ['export', 'png', 'pptx'], nav: { selector: '.share-section' } },
+				{ id: 'maturity.toolbox', title: 'Share your AI coding toolbox', description: 'A shareable card of the editors you use, with sessions, interactions and tokens for today, the last 30 days, this month or last month.', keywords: ['social', 'image', 'editors', 'share card'], nav: { selector: '.toolbox-section' } },
 		],
 	},
 	{
@@ -361,7 +362,6 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 					{ id: 'diagnostics.sessions', title: 'Session Files', description: 'Every session file found, per editor, with interactions and tokens. Open one in the Session Log Viewer.', keywords: ['logs', 'files', 'session log viewer'], nav: { tab: 'sessions' } },
 					{ id: 'diagnostics.cache', title: 'Session Cache', description: "The extension's own session-parse cache: size, age and location, and buttons to clear or reset it (not LLM prompt caching).", nav: { tab: 'cache' } },
 					{ id: 'diagnostics.path-analyzer', title: 'Path Analyzer', description: 'Point at a folder to see which session files the extension finds there and how it reads them.', keywords: ['folder', 'scan'], nav: { tab: 'path-analyzer' } },
-					{ id: 'diagnostics.share', title: 'Share Card', description: 'A shareable card of your AI coding toolbox for a chosen period.', keywords: ['social', 'image'], nav: { tab: 'share' } },
 				],
 			},
 			{

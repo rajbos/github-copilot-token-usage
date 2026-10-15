@@ -543,6 +543,27 @@ assert.ok(ranges.lastMonthStartMs < ranges.last30DaysStartMs,
 
 // ── aggregatePeriodStats – rollup path ───────────────────────────────────────
 
+test('aggregatePeriodStats: rollup path – editorUsage counts a multi-day session once and sums its interactions', () => {
+const ranges = makeRanges('2025-03-15');
+const input: SessionAggregateInput = {
+editorType: 'vscode',
+mtime: new Date('2025-03-15T10:00:00.000Z').getTime(),
+sessionData: makeSession({
+dailyRollups: {
+'2025-03-14': { tokens: 100, actualTokens: 0, thinkingTokens: 0, interactions: 3, modelUsage: {} },
+'2025-03-15': { tokens: 50, actualTokens: 0, thinkingTokens: 0, interactions: 2, modelUsage: {} },
+},
+}),
+};
+const result = aggregatePeriodStats([input], ranges);
+assert.equal(result.last30DaysStats.sessions, 1);
+assert.equal(result.last30DaysStats.editorUsage['vscode'].sessions, 1, 'a session spanning two days is one editor session');
+assert.equal(result.last30DaysStats.editorUsage['vscode'].interactions, 5);
+assert.equal(result.last30DaysStats.editorUsage['vscode'].tokens, 150);
+assert.equal(result.todayStats.editorUsage['vscode'].sessions, 1);
+assert.equal(result.todayStats.editorUsage['vscode'].interactions, 2, 'today only sees its own day');
+});
+
 test('aggregatePeriodStats: rollup path – today attribution', () => {
 const ranges = makeRanges('2025-03-15');
 const input: SessionAggregateInput = {

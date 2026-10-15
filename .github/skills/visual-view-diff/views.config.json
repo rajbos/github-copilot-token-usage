@@ -487,12 +487,6 @@
           "expect": "#tab-path-analyzer"
         },
         {
-          "id": "share",
-          "title": "Share Card tab",
-          "steps": [{ "click": ".tab[data-tab=\"share\"]" }],
-          "expect": "#tab-share"
-        },
-        {
           "id": "model-usage",
           "title": "Research › Model Usage tab",
           "steps": [{ "click": ".group-tab[data-group=\"research\"]" }, { "click": ".tab[data-tab=\"model-usage\"]" }],
