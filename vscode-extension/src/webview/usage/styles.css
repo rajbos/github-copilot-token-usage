@@ -1191,14 +1191,14 @@ background: var(--bg-tertiary);
 }
 
 .worktree-row-btn.danger {
-	color: var(--vscode-errorForeground, #f14c4c);
-	border-color: var(--vscode-errorForeground, #f14c4c);
+	color: var(--vscode-errorForeground);
+	border-color: var(--vscode-errorForeground);
 	background: transparent;
 }
 
 .worktree-row-btn.danger:hover:not(:disabled) {
-	background: var(--vscode-errorForeground, #f14c4c);
-	color: var(--vscode-editor-background, #fff);
+	background: var(--vscode-errorForeground);
+	color: var(--vscode-editor-background);
 }
 
 .worktree-row-btn:disabled {
