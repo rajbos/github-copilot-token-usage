@@ -1533,4 +1533,8 @@
   ,"squad_state-squad_state_write": "Squad: State Squad State Write"
   ,"tavily-mcp": "Tavily MCP"
   ,"upgrade": "Upgrade"
+  ,"CronCreate": "Cron"
+  ,"CronDelete": "Cron"
+  ,"ccd_turn": "Turn"
+  ,"mcp__ccd_turn__wrap_up": "Wrap Up"
 }
