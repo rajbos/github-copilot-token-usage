@@ -381,7 +381,7 @@ const USAGE_ANALYSIS_PRINTED = [
 // usageAnalysis fields printed with a path/text sub-field or session-name-keyed maps removed.
 const USAGE_ANALYSIS_FILTERED = [
     'contextReferences', 'editScope', 'correctionMoments', 'toolCalls', 'mcpTools', 'skillCalls',
-    'modelSwitching'
+    'modelSwitching', 'agentUsage'
 ];
 // usageAnalysis fields omitted entirely.
 const USAGE_ANALYSIS_OMITTED = ['firstUserPrompt'];
@@ -462,6 +462,7 @@ test('no seeded session-derived string survives anywhere in a realistic default 
             toolCalls: { total: 2, byTool: { 'leak-tool': 2 }, outputTokensByTool: { 'leak-tool-out': 1 }, completedByTool: { 'leak-tool-done': 1 }, failuresByTool: { 'leak-tool-fail': 1 }, latencyByTool: { 'leak-tool-latency': latency } },
             mcpTools: { total: 1, byServer: { 'leak-server': 1 }, byTool: { 'leak-mcp-tool': 1 }, completedByServer: { 'leak-server-done': 1 }, failuresByServer: { 'leak-server-fail': 1 }, latencyByServer: { 'leak-server-latency': latency } },
             skillCalls: { total: 1, byName: { 'leak-skill': 1 } },
+            agentUsage: { byAgent: { 'leak-agent': { sessions: 1, requests: 4, source: 'github' } } },
             contextReferences: {
                 file: 1,
                 // Known VS Code kinds are kept; any other session-supplied kind is bucketed
@@ -527,6 +528,7 @@ test('default output prints exactly the classified fields of a fully populated e
         latencyByServer: { 'latency-server-sentinel': latency }
     };
     entry.usageAnalysis.skillCalls = { total: 1, byName: { 'customer-skill-sentinel': 1 } };
+    entry.usageAnalysis.agentUsage = { byAgent: { 'customer-agent-sentinel': { sessions: 1, requests: 4, source: 'github' }, 'other-agent-sentinel': { sessions: 1, requests: 1, source: 'claude' } } };
     entry.usageAnalysis.modelSwitching = { modelCount: 1, uniqueModels: ['model-a'], selectedModelExtensions: ['extension-id-sentinel'] };
     fs.writeFileSync(path.join(fixture.storage, 'cache_prod.snapshot.json'), JSON.stringify({
         schemaVersion: 1, cacheVersion: 1, cacheId: 'prod', generatedAt: 1, entryCount: 1,
@@ -547,6 +549,7 @@ test('default output prints exactly the classified fields of a fully populated e
     assert.deepEqual(printed.usageAnalysis.toolCalls, { total: 3 });
     assert.deepEqual(printed.usageAnalysis.mcpTools, { total: 2 });
     assert.deepEqual(printed.usageAnalysis.skillCalls, { total: 1 });
+    assert.deepEqual(printed.usageAnalysis.agentUsage, { agents: 2, requests: 5 });
     assert.deepEqual(printed.usageAnalysis.modelSwitching, { modelCount: 1, uniqueModels: ['model-a'] });
 
     const leaked = [
@@ -557,7 +560,8 @@ test('default output prints exactly the classified fields of a fully populated e
         'private-tool-sentinel', 'output-tool-sentinel', 'completed-tool-sentinel',
         'failed-tool-sentinel', 'latency-tool-sentinel', 'private-server-sentinel',
         'private-mcp-tool-sentinel', 'completed-server-sentinel', 'failed-server-sentinel',
-        'latency-server-sentinel', 'customer-skill-sentinel', 'extension-id-sentinel'
+        'latency-server-sentinel', 'customer-skill-sentinel', 'extension-id-sentinel',
+        'customer-agent-sentinel', 'other-agent-sentinel'
     ].filter(sentinel => result.stdout.includes(sentinel));
     assert.deepEqual(leaked, []);
 });

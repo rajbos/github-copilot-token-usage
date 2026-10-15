@@ -20,7 +20,7 @@ import {
 // Imported from the shared contract rather than re-declared locally, so a shape
 // change in src/types.ts surfaces here as a type error instead of silently
 // drifting out of sync with what the extension host actually sends.
-import type { AutomaticCompactionStats, AvailableToolEntry, ContextPressureStats, ContextWindowStats, MemoryFilesAnalysisView, ServerMemoriesAnalysisView, ToolCurationAnalysis } from '../../../../src/types';
+import type { AgentSource, AgentUsage, AutomaticCompactionStats, AvailableToolEntry, ContextPressureStats, ContextWindowStats, MemoryFilesAnalysisView, ServerMemoriesAnalysisView, ToolCurationAnalysis } from '../../../../src/types';
 import { CONTEXT_NEAR_LIMIT_RATIO } from '../../../../src/types';
 import { getSessionContextFillPercent, isSessionNearContextLimit } from '../../../../src/utils/contextFill';
 
@@ -81,6 +81,8 @@ type UsageAnalysisPeriod = {
 	sessions: number;
 	toolCalls: ToolCallUsage;
 	modeUsage: ModeUsage;
+	/** Custom agents the user selected; absent when none were used in the period. */
+	agentUsage?: AgentUsage;
 	contextReferences: ContextReferenceUsage;
 	mcpTools: McpToolUsage;
 	modelSwitching: ModelSwitchingAnalysis;
@@ -929,6 +931,41 @@ return `
 </div>`;
 }
 
+const AGENT_SOURCE_LABELS: Record<AgentSource, string> = { github: '.github/agents', claude: '.claude/agents', user: 'user profile', other: '' };
+
+/** One period's custom-agent list: each agent under the exact name the session log shows, busiest first. */
+function renderAgentUsageList(agentUsage: AgentUsage | undefined, title: string): string {
+	const entries = Object.entries(agentUsage?.byAgent ?? {}).sort((a, b) => b[1].requests - a[1].requests || a[0].localeCompare(b[0]));
+	const total = entries.reduce((sum, [, e]) => sum + e.requests, 0);
+	const bars = entries.length === 0
+		? `<div class="bar-label"><span>${escapeHtml(localize('usage.customAgents.none'))}</span></div>`
+		: entries.map(([name, e]) => {
+			const source = AGENT_SOURCE_LABELS[e.source];
+			const label = `⚡ ${escapeHtml(name)}${source ? ` <span style="opacity: 0.7;">(${escapeHtml(source)})</span>` : ''}`;
+			return renderModeBarItem(label, e.requests, total, 'linear-gradient(90deg, #ec4899, #f472b6)');
+		}).join('');
+	return `
+<div>
+<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">${title}</h4>
+<div class="bar-chart">${bars}
+</div>
+</div>`;
+}
+
+/** Custom Agents section; omitted entirely when neither period used a custom agent. */
+function buildCustomAgentsSectionHtml(stats: UsageAnalysisStats): string {
+	if (!stats.today.agentUsage && !stats.last30Days.agentUsage) { return ''; }
+	return `
+			<div class="section" id="section-custom-agents">
+				<div class="section-title"><span>⚡</span><span>${escapeHtml(localize('usage.customAgents.title'))}</span></div>
+				<div class="section-subtitle">${escapeHtml(localize('usage.customAgents.subtitle'))}</div>
+				<div class="two-column">
+					${renderAgentUsageList(stats.today.agentUsage, '📅 Today')}
+					${renderAgentUsageList(stats.last30Days.agentUsage, '📊 Last 30 Days')}
+				</div>
+			</div>`;
+}
+
 // ─── Multi-model period helper ──────────────────────────────────────────────────
 
 /** Renders the top stats-grid section (avg models, switching frequency, max models). */
@@ -1590,6 +1627,25 @@ function sanitizeModeUsage(mode: any): ModeUsage {
 	};
 }
 
+const AGENT_SOURCES: readonly AgentSource[] = ['github', 'claude', 'user', 'other'];
+
+/** Rebuild a period's custom-agent usage from an untrusted payload: numbers coerced, sources whitelisted. */
+function sanitizeAgentUsage(raw: unknown): AgentUsage | undefined {
+	const byAgent = (raw as { byAgent?: unknown } | null | undefined)?.byAgent;
+	if (!byAgent || typeof byAgent !== 'object') { return undefined; }
+	const clean: AgentUsage['byAgent'] = {};
+	for (const [name, value] of Object.entries(byAgent)) {
+		const entry = value as { sessions?: unknown; requests?: unknown; source?: unknown } | null;
+		if (name === '__proto__' || !entry || typeof entry !== 'object') { continue; }
+		clean[name] = {
+			sessions: coerceNumber(entry.sessions),
+			requests: coerceNumber(entry.requests),
+			source: AGENT_SOURCES.find(s => s === entry.source) ?? 'other',
+		};
+	}
+	return Object.keys(clean).length > 0 ? { byAgent: clean } : undefined;
+}
+
 function sanitizeContextRefs(refs: any): ContextReferenceUsage {
 	const r = (refs && typeof refs === 'object') ? refs : {};
 	return {
@@ -1627,6 +1683,7 @@ function sanitizePeriod(period: any): UsageAnalysisPeriod {
 	return {
 		sessions: coerceNumber(p.sessions),
 		modeUsage: sanitizeModeUsage(p.modeUsage),
+		agentUsage: sanitizeAgentUsage(p.agentUsage),
 		contextReferences: sanitizeContextRefs(p.contextReferences),
 		toolCalls: {
 			total: coerceNumber(toolCalls.total),
@@ -4639,6 +4696,7 @@ function buildActivityTabPanelHtml(
 					${renderModeBarChart(stats.last30Days.modeUsage, '📊 Last 30 Days')}
 				</div>
 			</div>`);
+	const customAgentsHtml = safeSectionHtml('Custom Agents', () => buildCustomAgentsSectionHtml(stats));
 	const contextRefsHtml = safeSectionHtml('Context References', () => buildContextRefsHtml(stats, todayTotalRefs, last30DaysTotalRefs));
 	const modelEfficiencyHtml = safeSectionHtml('Model Efficiency', () => buildModelEfficiencySectionHtml(stats));
 	const contextWindowHtml = safeSectionHtml('Context Window', () => buildContextWindowSectionHtml(stats));
@@ -4652,6 +4710,7 @@ function buildActivityTabPanelHtml(
 			${sessionsSummaryHtml}
 			<!-- Mode Usage Section -->
 			${modeUsageHtml}
+			${customAgentsHtml}
 
 			${sectionGroupHeadingHtml('💵', 'usage.band.spend.title', 'usage.band.spend.subtitle')}
 			${modelCostHtml}

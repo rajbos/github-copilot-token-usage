@@ -56,7 +56,9 @@ Nothing on disk. Stdout is one JSON line.
   `mcpTools` and `skillCalls` keep only their scalar totals; their maps keyed by tool, MCP
   server or skill name (`byTool`, `byServer`, `byName`, `latencyBy*`, ...) are dropped
   (`NAME_KEYED_USAGE_FIELDS`, line 199), because those names come from the session and can
-  carry a private project or customer name. `modelSwitching.selectedModelExtensions` (the ids
+  carry a private project or customer name. `agentUsage` keeps only `agents` (how many custom
+  agents were used) and `requests`; its `byAgent` map, keyed by the agent's name, is dropped for
+  the same reason (`sanitizeCacheEntry`). `modelSwitching.selectedModelExtensions` (the ids
   of the extensions that supplied the selected models, which can name a private or internal
   provider extension) is dropped; the model ids themselves are kept. `title`, `repository`,
   `workspaceFolderPath`, top-level `languageUsage` (keyed by file extension, or by the whole

@@ -454,6 +454,8 @@ export interface SessionUsageAnalysis {
   modeUsage: ModeUsage;
   /** Per-interaction autonomy level (autopilot/auto vs supervised). Absent when no surface reported one. */
   autonomyUsage?: AutonomyUsage;
+  /** Custom agents the user selected, per request. Absent when the session used none. */
+  agentUsage?: AgentUsage;
   contextReferences: ContextReferenceUsage;
   mcpTools: McpToolUsage;
   /** Agent-skill invocation counts for this session. See {@link SkillCallUsage}. */
@@ -580,6 +582,25 @@ export interface AutonomyUsage {
   supervised: number; // Copilot "interactive" / "default", Claude Code "default" / "acceptEdits"
   plan: number; // Plan mode
   other: number; // Recognised-but-unclassified values (e.g. Claude "bypassPermissions")
+}
+
+/** Where a custom agent definition lives: `.github/agents`, `.claude/agents`, the user profile, or elsewhere/unknown. */
+export type AgentSource = 'github' | 'claude' | 'user' | 'other';
+
+/** Requests handled under one custom agent, keyed by the name exactly as the session log shows it. */
+export interface AgentUsageEntry {
+  sessions: number;
+  requests: number;
+  source: AgentSource;
+}
+
+/**
+ * Custom agents the user selected (agent picker, @agent, /agent), not subagents the model
+ * delegated to. Sources: VS Code Copilot Chat `modeInfo` / `inputState.mode`, Copilot CLI
+ * `subagent.selected`.
+ */
+export interface AgentUsage {
+  byAgent: Record<string, AgentUsageEntry>;
 }
 
 export interface ContextReferenceUsage {
@@ -1199,6 +1220,8 @@ export interface UsageAnalysisPeriod {
   modeUsage: ModeUsage;
   /** Aggregated per-interaction autonomy level across the period's sessions. */
   autonomyUsage?: AutonomyUsage;
+  /** Aggregated custom-agent usage across the period's sessions. Absent when none used one. */
+  agentUsage?: AgentUsage;
   contextReferences: ContextReferenceUsage;
   mcpTools: McpToolUsage;
   /** Aggregated agent-skill invocation counts across the period's sessions. See {@link SkillCallUsage}. */
