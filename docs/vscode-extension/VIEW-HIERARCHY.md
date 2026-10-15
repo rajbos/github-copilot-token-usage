@@ -101,7 +101,7 @@ Analysis. Copy it when a view outgrows one row of tabs.
 ### Efficiency (`efficiency`)
 
 Flat tab strip, defined as a single array — the cheapest sub-view structure in the codebase:
-Trends · Tools & Skills · Month vs Month · Cost Attribution · Prompt Cache · Models · Value ·
+Trends · Skills · Month vs Month · Cost Attribution · Prompt Cache · Models · Value ·
 Combined.
 
 ### Views with no sub-views

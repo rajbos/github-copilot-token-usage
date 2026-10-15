@@ -109,7 +109,7 @@ support is worse than no filter, because it produces a confident wrong number.
 | **Trends** | Time/resolution, Editor | Editor is meaningful for every workflow ratio. No vendor/model filter: blended ratios confound task mix with the provider-versus-Copilot cost basis |
 | **Combined** | Time/resolution, Editor | Lets output validate shorter/cheaper sessions within one environment |
 | **Models** | Time/resolution, Model A/B, model vendor, Editor | Vendor narrows the eligible models without silently aggregating unlike ones; editor conditions the comparison on an environment |
-| **Tools & Skills** | Time/resolution, Editor | Skills are invoked in a particular agent/editor. Model vendor is not a reliable causal dimension here |
+| **Skills** | Time/resolution, Editor | Skills are invoked in a particular agent/editor. Model vendor is not a reliable causal dimension here |
 | **Cost Attribution** | Time pair only | Its purpose is to explain a *whole population's* model-mix cost change. A mixed-model session appears in several categorical groups at once, which would double-count the volume term |
 | **Month vs Month** | Existing adjacent calendar periods | Its detailed metrics are global; a filter could not produce exact duration/retry/apply values |
 | **Value** | None (global 30-day context) | PR outcomes are not currently attributable to a session, editor or model |

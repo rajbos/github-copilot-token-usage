@@ -151,3 +151,10 @@ test('view index search: highlights merged substring ranges only', () => {
 	assert.deepEqual(highlightRanges('Tool latency', 'latncy'), []);
 	assert.deepEqual(highlightRanges('aaa', 'aa a'), [[0, 3]]);
 });
+
+test('view index: the Efficiency skills tab is labelled Skills and keeps its tab id', () => {
+	const entry = findViewIndexEntry('efficiency.skills');
+	assert.deepEqual(entry?.path, ['AI Efficiency Trends', 'Skills']);
+	assert.deepEqual(entry?.nav, { tab: 'skills' });
+	assert.doesNotMatch(entry?.node.description ?? '', /\btool use\b/i);
+});

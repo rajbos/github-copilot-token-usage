@@ -258,7 +258,7 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 		keywords: ['roi', 'value', 'productivity'],
 		children: [
 			{ id: 'efficiency.trends', title: 'Trends', description: 'Cost per 1K lines changed, tokens and turns per session, edit retry and apply rate over time.', nav: { tab: 'trends' } },
-			{ id: 'efficiency.skills', title: 'Tools & Skills', description: 'Tool and skill use over time, and whether skill-assisted sessions run differently.', nav: { tab: 'skills' } },
+			{ id: 'efficiency.skills', title: 'Skills', description: 'Skill use over time, and whether skill-assisted sessions run differently.', nav: { tab: 'skills' } },
 			{ id: 'efficiency.deltas', title: 'Month vs Month', description: 'Each efficiency metric for this month against last month.', keywords: ['compare', 'delta'], nav: { tab: 'deltas' } },
 			{
 				id: 'efficiency.attribution',
