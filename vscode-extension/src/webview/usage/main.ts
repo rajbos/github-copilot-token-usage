@@ -3999,7 +3999,7 @@ const WORKTREE_DETAIL_COLUMNS: DataTableColumn<WorktreeResult>[] = [
 	{
 		id: "actions", label: "Actions",
 		render: (w) => ({ html: `<div class="worktree-row-actions">
-      <button type="button" class="worktree-row-btn worktree-reveal-link" data-path="${encodeURIComponent(w.path)}" title="Show this folder in the OS file explorer">📂 Open</button>
+      <button type="button" class="worktree-row-btn worktree-reveal-link" data-path="${encodeURIComponent(w.path)}" title="${escapeHtml(localize("usage.worktreeCleanup.openTitle"))}">${escapeHtml(localize("usage.worktreeCleanup.open"))}</button>
       ${buildWorktreeDeleteButtonHtml(w)}
     </div>` }),
 	},
@@ -4008,12 +4008,12 @@ const WORKTREE_DETAIL_COLUMNS: DataTableColumn<WorktreeResult>[] = [
 /** Row "Delete" button; swapped for a disabled status while the running cleanup owns that worktree. */
 function buildWorktreeDeleteButtonHtml(w: WorktreeResult): string {
 	if (worktreeCleanupCurrent?.path === w.path && worktreeCleanupInProgress) {
-		return '<button type="button" class="worktree-row-btn" disabled>⏳ Deleting…</button>';
+		return `<button type="button" class="worktree-row-btn" disabled>${escapeHtml(localize("usage.worktreeCleanup.deletingBtn"))}</button>`;
 	}
 	if (isWorktreeInCleanupQueue(w.path)) {
-		return '<button type="button" class="worktree-row-btn" disabled title="Part of the running cleanup">⏱ Queued</button>';
+		return `<button type="button" class="worktree-row-btn" disabled title="${escapeHtml(localize("usage.worktreeCleanup.queuedBtnTitle"))}">${escapeHtml(localize("usage.worktreeCleanup.queuedBtn"))}</button>`;
 	}
-	return `<button type="button" class="worktree-row-btn danger worktree-delete-link" data-path="${encodeURIComponent(w.path)}" data-branch="${encodeURIComponent(w.branch)}" data-repo="${encodeURIComponent(w.repoLabel)}" data-pushed="${escapeHtml(w.pushed)}" title="Remove via git worktree remove (asks for confirmation)">🗑️ Delete</button>`;
+	return `<button type="button" class="worktree-row-btn danger worktree-delete-link" data-path="${encodeURIComponent(w.path)}" data-branch="${encodeURIComponent(w.branch)}" data-repo="${encodeURIComponent(w.repoLabel)}" data-pushed="${escapeHtml(w.pushed)}" title="${escapeHtml(localize("usage.worktreeCleanup.deleteBtnTitle"))}">${escapeHtml(localize("usage.worktreeCleanup.deleteBtn"))}</button>`;
 }
 
 /** The per-worktree details table shown when a repository row is expanded; one stable table per repository. */
@@ -4058,10 +4058,10 @@ function buildWorktreeRepoCleanupButtonHtml(repoLabel: string, worktrees: Worktr
 function buildWorktreeRepoCleanupBadge(repoLabel: string): string {
 	if (!worktreeCleanupInProgress) { return ""; }
 	if (worktreeCleanupCurrent?.repoLabel === repoLabel) {
-		return '<span class="worktree-repo-badge active" role="status">⏳ Cleaning…</span>';
+		return `<span class="worktree-repo-badge active" role="status">${escapeHtml(localize("usage.worktreeCleanup.badgeCleaning"))}</span>`;
 	}
 	const waiting = worktreeCleanupWaitingByRepo.get(repoLabel) ?? 0;
-	return waiting > 0 ? `<span class="worktree-repo-badge">⏱ Queued (${waiting})</span>` : "";
+	return waiting > 0 ? `<span class="worktree-repo-badge">${escapeHtml(localizeFormat("usage.worktreeCleanup.badgeQueued", String(waiting)))}</span>` : "";
 }
 
 /** Counts, per repository, the queued worktrees the running cleanup has not reached yet. */
@@ -4316,7 +4316,7 @@ function renderWorktreeCleanupCurrent(): string {
 	const size = worktreeResults.find((w) => w.path === cur.path);
 	const sizeText = size && knownBytes(size) > 0 ? ` (${formatFileSize(knownBytes(size))})` : "";
 	return `<div class="worktree-cleanup-current">
-      <div>⏳ Now deleting <strong>${escapeHtml(cur.branch)}</strong> in <strong>${escapeHtml(cur.repoLabel || "unknown repository")}</strong>${escapeHtml(sizeText)}</div>
+      <div>${localizeFormat("usage.worktreeCleanup.nowDeleting", `<strong>${escapeHtml(cur.branch)}</strong>`, `<strong>${escapeHtml(cur.repoLabel || localize("usage.worktreeCleanup.unknownRepo"))}</strong>`, escapeHtml(sizeText))}</div>
       <div class="worktree-cleanup-log-path">${escapeHtml(cur.path)}</div>
     </div>`;
 }
@@ -4326,11 +4326,13 @@ function renderWorktreeCleanupStatus(): string {
 		const { processed, total } = worktreeCleanupStatus;
 		const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
 		const waiting = [...countWaitingCleanupByRepo().values()].reduce((s, n) => s + n, 0);
-		const queuedText = waiting > 0 ? ` · ${waiting} waiting in the queue` : "";
+		const progressText = waiting > 0
+			? localizeFormat("usage.worktreeCleanup.progressWaiting", String(processed), String(total), String(waiting))
+			: localizeFormat("usage.worktreeCleanup.progress", String(processed), String(total));
 		return `<div class="info-box worktree-cleanup-sticky" style="margin-top: 12px;">
       <div class="info-box-title">🧹 Cleaning up pushed worktrees…</div>
       ${renderWorktreeCleanupCurrent()}
-      <div>${processed} / ${total} processed${queuedText}</div>
+      <div>${escapeHtml(progressText)}</div>
       <div>${escapeHtml(localizeFormat("usage.worktreeCleanup.recovered", formatFileSize(getCleanupRecoveredBytes())))}</div>
       <div class="worktree-progress-bar"><div class="worktree-progress-fill" style="width: ${pct}%;"></div></div>
     </div>${renderWorktreeCleanupLog()}`;
@@ -4344,7 +4346,7 @@ function renderWorktreeCleanupStatus(): string {
 	return `<div class="info-box" style="margin-top: 12px;">
     <div class="info-box-title">🧹 Cleanup finished</div>
     <div>✅ ${deleted} deleted · ⏭️ ${skipped} skipped (uncommitted/unpushed) · ${errors > 0 ? `❌ ${errors} error${errors === 1 ? "" : "s"}` : "0 errors"}</div>
-    <div class="worktree-cleanup-recovered" title="${getCleanupRecoveredBytes().toLocaleString()} bytes">💾 ${escapeHtml(localizeFormat("usage.worktreeCleanup.recovered", formatFileSize(getCleanupRecoveredBytes())))}</div>
+    <div class="worktree-cleanup-recovered" title="${escapeHtml(localizeFormat("usage.worktreeCleanup.sizeChipTitle", getCleanupRecoveredBytes().toLocaleString()))}">💾 ${escapeHtml(localizeFormat("usage.worktreeCleanup.recovered", formatFileSize(getCleanupRecoveredBytes())))}</div>
   </div>${renderWorktreeCleanupLog()}`;
 }
 

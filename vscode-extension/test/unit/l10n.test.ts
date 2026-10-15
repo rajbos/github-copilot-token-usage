@@ -1981,6 +1981,19 @@ const WORKTREE_CLEANUP_KEYS: Record<string, { en: string; zh: string }> = {
 	'usage.worktreeCleanup.starterPrompt': { en: 'This git worktree (branch "{0}") could not be deleted automatically. Inspect its current state: run git status and git diff against its upstream or base branch, summarize what changed and why, and tell me whether the work is already merged or pushed elsewhere, so I can decide whether it is safe to delete this worktree.', zh: '此 git 工作树（分支“{0}”）无法自动删除。请检查其当前状态：运行 git status，并对比其上游或基础分支运行 git diff，总结改动内容及原因，并告诉我这些工作是否已合并或已推送到别处，以便我判断是否可以安全删除此工作树。' },
 	'usage.worktreeCleanup.unknownError': { en: 'unknown error', zh: '未知错误' },
 	'usage.worktreeCleanup.revealMissing': { en: '"{0}" no longer exists on disk.', zh: '“{0}”在磁盘上已不存在。' },
+	'usage.worktreeCleanup.open': { en: "📂 Open", zh: "📂 打开" },
+	'usage.worktreeCleanup.openTitle': { en: "Show this folder in the OS file explorer", zh: "在系统文件管理器中显示此文件夹" },
+	'usage.worktreeCleanup.deleteBtn': { en: "🗑️ Delete", zh: "🗑️ 删除" },
+	'usage.worktreeCleanup.deleteBtnTitle': { en: "Remove via git worktree remove (asks for confirmation)", zh: "通过 git worktree remove 移除（需要确认）" },
+	'usage.worktreeCleanup.deletingBtn': { en: "⏳ Deleting…", zh: "⏳ 正在删除…" },
+	'usage.worktreeCleanup.queuedBtn': { en: "⏱ Queued", zh: "⏱ 已排队" },
+	'usage.worktreeCleanup.queuedBtnTitle': { en: "Part of the running cleanup", zh: "属于正在运行的清理" },
+	'usage.worktreeCleanup.badgeCleaning': { en: "⏳ Cleaning…", zh: "⏳ 正在清理…" },
+	'usage.worktreeCleanup.badgeQueued': { en: "⏱ Queued ({0})", zh: "⏱ 已排队（{0}）" },
+	'usage.worktreeCleanup.nowDeleting': { en: "⏳ Now deleting {0} in {1}{2}", zh: "⏳ 正在删除 {1} 中的 {0}{2}" },
+	'usage.worktreeCleanup.unknownRepo': { en: "unknown repository", zh: "未知仓库" },
+	'usage.worktreeCleanup.progress': { en: "{0} / {1} processed", zh: "已处理 {0} / {1}" },
+	'usage.worktreeCleanup.progressWaiting': { en: "{0} / {1} processed · {2} waiting in the queue", zh: "已处理 {0} / {1} · 队列中还有 {2} 个等待" },
 };
 
 test('worktree cleanup delete-feedback keys resolve to their English text', () => {
