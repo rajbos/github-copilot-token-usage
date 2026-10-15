@@ -1822,17 +1822,17 @@ function applyMemoryFilesAnalysis(sanitized: UsageAnalysisStats, raw: any): void
 }
 
 // Validated pass-through for missedPotential (array of objects)
-function _applyMissedPotential(sanitized: UsageAnalysisStats, raw: any): void {
+function _applyMissedPotential(sanitized: UsageAnalysisStats, raw: { missedPotential?: unknown }): void {
 	if (Array.isArray(raw.missedPotential)) {
 		sanitized.missedPotential = raw.missedPotential.filter(
-			(w: any) => w && typeof w === 'object' && typeof w.workspacePath === 'string'
+			(w: unknown) => !!w && typeof w === 'object' && typeof (w as { workspacePath?: unknown }).workspacePath === 'string'
 		) as MissedPotentialWorkspace[];
 	}
 }
 
 // Pass through curationAnalysis (already structured server-side).
 // Normalize required array/object fields so rendering paths don't throw on partial payloads.
-function _applyCurationAnalysis(sanitized: UsageAnalysisStats, raw: any): void {
+function _applyCurationAnalysis(sanitized: UsageAnalysisStats, raw: { curationAnalysis?: unknown }): void {
 	const curationAnalysis = _sanitizeCurationAnalysis(raw.curationAnalysis);
 	if (curationAnalysis) {
 		sanitized.curationAnalysis = curationAnalysis;
