@@ -167,7 +167,7 @@ function _ulEnsureCard(onCardRecreated: () => void): boolean {
 	return true;
 }
 
-export function updateUsageLoadingProgress(message: any, onCardRecreated: () => void = () => undefined): void {
+export function updateUsageLoadingProgress(message: { stage?: unknown; details?: unknown } | null | undefined, onCardRecreated: () => void = () => undefined): void {
 	if (!_ulEnsureCard(onCardRecreated)) { return; }
 	const stage = typeof message?.stage === 'string' ? message.stage : '';
 	const mapped = USAGE_STAGE_MAP[stage];

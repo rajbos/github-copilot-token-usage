@@ -5729,17 +5729,17 @@
       "sample": "This section couldn't be displayed due to an unexpected error. Other sections ar"
     },
     {
-      "file": "vscode-extension/src/webview/usage/main.ts",
+      "file": "vscode-extension/src/webview/usage/usageLoadingCard.ts",
       "hash": "8829f8f098a7",
       "count": 1,
-      "line": 611,
+      "line": 93,
       "sample": "📊 Analyzing Usage Data"
     },
     {
-      "file": "vscode-extension/src/webview/usage/main.ts",
+      "file": "vscode-extension/src/webview/usage/usageLoadingCard.ts",
       "hash": "d0d38d265b6b",
       "count": 1,
-      "line": 613,
+      "line": 95,
       "sample": "Initializing…"
     },
     {
