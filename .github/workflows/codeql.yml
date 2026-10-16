@@ -192,15 +192,18 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-          # Always use the newest CodeQL CLI release instead of the runner
-          # toolcache version. The toolcache lags CodeQL releases, and the
-          # java-kotlin extractor rejects Kotlin versions newer than the CLI
-          # supports ("Kotlin version X is too recent") — this broke on the
-          # Kotlin 2.4.20 Dependabot bump because the toolcache only had
-          # 2.27.0 while 2.27.1 (with 2.4.20 support) was already out. The
-          # bundle-download endpoints (*.githubusercontent.com) are already in
-          # the harden-runner allowlist above for exactly this fallback.
-          tools: latest
+          # java-kotlin only: download the newest CodeQL bundle instead of the
+          # version the pinned action ships with. The action's default, and its
+          # legacy `tools: latest` alias (which means `linked`), resolve to the
+          # bundled CLI (2.27.0 at v4.38.1). The java-kotlin extractor rejects
+          # Kotlin versions newer than the CLI supports ("Kotlin version X is
+          # too recent"), which broke on the Kotlin 2.4.20 Dependabot bump that
+          # needs 2.27.1+. An explicit bundle URL is what makes init fetch a
+          # newer CLI. It is Linux-only, so the windows-latest csharp job keeps
+          # the default (an empty string counts as unset). github.com and the
+          # *.githubusercontent.com hosts it redirects to are already in the
+          # harden-runner allowlist above.
+          tools: ${{ matrix.language == 'java-kotlin' && 'https://github.com/github/codeql-action/releases/latest/download/codeql-bundle-linux64.tar.gz' || '' }}
           # Use the broader security-extended query suite (adds lower-precision /
           # lower-severity security queries on top of the default security-and-quality
           # set) across every language in the matrix.
