@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Tray, Menu, clipboard, ipcMain, nativeTheme, protocol, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { randomBytes } from 'crypto';
 import { checkForUpdates, getUpdateState, installUpdate, startUpdateChecks } from './updater';
 import {
@@ -18,9 +19,12 @@ import {
     processSessionFile,
     loadCache,
     saveCache,
+    getCacheStats,
 } from '../../cli/src/helpers';
 import { standaloneUsageAnalysisViewInputs, withUsageAnalysisViewStats } from '../../cli/src/usageAnalysisView';
 import { buildUsageAnalysisViewData } from '../../src/usageAnalysisViewBuilder';
+import { buildCacheInfo, buildDiagnosticsViewData, buildSessionFolderData } from '../../src/diagnosticsViewBuilder';
+import { getEcosystems } from '../../cli/src/sessionProcessing';
 import { getEditorSourceFromPath, runWithConcurrency } from '../../cli/src/analysis';
 import type { DailyTokenStats, DetailedStats, UsageAnalysisStats } from '../../src/types';
 import type { EfficiencySessionInput } from '../../src/efficiencyAnalysis';
@@ -717,20 +721,29 @@ async function buildPanelHtml(panel: PanelId): Promise<string> {
             // the bundle has registered its listener.
             afterBundleScript = `window.postMessage(${JSON.stringify({ command: 'sessionFilesLoaded', detailedSessionFiles: [] })}, '*');`;
         }
+        // The shared builder the extension uses. Fields that are VS Code state (backend sync,
+        // globalState counters, Copilot quota and budgets, per-editor skill counts) are passed
+        // as the builder's documented "not available in this host" values.
+        const cache = getCacheStats();
         const diagData = {
-            report: buildDiagnosticReport(files.length),
-            sessionFiles,
-            detailedSessionFiles,
-            sessionFolders: [],
-            cacheInfo: { size: 0, sizeInMB: 0, lastUpdated: null, location: 'Desktop (in-memory)', storagePath: null },
-            backendStorageInfo: null,
-            backendConfigured: false,
-            isDebugMode: false,
-            globalStateCounters: { openCount: 0, unknownMcpOpenCount: 0, fluencyBannerDismissed: false, unknownMcpDismissedVersion: '' },
-            displaySettings: { showTokens: true, showCost: true, monthlyBudget: 0 },
-            quotaEntitlements: null,
-            toolCallStats: null,
-            toolFamilies,
+            ...buildDiagnosticsViewData({
+                report: buildDiagnosticReport(files.length),
+                sessionFiles,
+                detailedSessionFiles,
+                sessionFolders: buildSessionFolderData(files, { findEcosystem: f => getEcosystems().find(e => e.handles(f)) ?? null, homeDir: os.homedir() }),
+                // Entry count of the CLI walk cache; its on-disk size is not measured here.
+                cacheInfo: buildCacheInfo(cache.entries, 0, 'Desktop session cache', null),
+                backendStorageInfo: null,
+                backendConfigured: false,
+                isDebugMode: false,
+                globalStateCounters: { openCount: 0, unknownMcpOpenCount: 0, fluencyBannerDismissed: false, unknownMcpDismissedVersion: '' },
+                displaySettings: { showTokens: true, showCost: true, monthlyBudget: 0 },
+                quotaEntitlements: null,
+                accountBudgets: [],
+                usageStats: await getUsageStats(),
+                skillCallsByEditor: null,
+                toolFamilies,
+            }),
             diagnosticPaths,
         };
         initialDataScript = panelPayloadScript('__INITIAL_DIAGNOSTICS__', diagData);

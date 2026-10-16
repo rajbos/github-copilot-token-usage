@@ -139,12 +139,13 @@ The CLI (`cli/`) is a thin consumer of the shared TypeScript modules in the repo
 | Chart webview payload | `buildChartData()` | `chartDataBuilder.ts` |
 | Efficiency webview payload | `buildEfficiencyViewData()` | `efficiencyViewBuilder.ts` |
 | Usage Analysis webview payload | `buildUsageAnalysisViewData()` (+ `buildWorkspaceCustomization()`, `buildCurationAnalysis()`, `evaluateUsageInsights()` for its inputs) | `usageAnalysisViewBuilder.ts`, `customizationMatrix.ts`, `toolCuration.ts`, `insightsEngine.ts` |
+| Diagnostics webview payload | `buildDiagnosticsViewData()` (+ `buildSessionFolderData()`, `buildCacheInfo()`) | `diagnosticsViewBuilder.ts` |
 
 Webview payloads follow the same rule: one function in `src/` builds a payload and
 every host (extension, CLI, desktop) calls it, differing only in how it gathers inputs
-and in host settings. The Chart, Efficiency and Usage Analysis payloads (table above)
-do this today; the Diagnostics payload is still partly assembled per host and is being
-moved over (#2418). Never add a host-side copy of a payload builder,
+and in host settings. The Chart, Efficiency, Usage Analysis and Diagnostics payloads
+(table above) do this today. A field a host cannot produce is passed as the builder's
+documented "not available in this host" value, never omitted. Never add a host-side copy of a payload builder,
 and move a payload's assembly to `src/` when you change it — otherwise a field a view
 starts requiring reaches one host and not the others.
 

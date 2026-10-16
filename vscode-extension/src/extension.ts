@@ -227,6 +227,15 @@ import type { IEcosystemAdapter } from '../../src/ecosystemAdapter';
 import type { CopilotCliAdapter } from '../../src/adapters/copilotCliAdapter';
 import { WindsurfDataAccess } from '../../src/windsurf';
 import { getEcosystemDisplayName } from '../../src/ecosystemAdapter';
+import {
+  buildCacheInfo,
+  buildDiagnosticsViewData,
+  buildSessionFolderData as buildSharedSessionFolderData,
+  diagnosticsSkillCallStats,
+  diagnosticsToolCallStats,
+  skillDescriptionsFromStats,
+  type SessionFolderEntry,
+} from '../../src/diagnosticsViewBuilder';
 import { buildAdapterRegistry, createDataAccessInstances } from '../../src/adapters';
 import { CopilotAppDataAccess, type SessionContextWindow } from './copilotAppData';
 import { PiDataAccess } from '../../src/pi';
@@ -8349,10 +8358,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 *    list (sourced from Claude Code's and Copilot CLI's official docs) is the last resort.
 	 */
 	private _buildSkillDescriptions(): Record<string, string> {
-		const descriptions: Record<string, string> = {};
-		for (const t of this.currentUsageAnalysisStats?.curationAnalysis?.availableTools ?? []) {
-			if (t.source === 'skill' && t.description) { descriptions[t.name] = t.description; }
-		}
+		const descriptions = skillDescriptionsFromStats(this.currentUsageAnalysisStats);
 		const builtins = builtinCommandDescriptionsData as { [key: string]: string };
 		for (const skillName of this._skillCallsByEditorAccum.keys()) {
 			if (descriptions[skillName]) { continue; }
@@ -14608,8 +14614,8 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
         accountBudgets: this._accountBudgets,
         // Carried with the list so the webview takes its full quota-card refresh path if a direct update was missed.
         quotaEntitlements: this._copilotQuotaEntitlements,
-        toolCallStats: this.currentUsageAnalysisStats?.last30Days?.toolCalls ?? null,
-        skillCallStats: this.currentUsageAnalysisStats?.last30Days?.skillCalls ?? null,
+        toolCallStats: diagnosticsToolCallStats(this.currentUsageAnalysisStats),
+        skillCallStats: diagnosticsSkillCallStats(this.currentUsageAnalysisStats),
         skillCallsByEditor: this._lastSkillCallsByEditor ?? null,
         skillDescriptions: this._buildSkillDescriptions(),
         toolFamilies: getToolFamilies(),
@@ -14643,35 +14649,8 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
     return sessionFileData;
   }
 
-  private buildSessionFolderData(sessionFiles: string[]): { dir: string; count: number; editorName: string }[] {
-    const dirCounts = new Map<string, number>();
-    const dirEditorNames = new Map<string, string>();
-    const pathModule = require("path");
-    const copilotSessionStateDir = pathModule.join(os.homedir(), ".copilot", "session-state");
-    for (const file of sessionFiles) {
-      const eco = this.findEcosystem(file);
-      if (eco) {
-        const editorRoot = eco.getEditorRoot(file);
-        dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
-        dirEditorNames.set(editorRoot, getEcosystemDisplayName(eco, file));
-        continue;
-      }
-      const parts = file.split(/[\\\/]/);
-      const userIdx = parts.findIndex((p: string) => p.toLowerCase() === "user");
-      let editorRoot = "";
-      if (userIdx > 0) {
-        editorRoot = pathModule.join(...parts.slice(0, Math.min(parts.length, userIdx + 2)));
-      } else {
-        editorRoot = pathModule.dirname(file);
-      }
-      if (editorRoot.startsWith(copilotSessionStateDir) && editorRoot !== copilotSessionStateDir) {
-        editorRoot = copilotSessionStateDir;
-      }
-      dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
-    }
-    return Array.from(dirCounts.entries()).map(([dir, count]) => ({
-      dir, count, editorName: dirEditorNames.get(dir) || this.getEditorNameFromRoot(dir),
-    }));
+  private buildSessionFolderData(sessionFiles: string[]): SessionFolderEntry[] {
+    return buildSharedSessionFolderData(sessionFiles, { findEcosystem: (f) => this.findEcosystem(f), homeDir: os.homedir() });
   }
 
   /**
@@ -15085,7 +15064,7 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
     report: string,
     sessionFiles: { file: string; size: number; modified: string }[],
     detailedSessionFiles: SessionFileDetails[],
-    sessionFolders: { dir: string; count: number }[] = [],
+    sessionFolders: SessionFolderEntry[] = [],
     backendStorageInfo: any = null,
   ): string {
     const nonce = getNonce();
@@ -15096,13 +15075,7 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
     const persistedCacheSummary = this.resolvePersistedCacheSummary();
     const storageFilePath = this.findGlobalStateStoragePath();
 
-    const cacheInfo = {
-      size: this.cacheManager.cache.size,
-      sizeInMB: cacheSizeInMB,
-      lastUpdated: this.cacheManager.cache.size > 0 ? new Date().toISOString() : null,
-      location: persistedCacheSummary,
-      storagePath: storageFilePath,
-    };
+    const cacheInfo = buildCacheInfo(this.cacheManager.cache.size, cacheSizeInMB, persistedCacheSummary, storageFilePath);
 
     const inspector = require('inspector') as { url(): string | undefined };
     const isDebugMode = inspector.url() !== undefined;
@@ -15115,17 +15088,17 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
     };
 
     const initialData = JSON.stringify({
-      report, sessionFiles, detailedSessionFiles, sessionFolders,
-      cacheInfo, backendStorageInfo,
-      backendConfigured: this.isBackendConfigured(), isDebugMode, globalStateCounters,
-      displaySettings: { showTokens: this.getStatusBarShowTokensSetting(), showCost: this.getStatusBarShowCostSetting(), monthlyBudget: this.getMonthlyBudgetSetting() },
-      quotaEntitlements: this._copilotQuotaEntitlements,
-      accountBudgets: this._accountBudgets,
-      toolCallStats: this.currentUsageAnalysisStats?.last30Days?.toolCalls ?? null,
-      skillCallStats: this.currentUsageAnalysisStats?.last30Days?.skillCalls ?? null,
-      skillCallsByEditor: this._lastSkillCallsByEditor ?? null,
-      skillDescriptions: this._buildSkillDescriptions(),
-      toolFamilies: getToolFamilies(),
+      ...buildDiagnosticsViewData({
+        report, sessionFiles, detailedSessionFiles, sessionFolders, cacheInfo, backendStorageInfo,
+        backendConfigured: this.isBackendConfigured(), isDebugMode, globalStateCounters,
+        displaySettings: { showTokens: this.getStatusBarShowTokensSetting(), showCost: this.getStatusBarShowCostSetting(), monthlyBudget: this.getMonthlyBudgetSetting() },
+        quotaEntitlements: this._copilotQuotaEntitlements,
+        accountBudgets: this._accountBudgets,
+        usageStats: this.currentUsageAnalysisStats,
+        skillCallsByEditor: this._lastSkillCallsByEditor ?? null,
+        extraSkillDescriptions: this._buildSkillDescriptions(),
+        toolFamilies: getToolFamilies(),
+      }),
       ...this.getWebviewLocaleFields(),
     }).replace(/</g, "\\u003c");
 
