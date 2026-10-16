@@ -173,10 +173,6 @@ function getChartTitle(): string {
 	return titleText;
 }
 
-function getAggregationIndicator(): string {
-	return PERIOD_LABELS[currentPeriod].aggregationLabel;
-}
-
 /** Returns period data for the current period, falling back to legacy flat fields. */
 function getActivePeriodData(data: InitialChartData): ChartPeriodData {
 	let period: ChartPeriodData;
@@ -1073,8 +1069,6 @@ function buildCostViewConfig(period: ChartPeriodData, baseOptions: ReturnType<ty
 	const lastIdx = period.costData.length - 1;
 	const projExtra = !isRolling && lastIdx >= 0 ? computeProjectionExtra(period.costData[lastIdx], getCurrentPeriodFraction(currentPeriod)) : null;
 	const projDs = projExtra !== null ? [{ label: PROJECTION_LABELS[currentPeriod], data: period.costData.map((_: number, i: number) => i === lastIdx ? projExtra : 0), backgroundColor: 'rgba(34, 197, 94, 0.2)', borderColor: 'rgba(34, 197, 94, 0.5)', borderWidth: 1, yAxisID: 'y' }] : [];
-	const budget = monthlyBudget;
-	const budgetDs = budget > 0 && currentPeriod === 'month' ? [{ label: `Monthly Budget ($${budget.toFixed(2)})`, data: period.labels.map(() => budget), type: 'line' as const, borderColor: 'rgba(255, 165, 0, 0.9)', borderWidth: 2, borderDash: [6, 4], pointRadius: 0, fill: false, yAxisID: 'y' }] : [];
 	const rollingLabel = getRollingLabel();
 	const showBudgetLine = currentPeriod === 'month' && monthlyBudget > 0;
 	const budgetLinePlugin = showBudgetLine ? buildBudgetLinePlugin(monthlyBudget) : null;
@@ -1344,29 +1338,6 @@ function migrateViewKey(view: string): MetricSplit {
 		taskCategory: { metric: 'tokens', split: 'task' },
 	};
 	return map[view] ?? { metric: 'tokens', split: 'total' };
-}
-
-function applyInitialChartState(data: InitialChartData): void {
-	if (data.initialPeriod) { currentPeriod = data.initialPeriod; }
-	if (data.initialMetric) { currentMetric = data.initialMetric; }
-	if (data.initialSplit) { currentSplit = data.initialSplit; return; }
-	if (!data.initialView) { return; }
-	const m = migrateViewKey(data.initialView);
-	currentMetric = m.metric;
-	currentSplit = m.split;
-}
-
-function applySavedChartState(saved: ChartWebviewState): void {
-	currentPeriod = saved.period;
-	currentDisplayMode = saved.displayMode;
-	if (saved.view && !saved.metric) {
-		const m = migrateViewKey(saved.view);
-		currentMetric = m.metric;
-		currentSplit = m.split;
-		return;
-	}
-	currentMetric = saved.metric ?? 'tokens';
-	currentSplit = saved.split ?? 'total';
 }
 
 function restoreChartState(initialData: InitialChartData): void {
