@@ -27,8 +27,8 @@ importers:
         specifier: ^6.0.1
         version: 6.0.1
       electron:
-        specifier: ^44.6.0
-        version: 44.6.0
+        specifier: ^44.7.0
+        version: 44.7.0
       electron-builder:
         specifier: ^26.15.3
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)
@@ -44,8 +44,8 @@ importers:
 
 packages:
 
-  '@electron-internal/extract-zip@1.0.3':
-    resolution: {integrity: sha512-OjKpjB7gohtEjZiq6nDx1egqjZJhGPN1iFOIED+NFhB/MMkXw/XRcHjh1DGXKT5z2W9eW7Jy2UKU3gpjvusFTQ==}
+  '@electron-internal/extract-zip@1.0.5':
+    resolution: {integrity: sha512-+bqFCP98pLI0Tt0XQo1TmlXtwjWchISndDOxCkEcIuUgXWpBnLyRI+2DU+mesvnMMX6L1XDqYNA0lXNDHd/yiA==}
     engines: {node: '>=22.12.0'}
 
   '@electron/asar@3.4.1':
@@ -61,8 +61,8 @@ packages:
     resolution: {integrity: sha512-F+nKc0xW+kVbBRhFzaMgPy3KwmuNTYX1fx6+FxxoSnNgwYX6LD7AKBTWkU0MQ6IBoe7dz069CNkR673sPAgkCQ==}
     engines: {node: '>=14'}
 
-  '@electron/get@5.0.0':
-    resolution: {integrity: sha512-pjoBpru1KdEtcExBnuHAP1cAc/5faoedw0hzJkL3o4/IJp7HNF1+fbrdxT3gMYRX2oJfvnA/WXeCTVQpYYxyJA==}
+  '@electron/get@5.1.0':
+    resolution: {integrity: sha512-3kSBtG8ObcTVfXanm5vVJ6UnBLEVmVsRk1M+vGqCuMBV+XLCbJYuWQful+yIy0GQDsSlK0kHEriEHn7SPk4EnA==}
     engines: {node: '>=22.12.0'}
 
   '@electron/notarize@2.5.0':
@@ -675,8 +675,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@44.6.0:
-    resolution: {integrity: sha512-qjzKZ82yTsAoo0Q/gqdy4PEMQkzYpukZqIduaHWZYHapFhK9wgWwU4YId60xHmwTCraqF4AfVCm05o90dZJKMQ==}
+  electron@44.7.0:
+    resolution: {integrity: sha512-aUq9/zLAAFYc+a9gy6cd0C3Y/N/RmovLCD8TV8LhIzNhuND6HEgsu96jJz9cbAxvckSPv+Trf2PKEjktoZgFkw==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -1372,7 +1372,7 @@ packages:
 
 snapshots:
 
-  '@electron-internal/extract-zip@1.0.3': {}
+  '@electron-internal/extract-zip@1.0.5': {}
 
   '@electron/asar@3.4.1':
     dependencies:
@@ -1400,7 +1400,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@electron/get@5.0.0':
+  '@electron/get@5.1.0':
     dependencies:
       debug: 4.4.3
       env-paths: 3.0.0
@@ -2016,10 +2016,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@44.6.0:
+  electron@44.7.0:
     dependencies:
-      '@electron-internal/extract-zip': 1.0.3
-      '@electron/get': 5.0.0
+      '@electron-internal/extract-zip': 1.0.5
+      '@electron/get': 5.1.0
       '@types/node': 24.19.2
     transitivePeerDependencies:
       - supports-color
