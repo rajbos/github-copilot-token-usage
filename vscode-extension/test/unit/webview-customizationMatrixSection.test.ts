@@ -237,6 +237,16 @@ test('statusBadge: unknown renders a neutral ? badge, not the missing ✕', () =
 	assert.match(statusBadgeHtml('❌'), />✕<\/span>$/);
 });
 
+test('statusBadge: each status uses a themed CSS class with no inline colours', () => {
+	const cases: Array<[string, string, string]> = [['✅', 'fresh', '✓'], ['⚠️', 'stale', '!'], ['❓', 'unknown', '?'], ['❌', 'missing', '✕']];
+	for (const [status, modifier, glyph] of cases) {
+		const html = statusBadgeHtml(status);
+		assert.match(html, new RegExp(`^<span class="status-badge status-badge--${modifier}"`));
+		assert.match(html, new RegExp(`>${glyph}</span>$`));
+		assert.doesNotMatch(html, /style=|rgba|#[0-9a-f]{6}/i);
+	}
+});
+
 test('customizationMatrix: the filter toggles once from the label text and from a plain change event', () => {
 	const data = matrix([row('a', 3), row('b', 2, { instructions: '❌', agents: '❌' }), row('c', 1)]);
 	const dom = new JSDOM(`<body>${buildCustomizationSectionHtml(data)}</body>`, { pretendToBeVisual: true });
