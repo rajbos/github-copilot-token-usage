@@ -141,7 +141,7 @@ jobs:
       if: steps.check_changes.outputs.has_changes == 'true'
       working-directory: vscode-extension
       run: |
-        npx vsce package --pre-release \
+        npx vsce package --pre-release --no-dependencies \
           --baseImagesUrl https://raw.githubusercontent.com/rajbos/ai-engineering-fluency/main/vscode-extension
 
     - name: Validate localization bundle in VSIX

@@ -233,7 +233,7 @@ jobs:
         if [ "${{ inputs.publish_pre_release }}" == "true" ]; then
           PRE_RELEASE_FLAG="--pre-release"
         fi
-        npx vsce package $PRE_RELEASE_FLAG --baseImagesUrl https://raw.githubusercontent.com/rajbos/ai-engineering-fluency/main/vscode-extension
+        npx vsce package $PRE_RELEASE_FLAG --no-dependencies --baseImagesUrl https://raw.githubusercontent.com/rajbos/ai-engineering-fluency/main/vscode-extension
       
     # Legacy VSIX creation disabled — migration flow is complete, no longer publishing copilot-token-tracker.
     # - name: Create legacy VSIX (copilot-token-tracker)
