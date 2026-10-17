@@ -1918,3 +1918,24 @@ background: var(--bg-tertiary);
 .tool-exec-table .tool-exec-num {
 	white-space: nowrap;
 }
+
+/* Status badges (statusBadgeHtml): tinted from the shared theme tokens so they follow light, dark and high-contrast themes */
+.status-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	border-radius: 4px;
+	font-size: 12px;
+	font-weight: 700;
+	flex-shrink: 0;
+	color: var(--status-badge-color);
+	background: color-mix(in srgb, var(--status-badge-color) 20%, transparent);
+	border: 1px solid color-mix(in srgb, var(--status-badge-color) 50%, transparent);
+}
+
+.status-badge--fresh { --status-badge-color: var(--success-fg); }
+.status-badge--stale { --status-badge-color: var(--warning-fg); }
+.status-badge--unknown { --status-badge-color: var(--text-muted); }
+.status-badge--missing { --status-badge-color: var(--error-fg); }
