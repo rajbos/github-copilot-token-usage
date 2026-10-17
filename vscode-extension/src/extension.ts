@@ -7040,7 +7040,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			recentSessions,
 			correctionReport,
 			repeatedTasks,
-			curationAnalysis: timedStepSync(this.log.bind(this), 'tool curation analysis', () => this.computeCurationAnalysis(last30DaysStats, startedAtGeneration)),
+			curationAnalysis: this.computeCurationAnalysis(last30DaysStats, startedAtGeneration),
 			agenticDailyTrend,
 			autoCompactionsLast7Days,
 			memoryFilesAnalysis: timedStepSync(this.log.bind(this), 'memory files analysis', () => this.computeMemoryFilesAnalysis(startedAtGeneration)),
