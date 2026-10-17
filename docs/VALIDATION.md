@@ -233,7 +233,7 @@ rule out machine load.
 | `build` | types, lint, json, l10n, compile, **contract**, unit tests |
 | `ui-checks` (PRs only) | **interaction smoke**, **visual view diff vs the merge base** |
 | `ui-checks-comment.yml` (`workflow_run`, same-repo PRs) | posts the screenshots as a PR comment (holds `GH_PAT`; runs from the default branch) |
-| `desktop-build` (`desktop-build.yml`) | desktop type-check, **desktop message contract**, **webview page shell**, production build, build-output check; host view sync (informational) |
+| `desktop-build` (`desktop-build.yml`) | desktop type-check, **desktop message contract**, **webview page shell**, production build, **headless render of every view**, build-output check; host view sync (informational) |
 | `validate-skills` / `security-classification` | **every skill that ships scripts has a `SECURITY.md` or an exempt/pending entry** (`node scripts/validate-skill-security.js`, over all skills) |
 
 `ui-checks` renders every view in its initial state and in each tab/mode it
@@ -315,12 +315,15 @@ Two things to know about that comment:
 ## Desktop app
 
 The desktop app (`desktop/`) renders the extension's webview bundles in Electron
-with its own host code in `desktop/src/main.ts`. Nothing about that wiring fails
-to compile when it drifts, so three checks compare the desktop app with the
+with its own host code in `desktop/src/main.ts` and `desktop/src/panelPage.ts` (the
+page of each panel; it imports no `electron`). Nothing about that wiring fails
+to compile when it drifts, so four checks compare the desktop app with the
 extension it borrows from. From `desktop/`:
 
 ```bash
 pnpm run check           # check-types + check:contract + check:shell
+pnpm run build           # the render check loads the built dist/webview
+pnpm run check:render    # headless render of every view (needs Playwright, see below)
 pnpm run check:views     # which extension views the desktop does not ship (report)
 ```
 
@@ -363,8 +366,20 @@ or from the repo root, `./build.ps1 -Project desktop -Target test`.
   overlays `lib/theme-hc.css` / `lib/theme-hc-light.css` (the desktop app does
   not load those, but the visual diff renders with them, and a missing colour
   falls back to the Modern value). The desktop app inlines the two base files rather than
-  keeping its own copy, and the check fails if `main.ts` starts defining tokens
+  keeping its own copy, and the check fails if `panelPage.ts` starts defining tokens
   itself. It also checks the codicon stylesheet and font are copied and linked.
+- **`check:render`** (`scripts/validate-desktop-render.js`) — builds every panel's
+  page with the desktop's own `buildPanelHtml` (`desktop/src/panelPage.ts`) over
+  session files written to a temporary HOME (a populated history and an empty one),
+  loads each page in headless Chromium in the dark and light theme, and fails on a
+  script or console error, a failed request, an empty `#root` or a codicon font that
+  does not load. The app serves a page from `app://panel` and its scripts from
+  `app://static`; the check reproduces that two-origin split with two local servers
+  without CORS headers, so a font linked from the wrong origin fails here too. It
+  needs the built webviews (`pnpm run build`) and Playwright, found the way the
+  visual-diff harness finds it (a global install, or the locked install under
+  `.github/workflows/dependencies/playwright`). It is not part of `pnpm run check`,
+  because of that build and browser; `desktop-build` runs it. It never opens Electron.
 - **`check:views`** — the `sync-host-views` skill, which reports extension views
   the desktop (like Visual Studio and JetBrains) does not ship, and desktop views
   that are bundled but not in `PANEL_MENU` or the other way round.
@@ -373,10 +388,9 @@ The contract and shell checks also run as unit tests in the extension suite
 (`vscode-extension/test/unit/desktopSyncChecks.test.ts`), so an extension change
 that would break the desktop fails there too.
 
-Not covered yet: rendering each desktop view headlessly from the desktop's own
-payload builders (the check that would have caught the blank Chart and
-Diagnostics views). It needs the panel-building code moved out of the
-Electron-only `main.ts`, which waits on the shared payload builder work.
+Not covered: messages the desktop sends *to* a view (such as `loadingStep` and
+`sessionFilesLoaded`), and clicking the views' controls (the render check only loads
+each page).
 
 ## VS Code extension release provenance
 

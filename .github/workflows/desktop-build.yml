@@ -26,6 +26,8 @@ on:
       - 'scripts/validate-desktop-contract.js'
       - 'scripts/validate-webview-contract.js'
       - 'scripts/validate-webview-shell.js'
+      - 'scripts/validate-desktop-render.js'
+      - '.github/workflows/dependencies/playwright/**'
       - '.github/skills/visual-view-diff/lib/theme-*.css'
       - '.github/skills/sync-host-views/**'
       - '.github/workflows/desktop-build.yml'
@@ -75,6 +77,8 @@ jobs:
               - 'scripts/validate-desktop-contract.js'
               - 'scripts/validate-webview-contract.js'
               - 'scripts/validate-webview-shell.js'
+              - 'scripts/validate-desktop-render.js'
+              - '.github/workflows/dependencies/playwright/**'
               - '.github/skills/visual-view-diff/lib/theme-*.css'
               - '.github/skills/sync-host-views/**'
               - '.github/workflows/desktop-build.yml'
@@ -161,6 +165,34 @@ jobs:
             if (missing.length) { console.error("Missing from the desktop build:", missing.join(", ")); process.exit(1); }
             console.log("Desktop build contains all " + expected.length + " expected files.");
           '
+
+      # The browser build Playwright downloads is pinned by the locked version, so
+      # the lock file hash is an exact cache key (same setup as ci.yml's ui-checks).
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('.github/workflows/dependencies/playwright/package-lock.json') }}
+
+      - name: Install Playwright Chromium
+        working-directory: .github/workflows/dependencies/playwright
+        env:
+          CACHE_HIT: ${{ steps.playwright-cache.outputs.cache-hit }}
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          if [ "$CACHE_HIT" = "true" ]; then
+            npx --no-install playwright install-deps chromium
+          else
+            npx --no-install playwright install --with-deps chromium
+          fi
+
+      # Builds every panel page with the app's own page builder over fixture
+      # sessions and loads it in headless Chromium: fails on a script error, an
+      # empty #root or a font that does not load. Needs dist/webview from the build.
+      - name: Render every desktop view headlessly
+        working-directory: desktop
+        run: pnpm run check:render
 
       # Informational: views the extension has that the desktop (or another
       # host) does not ship are a product decision, not a build failure.

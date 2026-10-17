@@ -20,7 +20,7 @@
  *      overlays, but the visual diff renders the views with them: a colour
  *      missing there silently falls back to the Modern value in high contrast;
  *   2. the two theme files define the same set of tokens;
- *   3. desktop/src/main.ts takes its tokens from those files rather than
+ *   3. desktop/src/panelPage.ts takes its tokens from those files rather than
  *      defining its own copy, which is how the desktop app drifted before;
  *   4. the desktop app ships the codicon stylesheet and font, and links the
  *      stylesheet from its panel pages, when the views use codicons.
@@ -44,7 +44,8 @@ const WEBVIEW_SOURCE_DIRS = [
   path.join(REPO_ROOT, 'vscode-extension', 'src', 'webview'),
   path.join(REPO_ROOT, 'src', 'webview'),
 ];
-const DESKTOP_MAIN = path.join(REPO_ROOT, 'desktop', 'src', 'main.ts');
+// Builds every panel page (theme blocks, codicon link); main.ts only serves them.
+const DESKTOP_PAGE = path.join(REPO_ROOT, 'desktop', 'src', 'panelPage.ts');
 const DESKTOP_ESBUILD = path.join(REPO_ROOT, 'desktop', 'esbuild.js');
 
 const TOKEN = /--vscode-[A-Za-z0-9-]+/g;
@@ -126,16 +127,16 @@ function analyse({ themeDir = THEME_DIR } = {}) {
   }
 
   // 3. The desktop takes its tokens from the shared theme files.
-  const main = fs.readFileSync(DESKTOP_MAIN, 'utf8');
+  const main = fs.readFileSync(DESKTOP_PAGE, 'utf8');
   for (const name of THEME_FILES) {
     if (!main.includes(`visual-view-diff/lib/${name}`)) {
-      findings.push(`desktop/src/main.ts does not import ${name}; its panels would miss theme tokens the views use`);
+      findings.push(`desktop/src/panelPage.ts does not import ${name}; its panels would miss theme tokens the views use`);
     }
   }
   const ownDefinitions = definedTokens(main);
   if (ownDefinitions.size > 0) {
     findings.push(
-      `desktop/src/main.ts defines its own --vscode-* tokens (${[...ownDefinitions].slice(0, 3).join(', ')}…); ` +
+      `desktop/src/panelPage.ts defines its own --vscode-* tokens (${[...ownDefinitions].slice(0, 3).join(', ')}…); ` +
         'add them to the shared theme files instead so the lists cannot drift',
     );
   }
@@ -152,7 +153,7 @@ function analyse({ themeDir = THEME_DIR } = {}) {
       }
     }
     if (!/<link[^>]+href="[^"]*codicons\/codicon\.css"/.test(main)) {
-      findings.push('desktop/src/main.ts does not link codicons/codicon.css from its panel pages; the views use codicon glyphs');
+      findings.push('desktop/src/panelPage.ts does not link codicons/codicon.css from its panel pages; the views use codicon glyphs');
     }
   }
 
