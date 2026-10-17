@@ -41,6 +41,7 @@ import {
 	compareModels,
 	computeModelPeriodMetrics,
 	computeSkillImpact,
+	MIN_SESSION_SHARE_FOR_COMPARE,
 	efficiencyTodayKey,
 	filterModelsByVendor,
 	filterSessionsByEditor,
@@ -78,6 +79,12 @@ import { createEfficiencyWebviewReadyNotifier, isValueSignalsPayload } from './v
 import { renderModelMixTable } from './modelMixTable';
 import { fmtValue, renderModelComparisonTable, renderSkillImpactTable } from './efficiencyTables';
 import { buildAttributionTooltip } from './attributionText';
+import {
+	BUCKET_DRILL_BUTTON_ID, BUCKET_PICK_ID, bucketPickerHtml, contextButtonHtml, renderBucketDetail,
+	renderBucketDetailPlaceholder, renderModelBucketDetail, renderSkillBucketDetail,
+} from './bucketDetail';
+import { buildBucketDetail, buildModelBucketDetail, buildSkillBucketDetail } from '../../../../src/efficiencyBucketDetail';
+import { getModelDisplayName } from '../../../../src/webview/shared/modelUtils';
 import { installSurfaceNavigation } from '../shared/surfaceNavigation';
 
 // Minimal structural types for the dynamically imported Chart.js bundle —
@@ -396,16 +403,57 @@ function renderScopeToolbar(d: EfficiencyViewData, s: ScopedData): string {
 type ChartClickElement = { index: number };
 
 /**
- * Turns a click on an aggregated data point into a drill-down into the days it
- * contains. Returns undefined when the series is already daily, so Chart.js is
- * not given a handler that would do nothing.
+ * Turns a click on a data point into selecting that period, which opens its
+ * detail region. Drilling into the days is a separate, explicit button in that
+ * region, so a click never silently rewrites the chart's range.
  */
 function drillClickHandler(s: ScopedData): ((event: unknown, elements: ChartClickElement[]) => void) | undefined {
-	if (!s.supported || !canDrillInto(s.resolution)) { return undefined; }
+	if (!s.supported) { return undefined; }
 	return (_event, elements) => {
 		const bucket = elements.length > 0 ? s.buckets[elements[0].index] : undefined;
-		if (bucket) { applyScope(drillInto(scope, bucket)); }
+		if (bucket) { selectBucket(s, bucket.key, false); }
 	};
+}
+
+// ── Selected-period drill-down ─────────────────────────────────────────
+/** The selected period; paired with its resolution so a key from one width never selects a different bucket at another. */
+let selectedBucket: { resolution: EfficiencyBucketResolution; key: string } | null = null;
+
+function selectedBucketIndex(s: ScopedData): number {
+	if (!selectedBucket || selectedBucket.resolution !== s.resolution) { return -1; }
+	return s.buckets.findIndex(b => b.key === selectedBucket?.key);
+}
+
+function selectBucket(s: ScopedData, key: string, focusPicker: boolean): void {
+	selectedBucket = key ? { resolution: s.resolution, key } : null;
+	render();
+	if (focusPicker) { document.getElementById(BUCKET_PICK_ID)?.focus(); }
+}
+
+/** Picker plus live detail region for the active tab; empty when the scope cannot carry buckets. */
+function renderBucketSection(d: EfficiencyViewData, s: ScopedData, tab: 'trends' | 'combined' | 'skills' | 'models'): string {
+	if (!s.supported || s.buckets.length === 0) { return ''; }
+	const index = selectedBucketIndex(s);
+	const picker = `<div class="bucket-controls">${bucketPickerHtml(s.buckets, index >= 0 ? s.buckets[index].key : '')}</div>`;
+	const base = index >= 0 ? buildBucketDetail(s.points, index, payloadNow(d)) : null;
+	if (!base) { return picker + renderBucketDetailPlaceholder(); }
+	const canDrill = canDrillInto(s.resolution);
+	if (tab === 'skills') {
+		const skill = buildSkillBucketDetail(s.skills.weeks, index);
+		return picker + (skill ? renderSkillBucketDetail(skill, base, canDrill) : renderBucketDetailPlaceholder());
+	}
+	if (tab === 'models') {
+		const spec = MODEL_TREND_METRICS.find(m => m.id === modelState.trendMetric) ?? MODEL_TREND_METRICS[0];
+		const scale = spec.unit === 'percent' ? 100 : 1;
+		const days = scopedModelDaily(d);
+		const entries = trendModels().map(model => {
+			const series = buildModelBucketSeries(days, model, s.buckets);
+			const detail = buildModelBucketDetail(series, index, m => { const v = spec.pick(m); return v === null ? null : v * scale; }, spec.goodDirection);
+			return { name: getModelDisplayName(model), detail };
+		});
+		return picker + renderModelBucketDetail(base, entries, spec.label, spec.unit, MIN_SESSION_SHARE_FOR_COMPARE, canDrill);
+	}
+	return picker + renderBucketDetail(base, canDrill);
 }
 
 /**
@@ -549,7 +597,7 @@ function renderTrendsTab(d: EfficiencyViewData, s: ScopedData): string {
 			? `<div class="chart-wrap"><canvas id="trend-${spec.id}"></canvas></div>`
 			: `<div class="trend-empty">${escapeHtml(spec.unavailableHint)}</div>`;
 		return `
-			<div class="trend-card">
+			<div class="trend-card" id="trend-card-${spec.id}" tabindex="-1">
 				<h3><span>${spec.title}</span>${spec.available ? trendBadge(spec.values, spec.goodDirection) : ''}</h3>
 				<p class="trend-desc">${escapeHtml(spec.desc)}</p>
 				${body}
@@ -558,6 +606,7 @@ function renderTrendsTab(d: EfficiencyViewData, s: ScopedData): string {
 	return `
 		${renderScopeToolbar(d, s)}
 		<p class="eff-section-note">${escapeHtml(trendsIntro(s))}</p>
+		${renderBucketSection(d, s, 'trends')}
 		<div class="trend-grid">${cards}</div>`;
 }
 
@@ -584,6 +633,15 @@ function trendsIntro(s: ScopedData): string {
 	return parts.join(' ');
 }
 
+/** Month vs Month metrics that have a weekly trend chart; the rest stay explanatory. */
+const DELTA_TREND_TARGETS: Record<string, string> = {
+	'tokens-per-session': 'tokens-per-session',
+	'turns-per-session': 'turns-per-session',
+	'active-minutes-per-session': 'active-minutes',
+	'retry-rate': 'retry-rate',
+	'apply-rate': 'apply-rate',
+};
+
 function renderDeltasTab(d: EfficiencyViewData): string {
 	const cards = d.deltas.map(delta => {
 		let change = '<span class="delta-na">not enough data</span>';
@@ -601,6 +659,7 @@ function renderDeltasTab(d: EfficiencyViewData): string {
 				</div>
 				<div class="delta-prev">was ${fmtValue(delta.prev, delta.unit)} in ${escapeHtml(d.deltaWindows.prev)}</div>
 				<p class="delta-desc">${escapeHtml(delta.description)}</p>
+				${DELTA_TREND_TARGETS[delta.id] ? contextButtonHtml('trend', DELTA_TREND_TARGETS[delta.id], 'efficiency.context.viewTrend', 'efficiency.context.viewTrendAria', delta.label) : ''}
 			</div>`;
 	}).join('');
 	return `
@@ -671,6 +730,7 @@ function renderSkillsTab(d: EfficiencyViewData, s: ScopedData): string {
 		${toolbar}
 		<p class="eff-section-note">${s.skills.totalCalls} skill invocations across ${s.skills.topSkills.length} skill${s.skills.topSkills.length === 1 ? '' : 's'} over ${escapeHtml(s.range.label.toLowerCase())}. Bars stack invocations per skill; the line is the share of sessions that used any skill.</p>
 		<div class="combined-wrap"><canvas id="skills-chart"></canvas></div>
+		${renderBucketSection(d, s, 'skills')}
 		${impactSection}`;
 }
 
@@ -793,7 +853,8 @@ function renderCombinedTab(d: EfficiencyViewData, s: ScopedData): string {
 	return `
 		${renderScopeToolbar(d, s)}
 		<p class="eff-section-note">Everything on one chart. Ratio lines are <b>indexed to 100</b> at their first measured bucket so different units share one axis — a line falling below 100 means that ratio improved (except apply rate, where up is good). Bars show raw lines-of-code output per bucket: efficiency gains only count if the bars hold up.</p>
-		<div class="combined-wrap"><canvas id="combined-chart"></canvas></div>`;
+		<div class="combined-wrap"><canvas id="combined-chart"></canvas></div>
+		${renderBucketSection(d, s, 'combined')}`;
 }
 
 // ── Models tab ─────────────────────────────────────────────────────────
@@ -1272,7 +1333,8 @@ function renderModelsTab(d: EfficiencyViewData, s: ScopedData): string {
 		<h3>Drift over time</h3>
 		<p class="eff-section-note">${escapeHtml(resolutionLabel(s.resolution))} values for each side's model over ${escapeHtml(s.range.label.toLowerCase())}, so a model getting better — or quietly getting worse — is visible. Gaps are buckets where the model was not used. The head-to-head comparison above keeps its own window pickers.</p>
 		<div class="model-trend-controls"><label>Metric ${selectHtml('model-trend-metric', metricOptions, modelState.trendMetric)}</label></div>
-		<div class="model-trend-wrap"><canvas id="model-trend"></canvas></div>`;
+		<div class="model-trend-wrap"><canvas id="model-trend"></canvas></div>
+		${renderBucketSection(d, s, 'models')}`;
 }
 
 /** Why the head-to-head is unavailable, in the terms of whichever selection caused it. */
@@ -1653,6 +1715,53 @@ function wireScopeToolbar(): void {
 	});
 }
 
+/** Wires the selected-period picker and its "show the days" button. */
+function wireBucketControls(): void {
+	document.getElementById(BUCKET_PICK_ID)?.addEventListener('change', ev => {
+		if (!data) { return; }
+		selectBucket(computeScopedData(data), (ev.target as HTMLSelectElement).value, true);
+	});
+	document.getElementById(BUCKET_DRILL_BUTTON_ID)?.addEventListener('click', () => {
+		if (!data) { return; }
+		const s = computeScopedData(data);
+		const bucket = s.buckets[selectedBucketIndex(s)];
+		if (!bucket) { return; }
+		selectedBucket = null;
+		applyScope(drillInto(scope, bucket));
+	});
+}
+
+/**
+ * Month vs Month cards focus their weekly trend; Cost Attribution rows open the
+ * concrete model in Models. Neither narrows the card's own population.
+ */
+function handleContextClick(btn: HTMLButtonElement): void {
+	const target = btn.dataset.target ?? '';
+	if (!data || !target) { return; }
+	if (btn.dataset.ctx === 'trend') {
+		activeTab = 'trends';
+		persistState();
+		render();
+		const card = document.getElementById(`trend-card-${target}`);
+		card?.scrollIntoView?.({ block: 'center' });
+		card?.focus();
+	} else if (btn.dataset.ctx === 'model') {
+		activeTab = 'models';
+		initModelState(data);
+		modelState.modelA = target;
+		persistState();
+		render();
+		document.getElementById('model-trend-metric')?.focus();
+	}
+}
+
+// Delegated, and registered once: the sortable model-mix table re-renders its own rows, which
+// would drop per-button listeners, and render() runs far more often than this needs wiring.
+document.addEventListener('click', ev => {
+	const btn = (ev.target as Element | null)?.closest?.('.eff-context-btn');
+	if (btn) { handleContextClick(btn as HTMLButtonElement); }
+});
+
 /** Wires the Models tab selects; each change updates state and re-renders. */
 function wireModelControls(): void {
 	wireSearchableSelects();
@@ -1684,6 +1793,7 @@ function wireEvents(): void {
 		});
 	});
 	wireScopeToolbar();
+	wireBucketControls();
 	wireModelControls();
 	document.getElementById('btn-refresh')?.addEventListener('click', () => { vscode.postMessage({ command: 'refresh' }); });
 	document.getElementById('btn-details')?.addEventListener('click', () => { vscode.postMessage({ command: 'showDetails' }); });
