@@ -17,3 +17,19 @@ plugins {
 }
 
 rootProject.name = "ai-engineering-fluency"
+
+// Dependency locking for the settings plugins (settings-gradle.lockfile) and the
+// build-script classpath, i.e. the Kotlin and IntelliJ Platform plugins
+// (buildscript-gradle.lockfile). Regenerate with:
+//   ./gradlew dependencies --write-locks
+buildscript {
+    configurations.classpath {
+        resolutionStrategy.activateDependencyLocking()
+    }
+}
+
+gradle.beforeProject {
+    buildscript.configurations.named("classpath") {
+        resolutionStrategy.activateDependencyLocking()
+    }
+}
