@@ -152,6 +152,10 @@ extension; the `desktop-build` workflow runs them on every PR that touches
   `main.ts`. When you add a handler, remove the command's entry.
 - `pnpm run check:shell` — the `--vscode-*` theme tokens come from the
   visual-view-diff harness's `lib/theme-*.css`; add a missing token there.
+- `pnpm run check:render` — after `pnpm run build`: builds every panel page with
+  `src/panelPage.ts` over fixture sessions and loads it headlessly (needs
+  Playwright); fails on script errors, an empty `#root` or a missing codicon font.
+  Page-building code belongs in `panelPage.ts` (no `electron` import), not `main.ts`.
 - `pnpm run check:views` — reports extension views this app does not ship yet.
 
 Details: [docs/VALIDATION.md](../docs/VALIDATION.md#desktop-app).
