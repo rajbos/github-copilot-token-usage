@@ -34,6 +34,13 @@ repositories {
     }
 }
 
+// Pin every resolved dependency (including transitives) in gradle.lockfile for
+// reproducible builds. After changing a dependency version, regenerate with:
+//   ./gradlew dependencies --write-locks
+dependencyLocking {
+    lockAllConfigurations()
+}
+
 kotlin {
     jvmToolchain(21)
     compilerOptions {
