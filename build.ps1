@@ -82,7 +82,7 @@ function Build-VsCode {
     try {
         switch ($Target) {
             'build'   { Ensure-PnpmDeps .; pnpm run validate }
-            'package' { Ensure-PnpmDeps .; pnpm run package; pnpm exec vsce package }
+            'package' { Ensure-PnpmDeps .; pnpm run package; pnpm exec vsce package --no-dependencies }
             'test'    { Ensure-PnpmDeps .; pnpm run test:node }
             'clean'   { Remove-Item -Recurse -Force dist, out -ErrorAction SilentlyContinue }
         }

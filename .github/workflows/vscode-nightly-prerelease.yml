@@ -3,6 +3,13 @@ name: VS Code Nightly Pre-Release
 on:
   schedule:
     - cron: '0 2 * * *'  # 2am UTC daily
+  # Re-run when this workflow itself changes on main, so a fix to the nightly
+  # is verified (and a missed nightly published) without waiting for 2am UTC.
+  # Limited to main: the publish job pushes to the marketplace.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/vscode-nightly-prerelease.yml'
   workflow_dispatch:
     inputs:
       force:
@@ -141,7 +148,7 @@ jobs:
       if: steps.check_changes.outputs.has_changes == 'true'
       working-directory: vscode-extension
       run: |
-        npx vsce package --pre-release \
+        npx vsce package --pre-release --no-dependencies \
           --baseImagesUrl https://raw.githubusercontent.com/rajbos/ai-engineering-fluency/main/vscode-extension
 
     - name: Validate localization bundle in VSIX

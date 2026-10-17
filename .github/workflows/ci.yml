@@ -565,7 +565,7 @@ jobs:
       
     - name: Create VSIX package
       working-directory: vscode-extension
-      run: npx vsce package
+      run: npx vsce package --no-dependencies
 
     - name: Validate localization bundle in VSIX
       working-directory: vscode-extension
