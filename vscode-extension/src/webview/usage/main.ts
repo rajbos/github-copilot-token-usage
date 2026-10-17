@@ -2589,16 +2589,18 @@ const openRepoPrDetails = new Set<string>();
 
 /** Repository cell: the repo link plus its collapsible AI PR detail list, or the fetch error. */
 function repoPrRepositoryCellHtml(r: RepoPrInfo): string {
+	// r.error is already HTML-escaped by sanitizeRepoPrStatsData (like the agent rows' error), so it is
+	// rendered as-is: escaping it again would turn `&` into `&amp;amp;` on screen.
 	const repoLink = `<a href="${escapeHtml(r.repoUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--link-color); font-family:'Courier New',monospace; font-size:12px;">${escapeHtml(r.owner)}/${escapeHtml(r.repo)}</a>`;
 	// Only take the error-only form when the listing produced nothing. A listing that got some pages
 	// and then failed keeps those PRs on purpose, and the freshness banner is already telling the
 	// user the figures are a lower bound — blanking the counts here would contradict it, and would
 	// throw away the one piece of information the failed pass did manage to collect.
 	if (shouldRenderErrorOnlyRow(r.error, r.totalPrs)) {
-		return `${repoLink}<div style="color:var(--text-secondary); font-style:italic; font-size:12px;">${escapeHtml(r.error ?? '')}</div>`;
+		return `${repoLink}<div style="color:var(--text-secondary); font-style:italic; font-size:12px;">${r.error ?? ''}</div>`;
 	}
 	const errorNote = r.error
-		? `<div style="margin-top:2px; color:var(--text-secondary); font-style:italic; font-size:11px;">${escapeHtml(r.error)}</div>`
+		? `<div style="margin-top:2px; color:var(--text-secondary); font-style:italic; font-size:11px;">${r.error}</div>`
 		: '';
 	if (r.aiDetails.length === 0) { return `${repoLink}${errorNote}`; }
 	const items = r.aiDetails.map(d => {

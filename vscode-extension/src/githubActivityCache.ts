@@ -164,6 +164,11 @@ export interface RecordBudget {
  * finds it missing from the cache and refetches it. It is never used to make a total look complete
  * — an incomplete listing keeps its records instead (see the two cache modules' reconcilers).
  *
+ * Guarantees: at most `maxRecords` are kept (so `maxRecords: 0` keeps none). When `maxRecords > 0`
+ * and there is at least one input record, the single most recent record is kept even if it alone
+ * exceeds `maxBytes` — the byte budget only trims *after* the first record — so one oversized
+ * record cannot empty the cache.
+ *
  * @param rank Sort key for a record; higher is kept first (callers pass the parsed `updated_at`).
  * @param sizeOf What to measure against the byte budget. Defaults to the record itself, which is
  *   right when the caller budgets exactly what it persists. A caller that budgets a *wrapper* (to
