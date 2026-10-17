@@ -29,6 +29,7 @@ import type {
 	ModelCompareSelection,
 	ModelCompareWindowId,
 	ModelPeriodMetrics,
+	ModelSessionFilter,
 	SkillImpact,
 	SkillUsageTrends,
 } from '../../../../src/efficiencyAnalysis';
@@ -38,8 +39,10 @@ import {
 	buildEfficiencyBucketSeries,
 	buildModelBucketSeries,
 	buildSkillUsageSeries,
+	DEFAULT_MODEL_SESSION_FILTER,
 	compareModels,
 	computeModelPeriodMetrics,
+	computeOutlierCutoffTokens,
 	computeSkillImpact,
 	MIN_SESSION_SHARE_FOR_COMPARE,
 	efficiencyTodayKey,
@@ -888,10 +891,12 @@ type CompareMode = ModelCompareSelection['mode'];
 const modelState: ModelCompareSelection & {
 	trendMetric: ModelComparisonMetricId;
 	initialized: boolean;
+	sessionFilter: ModelSessionFilter;
 } = {
 	mode: 'models', modelA: '', modelB: '',
 	window: 'last30', windowA: 'lastMonth', windowB: 'thisMonth',
 	trendMetric: 'cost-per-edit-turn', initialized: false,
+	sessionFilter: { ...DEFAULT_MODEL_SESSION_FILTER },
 };
 
 /** Which window ids currently have per-model data, in `WINDOW_OPTIONS` order. */
@@ -965,17 +970,23 @@ function reconcileModelState(d: EfficiencyViewData): void {
 function buildModelComparison(d: EfficiencyViewData): ModelComparison | null {
 	const now = payloadNow(d);
 	const scopedDays = scopedModelDaily(d);
+	const filter = modelState.sessionFilter;
 	if (modelState.mode === 'periods') {
 		const wA = resolveModelCompareWindow(modelState.windowA, now);
 		const wB = resolveModelCompareWindow(modelState.windowB, now);
-		const a = computeModelPeriodMetrics(selectDaysInWindow(scopedDays, wA), modelState.modelA, wA.label);
-		const b = computeModelPeriodMetrics(selectDaysInWindow(scopedDays, wB), modelState.modelA, wB.label);
+		const daysA = selectDaysInWindow(scopedDays, wA);
+		const daysB = selectDaysInWindow(scopedDays, wB);
+		// One cutoff for both sides, so neither is trimmed by a different yardstick.
+		const cutoff = computeOutlierCutoffTokens([{ days: daysA, model: modelState.modelA }, { days: daysB, model: modelState.modelA }], filter);
+		const a = computeModelPeriodMetrics(daysA, modelState.modelA, wA.label, filter, cutoff);
+		const b = computeModelPeriodMetrics(daysB, modelState.modelA, wB.label, filter, cutoff);
 		return a && b ? compareModels(a, b) : null;
 	}
 	const w = resolveModelCompareWindow(modelState.window, now);
 	const days = selectDaysInWindow(scopedDays, w);
-	const a = computeModelPeriodMetrics(days, modelState.modelA, w.label);
-	const b = computeModelPeriodMetrics(days, modelState.modelB, w.label);
+	const cutoff = computeOutlierCutoffTokens([{ days, model: modelState.modelA }, { days, model: modelState.modelB }], filter);
+	const a = computeModelPeriodMetrics(days, modelState.modelA, w.label, filter, cutoff);
+	const b = computeModelPeriodMetrics(days, modelState.modelB, w.label, filter, cutoff);
 	return a && b ? compareModels(a, b) : null;
 }
 
@@ -1120,7 +1131,14 @@ function renderModelControls(d: EfficiencyViewData, eligible: ComparableModel[])
 			<div class="model-controls-break"></div>
 			<label>${caption('modelA')} ${searchableSelectHtml('model-a', models, modelState.modelA)}</label>
 			<label>${caption('modelB')} ${searchableSelectHtml('model-b', modelBOptions(models), modelState.modelB)}</label>`;
-	return `<div class="model-controls"><label>${caption('mode')} ${modeSelect}</label>${body}</div>`;
+	const trimSelect = selectHtml('model-outlier-trim', [
+		{ value: 'p95', label: localize('efficiency.models.outliers.p95') },
+		{ value: 'p90', label: localize('efficiency.models.outliers.p90') },
+		{ value: 'none', label: localize('efficiency.models.outliers.none') },
+	], modelState.sessionFilter.outlierTrim);
+	const mixedToggle = `<label class="model-toggle"><input type="checkbox" id="model-include-mixed"${modelState.sessionFilter.includeMixedSessions ? ' checked' : ''}> ${caption('includeMixed')}</label>`;
+	const filterRow = `<div class="model-controls-break"></div><label>${caption('outliers')} ${trimSelect}</label>${mixedToggle}`;
+	return `<div class="model-controls"><label>${caption('mode')} ${modeSelect}</label>${body}${filterRow}</div>`;
 }
 
 /** Renders a side's headline volume so the reader can judge the sample for themselves. */
@@ -1132,6 +1150,17 @@ function sideSummary(m: ModelPeriodMetrics, side: 'A' | 'B'): string {
 			<div class="model-side-period">${escapeHtml(m.periodLabel)}</div>
 			<div class="model-side-stats">${m.sessions} sessions · ${m.editTurns} edit turns · ${formatCompact(m.tokens)} tokens · $${m.cost.toFixed(2)}</div>
 		</div>`;
+}
+
+/** One line saying which sessions the table is built from, so a trimmed comparison never passes as the whole dataset. */
+function filterSummaryHtml(cmp: ModelComparison): string {
+	const f = modelState.sessionFilter;
+	const parts = [localize(f.includeMixedSessions ? 'efficiency.models.filterSummary.mixed' : 'efficiency.models.filterSummary.single')];
+	if (f.outlierTrim !== 'none') { parts.push(localize(`efficiency.models.outliers.${f.outlierTrim}`)); }
+	const mixed = cmp.a.filtering.excludedMixed + cmp.b.filtering.excludedMixed;
+	const outliers = cmp.a.filtering.excludedOutliers + cmp.b.filtering.excludedOutliers;
+	if (mixed + outliers > 0) { parts.push(localizeFormat('efficiency.models.filterSummary.excluded', String(mixed), String(outliers))); }
+	return `<p class="model-filter-summary">${escapeHtml(parts.join(' · '))}</p>`;
 }
 
 function comparisonTableHtml(cmp: ModelComparison): string {
@@ -1150,7 +1179,8 @@ function verdictHtml(cmp: ModelComparison): string {
 	const side = winner === 'a' ? cmp.a : cmp.b;
 	const count = winner === 'a' ? wins.a : wins.b;
 	const other = winner === 'a' ? wins.b : wins.a;
-	return `<div class="model-verdict ${winner === 'b' ? 'improving' : 'declining'}">🏆 ${escapeHtml(side.displayName)} (${escapeHtml(side.periodLabel)}) wins ${count} of ${count + other} decisive metrics.</div>`;
+	const text = localizeFormat('efficiency.models.verdict.wins', side.displayName, side.periodLabel, String(count), String(count + other));
+	return `<div class="model-verdict win-${winner}">${escapeHtml(text)}</div>`;
 }
 
 function caveatsHtml(cmp: ModelComparison): string {
@@ -1318,6 +1348,7 @@ function renderModelsTab(d: EfficiencyViewData, s: ScopedData): string {
 		? `
 		<p class="eff-section-note">Head-to-head efficiency. Costs use <b>provider/API rates</b>, so this measures the models themselves rather than a billing plan — “model vendor” above is the model's own provider, not who bills for the call. Metrics whose sample was too small show as “—”. Session-level signals (duration, lines changed) are split across a session's models by token share.</p>
 		<div class="model-sides">${sideSummary(cmp.a, 'A')}${sideSummary(cmp.b, 'B')}</div>
+		${filterSummaryHtml(cmp)}
 		${verdictHtml(cmp)}
 		${comparisonTableHtml(cmp)}
 		${caveatsHtml(cmp)}
@@ -1778,6 +1809,10 @@ function wireModelControls(): void {
 	bind('window', v => { modelState.window = v as ModelCompareWindowId; });
 	bind('window-a', v => { modelState.windowA = v as ModelCompareWindowId; });
 	bind('window-b', v => { modelState.windowB = v as ModelCompareWindowId; });
+	bind('model-outlier-trim', v => { modelState.sessionFilter.outlierTrim = v as ModelSessionFilter['outlierTrim']; });
+	bind('model-include-mixed', () => {
+		modelState.sessionFilter.includeMixedSessions = (document.getElementById('model-include-mixed') as HTMLInputElement).checked;
+	});
 	bind('model-trend-metric', v => { modelState.trendMetric = v as ModelComparisonMetricId; });
 }
 

@@ -1,4 +1,4 @@
-import type { ApplyButtonUsage, DailyModelEfficiency, DailyTokenStats, ModelUsage, UsageAnalysisPeriod } from './types';
+import type { ApplyButtonUsage, DailyModelEfficiency, DailyModelEfficiencyEntry, DailyTokenStats, ModelSessionRecord, ModelUsage, UsageAnalysisPeriod } from './types';
 import type { CacheBreakagePeriodStats } from './cacheBreakage';
 import { getModelDisplayName } from './webview/shared/modelUtils';
 import { getModelBillingProvider } from './chartDataBuilder';
@@ -1275,8 +1275,11 @@ export interface ModelPeriodMetrics {
 	sampleSufficient: boolean;
 	/** True when the window carries enough edit turns for the edit-based rates. */
 	editSampleSufficient: boolean;
+	/** What the mixed-model / outlier session filter did to this side. */
+	filtering: ModelFilterOutcome;
 }
 
+const FILTER_UNAVAILABLE_CAVEAT = 'This data predates per-session records, so the mixed-model and outlier filters could not be applied. Refresh the stats to enable them.';
 /** Minimum session equivalents before a model's period ratios are trusted. */
 export const MIN_SESSION_SHARE_FOR_COMPARE = 5;
 /** Minimum edit turns before a model's edit-based rates are trusted. */
@@ -1412,19 +1415,137 @@ function gatedRatio(numerator: number, denominator: number, gate = true): number
  * Aggregates one model's daily efficiency entries across `days` into a single
  * comparable profile. Returns null when the model never appears in the window.
  */
-export function computeModelPeriodMetrics(days: ModelDailyInput[], model: string, periodLabel: string): ModelPeriodMetrics | null {
-	const totals = createEmptyDailyModelEfficiencyEntry();
+export function computeModelPeriodMetrics(
+	days: ModelDailyInput[],
+	model: string,
+	periodLabel: string,
+	filter: ModelSessionFilter = UNFILTERED_MODEL_SESSIONS,
+	/** Pooled outlier cutoff from {@link computeOutlierCutoffTokens}; sessions above it are excluded. */
+	outlierCutoffTokens: number | null = null,
+): ModelPeriodMetrics | null {
+	const entries = days.map(day => day.modelEfficiency?.[model]);
+	if (!entries.some(Boolean)) { return null; }
 	const taskMixRaw = new Map<string, number>();
-	let seen = false;
-	for (const day of days) {
-		const entry = day.modelEfficiency?.[model];
-		if (!entry) { continue; }
-		seen = true;
-		mergeDailyModelEfficiency({ [model]: totals }, { [model]: entry });
-		accumulateTaskMix(day, model, taskMixRaw);
-	}
-	if (!seen) { return null; }
+	for (const day of days) { accumulateTaskMix(day, model, taskMixRaw); }
 
+	const hasRecords = entries.some(entry => entry?.sessionRecords?.length);
+	const needsRecords = !filter.includeMixedSessions || outlierCutoffTokens !== null;
+	const filtering: ModelFilterOutcome = { applied: needsRecords && hasRecords, unavailable: needsRecords && !hasRecords, excludedMixed: 0, excludedOutliers: 0 };
+	const totals = filtering.applied
+		? totalsFromSessionRecords(entries, filter, outlierCutoffTokens, filtering)
+		: totalsFromDayAggregates(model, entries);
+	return finishPeriodMetrics(model, periodLabel, totals, taskMixRaw, filtering);
+}
+
+function totalsFromDayAggregates(model: string, entries: (DailyModelEfficiencyEntry | undefined)[]): DailyModelEfficiencyEntry {
+	const totals = createEmptyDailyModelEfficiencyEntry();
+	for (const entry of entries) {
+		if (entry) { mergeDailyModelEfficiency({ [model]: totals }, { [model]: entry }); }
+	}
+	return totals;
+}
+
+/** Sums the sessions that survive the filter, counting what it dropped into `outcome`. */
+function totalsFromSessionRecords(
+	entries: (DailyModelEfficiencyEntry | undefined)[],
+	filter: ModelSessionFilter,
+	outlierCutoffTokens: number | null,
+	outcome: ModelFilterOutcome,
+): DailyModelEfficiencyEntry {
+	const totals = createEmptyDailyModelEfficiencyEntry();
+	for (const rec of entries.flatMap(entry => entry?.sessionRecords ?? [])) {
+		if (rec.mixed && !filter.includeMixedSessions) { outcome.excludedMixed++; }
+		else if (outlierCutoffTokens !== null && rec.inputTokens + rec.outputTokens > outlierCutoffTokens) { outcome.excludedOutliers++; }
+		else { addSessionRecord(totals, rec); }
+	}
+	return totals;
+}
+
+function addSessionRecord(totals: DailyModelEfficiencyEntry, rec: ModelSessionRecord): void {
+	totals.sessions += 1;
+	totals.sessionShare += rec.share;
+	totals.calls += rec.calls;
+	totals.editTurns += rec.editTurns;
+	totals.oneShotEditTurns += rec.oneShotEditTurns;
+	totals.retries += rec.retries;
+	totals.selfCorrections += rec.selfCorrections;
+	totals.inputTokens += rec.inputTokens;
+	totals.outputTokens += rec.outputTokens;
+	totals.cachedReadTokens += rec.cachedReadTokens;
+	totals.cost += rec.cost;
+	totals.linesAdded += rec.loc;
+	totals.applies += rec.applies;
+	totals.codeBlocks += rec.codeBlocks;
+	if (rec.activeDurationMs > 0) {
+		totals.activeDurationMs += rec.activeDurationMs;
+		totals.durationSessionShare += rec.share;
+	}
+}
+
+/**
+ * Which sessions the Models tab compares. Default: single-model sessions only,
+ * with the heaviest 5% (by tokens, pooled across both sides) trimmed so a few
+ * runaway sessions do not decide the verdict.
+ */
+export interface ModelSessionFilter {
+	/** Keep sessions that mixed several models (their duration/LOC are token-share splits). */
+	includeMixedSessions: boolean;
+	/** Drop sessions above this percentile of session tokens. */
+	outlierTrim: 'none' | 'p95' | 'p90';
+}
+
+export const DEFAULT_MODEL_SESSION_FILTER: ModelSessionFilter = { includeMixedSessions: false, outlierTrim: 'p95' };
+/** No narrowing: the day aggregates are used as they are. */
+export const UNFILTERED_MODEL_SESSIONS: ModelSessionFilter = { includeMixedSessions: true, outlierTrim: 'none' };
+
+/** Minimum sessions before an outlier cutoff is computed: trimming a handful of sessions is just deleting data. */
+const MIN_SESSIONS_FOR_OUTLIER_TRIM = 20;
+
+/** What the session filter did to one side's data. */
+export interface ModelFilterOutcome {
+	/** True when per-session records were used to narrow the data. */
+	applied: boolean;
+	/** True when a filter was requested but the data carries no per-session records. */
+	unavailable: boolean;
+	excludedMixed: number;
+	excludedOutliers: number;
+}
+
+/**
+ * The session-token cutoff above which sessions count as outliers, pooled across
+ * every side being compared so both are trimmed by the same yardstick. Null when
+ * trimming is off or there are too few sessions to trim meaningfully.
+ */
+export function computeOutlierCutoffTokens(
+	groups: { days: ModelDailyInput[]; model: string }[],
+	filter: ModelSessionFilter,
+): number | null {
+	if (filter.outlierTrim === 'none') { return null; }
+	const tokens: number[] = [];
+	for (const { days, model } of groups) {
+		for (const day of days) {
+			for (const rec of day.modelEfficiency?.[model]?.sessionRecords ?? []) {
+				if (rec.mixed && !filter.includeMixedSessions) { continue; }
+				tokens.push(rec.inputTokens + rec.outputTokens);
+			}
+		}
+	}
+	if (tokens.length < MIN_SESSIONS_FOR_OUTLIER_TRIM) { return null; }
+	tokens.sort((x, y) => x - y);
+	const q = filter.outlierTrim === 'p90' ? 0.9 : 0.95;
+	const pos = (tokens.length - 1) * q;
+	const lo = Math.floor(pos);
+	const hi = Math.ceil(pos);
+	return tokens[lo] + (tokens[hi] - tokens[lo]) * (pos - lo);
+}
+
+function finishPeriodMetrics(
+	model: string,
+	periodLabel: string,
+	totals: DailyModelEfficiencyEntry,
+	taskMixRaw: Map<string, number>,
+	filtering: ModelFilterOutcome,
+): ModelPeriodMetrics {
 	const tokens = totals.inputTokens + totals.outputTokens;
 	const loc = totals.linesAdded + totals.linesRemoved;
 	const enoughSessions = totals.sessionShare >= MIN_SESSION_SHARE_FOR_COMPARE;
@@ -1457,6 +1578,7 @@ export function computeModelPeriodMetrics(days: ModelDailyInput[], model: string
 		taskMix: normalizeMix(taskMixRaw),
 		sampleSufficient: enoughSessions,
 		editSampleSufficient: enoughEdits,
+		filtering,
 	};
 }
 
@@ -1805,6 +1927,7 @@ function buildCaveats(a: ModelPeriodMetrics, b: ModelPeriodMetrics): string[] {
 	if (divergence >= TASK_MIX_DIVERGENCE_THRESHOLD) {
 		caveats.push(`The two sides did different kinds of work (${Math.round(divergence * 100)}% task-mix difference), so part of the gap may reflect the tasks rather than the models.`);
 	}
+	if (a.filtering.unavailable || b.filtering.unavailable) { caveats.push(FILTER_UNAVAILABLE_CAVEAT); }
 	if (a.sessions > a.sessionShare * 1.5 || b.sessions > b.sessionShare * 1.5) {
 		caveats.push('Much of this usage comes from sessions that mixed several models; duration and lines-of-code are split by token share and are therefore approximate.');
 	}

@@ -104,8 +104,8 @@ test('skill impact table: escapes a hostile skill name', () => {
 test('model comparison table: escapes side names in the sub-labelled headers', () => {
 	const html = renderModelComparisonTable(comparison(), 'Compare two models');
 	assert.match(html, /<table class="data-table" aria-label="Compare two models">/);
-	assert.match(html, /A · GPT-4o<span class="th-sub">Last 30 days<\/span>/);
-	assert.match(html, /B · &lt;b&gt;evil&lt;\/b&gt;<span class="th-sub">Jan 1 – Jan 31<\/span>/);
+	assert.match(html, /<span class="model-th-tag model-th-a">A · GPT-4o<\/span><span class="th-sub">Last 30 days<\/span>/);
+	assert.match(html, /<span class="model-th-tag model-th-b">B · &lt;b&gt;evil&lt;\/b&gt;<\/span><span class="th-sub">Jan 1 – Jan 31<\/span>/);
 	assert.doesNotMatch(html, /<b>evil/);
 	assert.equal((html.match(/scope="col"/g) ?? []).length, 5);
 	assert.doesNotMatch(html, /data-table-pager|data-table-summary/);
@@ -119,8 +119,8 @@ test('model comparison table: keeps tooltips, muted rows, delta colours and winn
 	assert.match(html, /<span class="delta-change good">↓ 33%<\/span>/);
 	assert.match(html, /<span class="delta-change bad">↑ 50%<\/span>/);
 	assert.match(html, /<span class="delta-change flat">↑ 2%<\/span>/);
-	assert.match(html, /<span class="model-win-chip">B<\/span>/);
-	assert.match(html, /<span class="model-win-chip">A<\/span>/);
+	assert.match(html, /<span class="model-win-chip model-win-b">B<\/span>/);
+	assert.match(html, /<span class="model-win-chip model-win-a">A<\/span>/);
 	assert.match(html, /<span class="model-win-chip tie">tie<\/span>/);
 	assert.match(html, />—</);
 });

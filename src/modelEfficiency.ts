@@ -22,7 +22,7 @@
  * This module is intentionally pure (no VS Code API, no filesystem access) so it
  * can be unit-tested with mocked data and reused by the CLI and the webview.
  */
-import type { DailyModelEfficiency, DailyModelEfficiencyEntry, DailyTokenStats, ModelEfficiencyCounters, ModelEfficiencyUsage, ModelPricing, ModelUsage, SessionFileCache, SessionUsageAnalysis } from './types';
+import type { DailyModelEfficiency, DailyModelEfficiencyEntry, DailyTokenStats, ModelEfficiencyCounters, ModelEfficiencyUsage, ModelPricing, ModelSessionRecord, ModelUsage, SessionFileCache, SessionUsageAnalysis } from './types';
 import { activeSessionDays, addModelUsage, scaleModelUsage } from './statsHelpers';
 import { calculateEstimatedCost } from './tokenEstimation';
 import { isUnsafeObjectKey } from './utils/protoGuard';
@@ -456,20 +456,18 @@ export function accumulateDailyModelTokens(
  * session* (on the day of its last activity), because the underlying counters
  * describe the whole session and cannot be attributed to individual days.
  */
-export function accumulateDailyModelCounters(target: DailyModelEfficiency, input: SessionEfficiencyAttribution): void {
+export function accumulateDailyModelCounters(
+	target: DailyModelEfficiency,
+	input: SessionEfficiencyAttribution,
+	pricing: { [model: string]: ModelPricing } = {},
+): void {
 	const shares = computeModelTokenShares(input);
 	if (shares.size === 0) { return; }
 
 	for (const [model, counters] of Object.entries(input.modelEfficiency ?? {})) {
 		const entry = ensureDailyEntry(target, model);
 		if (!entry) { continue; }
-		entry.calls += counters.calls;
-		entry.toolCalls = (entry.toolCalls ?? 0) + (counters.toolCalls ?? 0);
-		entry.editTurns += counters.editTurns;
-		entry.oneShotEditTurns += counters.oneShotEditTurns;
-		entry.retries += counters.retries;
-		entry.selfCorrections += counters.selfCorrections;
-		entry.editToolCalls += counters.editToolCalls;
+		addTurnCounters(entry, counters);
 	}
 
 	const hasDuration = (input.activeDurationMs ?? 0) > 0;
@@ -485,7 +483,54 @@ export function accumulateDailyModelCounters(target: DailyModelEfficiency, input
 		entry.linesRemoved += (input.linesRemoved ?? 0) * share;
 		entry.applies += (input.applies ?? 0) * share;
 		entry.codeBlocks += (input.codeBlocks ?? 0) * share;
+		pushSessionRecord(entry, buildModelSessionRecord(model, share, shares.size > 1, hasDuration, input, pricing));
 	}
+}
+
+/** Adds a session's exact per-model turn counters to a day entry. */
+function addTurnCounters(entry: DailyModelEfficiencyEntry, counters: ModelEfficiencyCounters): void {
+	entry.calls += counters.calls;
+	entry.toolCalls = (entry.toolCalls ?? 0) + (counters.toolCalls ?? 0);
+	entry.editTurns += counters.editTurns;
+	entry.oneShotEditTurns += counters.oneShotEditTurns;
+	entry.retries += counters.retries;
+	entry.selfCorrections += counters.selfCorrections;
+	entry.editToolCalls += counters.editToolCalls;
+}
+
+function pushSessionRecord(entry: DailyModelEfficiencyEntry, record: ModelSessionRecord): void {
+	(entry.sessionRecords ??= []).push(record);
+}
+
+/** One session's whole-session footprint for `model`; see {@link ModelSessionRecord}. */
+function buildModelSessionRecord(
+	model: string,
+	share: number,
+	mixed: boolean,
+	hasDuration: boolean,
+	input: SessionEfficiencyAttribution,
+	pricing: { [model: string]: ModelPricing },
+): ModelSessionRecord {
+	const usage = input.modelUsage?.[model];
+	const c = input.modelEfficiency?.[model] ?? createEmptyModelEfficiencyCounters();
+	const scaled = (value: number | undefined): number => (value ?? 0) * share;
+	return {
+		mixed,
+		share,
+		inputTokens: usage?.inputTokens || 0,
+		outputTokens: usage?.outputTokens || 0,
+		cachedReadTokens: usage?.cachedReadTokens || 0,
+		cost: usage ? calculateEstimatedCost({ [model]: usage }, pricing) : 0,
+		calls: c.calls,
+		editTurns: c.editTurns,
+		oneShotEditTurns: c.oneShotEditTurns,
+		retries: c.retries,
+		selfCorrections: c.selfCorrections,
+		loc: scaled((input.linesAdded ?? 0) + (input.linesRemoved ?? 0)),
+		activeDurationMs: hasDuration ? scaled(input.activeDurationMs) : 0,
+		applies: scaled(input.applies),
+		codeBlocks: scaled(input.codeBlocks),
+	};
 }
 
 /**
@@ -536,6 +581,7 @@ export function buildSessionEfficiencyAttribution(sessionData: SessionEfficiency
 		t.linesRemoved += s.linesRemoved;
 		t.applies += s.applies;
 		t.codeBlocks += s.codeBlocks;
+		if (s.sessionRecords?.length) { (t.sessionRecords ??= []).push(...s.sessionRecords); }
 	}
 }
 
@@ -670,10 +716,11 @@ export function accumulateDayAndEditorModelCounters(
 	entry: DailyTokenStats,
 	editor: string,
 	input: SessionEfficiencyAttribution,
+	pricing: { [model: string]: ModelPricing } = {},
 ): void {
 	const slice = getOrCreateEditorSlice(entry, editor);
-	accumulateDailyModelCounters(entry.modelEfficiency!, input);
-	accumulateDailyModelCounters(slice, input);
+	accumulateDailyModelCounters(entry.modelEfficiency!, input, pricing);
+	accumulateDailyModelCounters(slice, input, pricing);
 }
 
 /**
@@ -699,6 +746,6 @@ export function addSessionEfficiencyToDailyStats(
 	}
 	const lastDay = activeDays.at(-1)?.[0];
 	if (lastDay) {
-		accumulateDayAndEditorModelCounters(dailyStatsMap.get(lastDay)!, session.editorType, buildSessionEfficiencyAttribution(session));
+		accumulateDayAndEditorModelCounters(dailyStatsMap.get(lastDay)!, session.editorType, buildSessionEfficiencyAttribution(session), pricing);
 	}
 }

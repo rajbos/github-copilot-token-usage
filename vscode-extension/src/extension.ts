@@ -6867,7 +6867,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 */
 	private addModelEfficiencyToDailyEntry(entry: DailyTokenStats, sessionData: SessionFileCache, editorType: string): void {
 		if (!sessionData.usageAnalysis?.modelEfficiency && Object.keys(sessionData.modelUsage).length === 0) { return; }
-		_accumulateDayAndEditorModelCounters(entry, editorType, _buildSessionEfficiencyAttribution(sessionData));
+		_accumulateDayAndEditorModelCounters(entry, editorType, _buildSessionEfficiencyAttribution(sessionData), this.modelPricing);
 	}
 
 	private getOrCreateDailyEntry(dailyStatsMap: Map<string, DailyTokenStats>, dateKey: string): DailyTokenStats {

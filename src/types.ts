@@ -212,7 +212,36 @@ export interface DailyTokenStats {
  * code, apply-button usage). For sessions that used several models these are
  * split by the model's share of the session's tokens.
  */
+/**
+ * One session's whole-session footprint for one model, kept so the Models tab
+ * can exclude mixed-model sessions and trim outlier sessions. Written once per
+ * session, on the day of its last activity (like the turn counters).
+ */
+export interface ModelSessionRecord {
+  /** True when the session used more than one model, so duration/LOC are token-share splits. */
+  mixed: boolean;
+  /** This model's token-share of the session (1 for a single-model session). */
+  share: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedReadTokens: number;
+  cost: number;
+  calls: number;
+  editTurns: number;
+  oneShotEditTurns: number;
+  retries: number;
+  selfCorrections: number;
+  /** Token-share-attributed lines added + removed. */
+  loc: number;
+  /** Token-share-attributed active duration in ms; 0 when unknown. */
+  activeDurationMs: number;
+  applies: number;
+  codeBlocks: number;
+}
+
 export interface DailyModelEfficiencyEntry extends ModelEfficiencyCounters {
+  /** Per-session records behind this entry's counters. Absent on data written before records existed. */
+  sessionRecords?: ModelSessionRecord[];
   /** Sessions that used this model at all. A 2-model session adds 1 to both models. */
   sessions: number;
   /**
