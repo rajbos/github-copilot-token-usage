@@ -1821,8 +1821,8 @@ test('l10n: efficiency scope toolbar labels resolve in English', () => {
 		'efficiency.scope.drillPlaceholder': 'Drill into…',
 		'efficiency.scope.back': '↩ Back',
 		'efficiency.scope.backAria': 'Back to the previous range',
-		'efficiency.scope.drillHintWeekly': 'Click a week on a chart to drill into its days',
-		'efficiency.scope.drillHintMonthly': 'Click a month on a chart to drill into its days',
+		'efficiency.scope.drillHintWeekly': 'Click a week on a chart, or use the picker, to see its details',
+		'efficiency.scope.drillHintMonthly': 'Click a month on a chart, or use the picker, to see its details',
 		'efficiency.scope.announce': 'Showing {0}.',
 		'efficiency.scope.behaviorGap': '⚠️ Session-derived metrics (active minutes, retry rate, apply rate, skills) are only collected for the last {0} weeks, so earlier buckets in this range show gaps rather than zeros.',
 		'efficiency.scope.editorScoped': 'Scoped to {0}. Sessions whose editor could not be determined are excluded from this view.',
@@ -1864,8 +1864,8 @@ test('l10n: efficiency scope toolbar labels resolve in zh-cn', () => {
 			'efficiency.scope.backAria': '返回上一个范围',
 			'efficiency.scope.announce': '当前显示：{0}。',
 			'efficiency.scope.timeRangeGroup': '时间范围',
-			'efficiency.scope.drillHintWeekly': '点击图表中的某一周可下钻查看其各天数据',
-			'efficiency.scope.drillHintMonthly': '点击图表中的某一月可下钻查看其各天数据',
+			'efficiency.scope.drillHintWeekly': '点击图表中的某一周或使用选择器可查看其详情',
+			'efficiency.scope.drillHintMonthly': '点击图表中的某一月或使用选择器可查看其详情',
 			'efficiency.scope.behaviorGap': '⚠️ 会话派生指标（活跃分钟数、重试率、应用率、技能）仅收集最近 {0} 周的数据，因此该范围内较早的分桶显示为缺口而非零值。',
 			'efficiency.scope.editorScoped': '已限定为 {0}。无法确定所属编辑器的会话不计入此视图。',
 			'efficiency.scope.noDataFor': '{0}（无数据）',
@@ -1893,6 +1893,31 @@ test('l10n: efficiency placeholder templates keep their {0} slot for localizeFor
 	// The trends intro fills three slots — resolution, range and bucket count.
 	for (const slot of ['{0}', '{1}', '{2}']) {
 		assert.ok(t('efficiency.trends.bucketIntro').includes(slot), `efficiency.trends.bucketIntro must carry a ${slot} placeholder`);
+	}
+});
+
+// Efficiency selected-period drill-down (issue #1974).
+test('l10n: efficiency selected-period drill-down strings resolve in English and zh-CN', () => {
+	const en: Record<string, string> = {
+		'efficiency.detail.pickerLabel': 'Selected period',
+		'efficiency.detail.showDays': 'Show the days in this period',
+		'efficiency.detail.down': 'down {0}%',
+		'efficiency.detail.unavailable.few-edit-turns': 'Too few edit turns for a reliable rate.',
+		'efficiency.detail.models.lowSample': 'Below the sample floor of {0} session equivalents: ratios are hidden rather than shown unreliable.',
+		'efficiency.context.viewTrend': 'View trend',
+		'efficiency.context.viewModel': 'View in Models',
+	};
+	for (const [key, english] of Object.entries(en)) {
+		assert.equal(t(key), english, `en value for ${key}`);
+	}
+	mock.setLanguage('zh-cn');
+	try {
+		assert.equal(t('efficiency.detail.pickerLabel'), '所选周期');
+		assert.equal(t('efficiency.detail.showDays'), '显示该周期内的每一天');
+		assert.equal(t('efficiency.context.viewTrend'), '查看趋势');
+		assert.equal(t('efficiency.context.viewModel'), '在模型中查看');
+	} finally {
+		mock.setLanguage('en');
 	}
 });
 

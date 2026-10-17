@@ -1278,7 +1278,7 @@ export interface ModelPeriodMetrics {
 }
 
 /** Minimum session equivalents before a model's period ratios are trusted. */
-const MIN_SESSION_SHARE_FOR_COMPARE = 5;
+export const MIN_SESSION_SHARE_FOR_COMPARE = 5;
 /** Minimum edit turns before a model's edit-based rates are trusted. */
 const MIN_EDIT_TURNS_FOR_COMPARE = 10;
 /** Task-mix divergence (in share points) above which a confounder caveat is raised. */

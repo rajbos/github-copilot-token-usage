@@ -11,6 +11,7 @@
 import { renderDataTable, type DataTableColumn } from '../shared/dataTable';
 import { escapeHtml, formatFixed, formatPercent } from '../shared/formatUtils';
 import { localize, localizeFormat } from '../shared/localization';
+import { contextButtonHtml } from './bucketDetail';
 import { getModelDisplayName } from '../../../../src/webview/shared/modelUtils';
 import type { EfficiencyViewData, ModelMixShift } from '../../../../src/efficiencyAnalysis';
 
@@ -112,5 +113,6 @@ function renderModelCell(shift: ModelMixShift): string {
 	const canonical = sameAsId
 		? ''
 		: `<span class="attr-shift-sr"> ${escapeHtml(localizeFormat('efficiency.modelMix.canonicalId', shift.model))}</span>`;
-	return `<span class="attr-shift-name" title="${escapeHtml(title)}">${escapeHtml(displayName)}</span>${canonical}`;
+	const open = contextButtonHtml('model', shift.model, 'efficiency.context.viewModel', 'efficiency.context.viewModelAria', displayName);
+	return `<span class="attr-shift-name" title="${escapeHtml(title)}">${escapeHtml(displayName)}</span>${canonical} ${open}`;
 }
