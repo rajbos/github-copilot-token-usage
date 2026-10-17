@@ -40,6 +40,74 @@ const JSON_CONFIG_GLOBALS = {
 };
 
 /**
+ * Joins `relativePath` onto `root` and refuses a result outside `root`.
+ *
+ * Registry and fixture fields name files the harness reads into the page, and
+ * the page ends up in a screenshot. An absolute path or `../` segments would let
+ * an entry pull any readable file on disk into that screenshot, so the resolved
+ * path must stay under the root it was given.
+ *
+ * The root itself comes from the tree under review too (`fixtures/` or
+ * `dist/` can be committed as a symlink to `/`), so it is only trusted as far
+ * as `anchor`, the checkout it belongs to: every directory from the anchor
+ * down to the root must be a real directory, not a link. The anchor itself —
+ * a checkout root the harness was pointed at — is trusted as given.
+ *
+ * @param {string} root
+ * @param {string} relativePath
+ * @param {string} label  what the path is, for the error message
+ * @param {string} [anchor]  trusted directory containing `root` (default: `root`)
+ */
+function resolveInside(root, relativePath, label, anchor = root) {
+	if (typeof relativePath !== 'string' || relativePath === '' || path.isAbsolute(relativePath)) {
+		throw new Error(`${label} must be a relative path, got ${JSON.stringify(relativePath)}`);
+	}
+	const base = path.resolve(root);
+	const trusted = path.resolve(anchor);
+	const resolved = path.resolve(base, relativePath);
+	const outside = (from, to) => {
+		const rel = path.relative(from, to);
+		return rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
+	};
+	if (outside(trusted, base)) {
+		throw new Error(`${label} root ${base} is not inside ${trusted}`);
+	}
+	if (fs.existsSync(base) && !samePath(fs.realpathSync(base), path.join(fs.realpathSync(trusted), path.relative(trusted, base)))) {
+		throw new Error(`${label} root ${base} goes through a symbolic link below ${trusted}`);
+	}
+	// The lexical check catches `../` and absolute paths; the real-path check
+	// catches a committed symlink inside the root that points out of it.
+	if (path.relative(base, resolved) === '' || outside(base, resolved)
+		|| (fs.existsSync(resolved) && outside(fs.realpathSync(base), fs.realpathSync(resolved)))) {
+		throw new Error(`${label} ${JSON.stringify(relativePath)} resolves outside ${base}`);
+	}
+	return resolved;
+}
+
+/** Path equality, ignoring case where the file system does (Windows). */
+function samePath(a, b) {
+	return process.platform === 'win32'
+		? path.normalize(a).toLowerCase() === path.normalize(b).toLowerCase()
+		: path.normalize(a) === path.normalize(b);
+}
+
+/**
+ * The checkout a harness directory belongs to: the first of `anchors` that
+ * contains it. A directory outside every checkout was chosen by the operator
+ * (`--dist`, `--config`) and is its own anchor.
+ */
+function anchorFor(dir, anchors) {
+	const target = path.resolve(dir);
+	for (const anchor of anchors) {
+		const rel = path.relative(path.resolve(anchor), target);
+		if (rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))) {
+			return anchor;
+		}
+	}
+	return target;
+}
+
+/**
  * Loads a fixture file, resolving `$fromRepoJson` references.
  *
  * Some views are driven by data files that already live in the repo (e.g. the
@@ -61,7 +129,7 @@ function loadFixture(fixturePath, repoRoot) {
 		}
 		if (node && typeof node === 'object') {
 			if (typeof node.$fromRepoJson === 'string') {
-				return JSON.parse(fs.readFileSync(path.join(repoRoot, node.$fromRepoJson), 'utf8'));
+				return JSON.parse(fs.readFileSync(resolveInside(repoRoot, node.$fromRepoJson, '$fromRepoJson'), 'utf8'));
 			}
 			return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, resolve(v)]));
 		}
@@ -69,6 +137,21 @@ function loadFixture(fixturePath, repoRoot) {
 	};
 	return resolve(raw);
 }
+
+/**
+ * The colour schemes the harness can render. `kind` is what VS Code puts on
+ * `<body data-vscode-theme-kind>` / class and what `shared/theme.css` keys its
+ * light and high-contrast rules on; `overlay` is an extra token file layered
+ * over the `base` token file (high contrast only changes a handful of tokens).
+ * `dark` and `light` are the default pair CI renders; `hc` and `hc-light` are
+ * opt-in (`--theme hc`, `--theme all`).
+ */
+const THEMES = {
+	dark: { base: 'dark', kind: 'vscode-dark', colorScheme: 'dark' },
+	light: { base: 'light', kind: 'vscode-light', colorScheme: 'light' },
+	hc: { base: 'dark', kind: 'vscode-high-contrast', colorScheme: 'dark', overlay: 'theme-hc.css' },
+	'hc-light': { base: 'light', kind: 'vscode-high-contrast-light', colorScheme: 'light', overlay: 'theme-hc-light.css' },
+};
 
 /** Escapes `<` so an embedded JSON payload can never close the script tag. */
 function toScriptJson(value) {
@@ -91,14 +174,24 @@ function readJsonConfigGlobals(repoRoot) {
  * @param {object} options
  * @param {string} options.globalName   e.g. `__INITIAL_DETAILS__`
  * @param {unknown} options.fixture     the view's initial data payload
- * @param {'dark'|'light'} options.theme
+ * @param {'dark'|'light'|'hc'|'hc-light'} options.theme
  * @param {string} options.bundlePath   absolute path to `dist/webview/<view>.js`
  * @param {string} options.repoRoot
+ * @param {object} [options.extraGlobals]  additional window globals supplied by the panel shell
  * @returns {string} the full HTML document
  */
-function buildPageHtml({ globalName, fixture, theme, bundlePath, repoRoot }) {
-	const themeCss = fs.readFileSync(path.join(__dirname, `theme-${theme}.css`), 'utf8');
-	const themeKind = theme === 'light' ? 'vscode-light' : 'vscode-dark';
+function buildPageHtml({ globalName, fixture, theme, bundlePath, repoRoot, extraGlobals = {} }) {
+	// The theme names CSS files next to this one; accept only the exact ids in
+	// THEMES (own keys, so `__proto__` and friends do not pass) so a caller
+	// cannot turn it into a path.
+	const def = Object.prototype.hasOwnProperty.call(THEMES, theme) ? THEMES[theme] : null;
+	if (!def) {
+		throw new Error(`theme must be one of ${Object.keys(THEMES).join(', ')}, got ${JSON.stringify(theme)}`);
+	}
+	const readTheme = (name) => fs.readFileSync(path.join(__dirname, name), 'utf8');
+	const themeCss = readTheme(`theme-${def.base}.css`) + (def.overlay ? `
+${readTheme(def.overlay)}` : '');
+	const themeKind = def.kind;
 	const codiconCss = path.join(path.dirname(bundlePath), 'codicons', 'codicon.css');
 	const codiconTag = fs.existsSync(codiconCss)
 		? `<link rel="stylesheet" href="${pathToFileUrl(codiconCss)}" />`
@@ -159,6 +252,7 @@ ${codiconTag}
 	});
 </script>
 <script>window.${globalName} = ${toScriptJson(fixture)};</script>
+<script>${Object.entries(extraGlobals).map(([name, value]) => `window[${toScriptJson(name)}] = ${toScriptJson(value)};`).join('')}</script>
 <script>${readJsonConfigGlobals(repoRoot)}</script>
 <script>window.__EXTENSION_POINT_BUTTONS__ = [];</script>
 <script src="${pathToFileUrl(bundlePath)}"></script>
@@ -174,8 +268,11 @@ module.exports = {
 	REPO_ROOT,
 	EXTENSION_DIR,
 	WEBVIEW_DIST,
+	THEMES,
 	buildPageHtml,
 	loadFixture,
+	anchorFor,
 	pathToFileUrl,
+	resolveInside,
 	toScriptJson,
 };

@@ -1,98 +1,49 @@
-// @ts-nocheck // Chart.js ESM bundle is loaded dynamically; skip CJS resolution noise
 import { el, createButton, iconHeading } from '../shared/domUtils';
 import { getNavButtons } from '../shared/buttonConfig';
 import { formatCompact, setCompactNumbers } from '../shared/formatUtils';
+import { buildEditorLogo, syncLogoTheme } from '../shared/editorLogos';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
-import { createPeriodSelector, PERIOD_LABELS } from '../shared/periodSelector';
+import { createPeriodSelector, PERIOD_LABELS as TIME_WINDOW_LABELS } from '../shared/periodSelector';
 import { getCurrentPeriodFraction, computeProjectionExtra } from './projectionUtils';
 import { createViewStateManager } from '../shared/viewState';
-import { initializeWebviewLocalization, setCurrentLanguage } from '../shared/localization';
-import type { ChartTimeWindow } from '../../../../src/types';
-import { getTimeWindowStartDayKey, getTimeWindowStartMonthKey } from '../../../../src/timeWindows';
+import { applyWebviewLocale } from '../shared/webviewLocale';
+import type { ChartDataPayload, ChartDataset, ChartPeriodData, ChartTimeWindow } from '../../../../src/types';
+import { filterPeriodByTimeWindow } from './timeWindowFilter';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
+import dataTableStyles from '../shared/dataTable.css';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
 import { registerMessageHandler } from '../shared/messageHandler';
+import { installSurfaceNavigation } from '../shared/surfaceNavigation';
 
-type ChartModule = typeof import('chart.js/auto');
+type ChartModule = typeof import('chart.js/auto', { with: { 'resolution-mode': 'import' } });
 type ChartConstructor = ChartModule['default'];
 type ChartInstance = InstanceType<ChartConstructor>;
-type ChartConfig = import('chart.js').ChartConfiguration<'bar' | 'line', number[], string>;
+type ChartConfig = import('chart.js', { with: { 'resolution-mode': 'import' } }).ChartConfiguration<'bar' | 'line', number[], string>;
 
-type ModelDataset = { label: string; data: number[]; backgroundColor: string; borderColor: string; borderWidth: number };
-type EditorDataset = ModelDataset;
-type RepositoryDataset = ModelDataset & { fullRepo?: string };
-
-type ChartPeriodData = {
-	labels: string[];
-	periodKeys?: string[];
-	tokensData: number[];
-	sessionsData: number[];
-	modelDatasets: ModelDataset[];
-	editorDatasets: EditorDataset[];
-	repositoryDatasets: RepositoryDataset[];
-	taskCategoryDatasets?: ModelDataset[];
-	taskCategoryTokenDatasets?: ModelDataset[];
-	taskCategorySessionDatasets?: ModelDataset[];
-	taskCategoryCostDatasets?: ModelDataset[];
-	periodCount: number;
-	totalTokens: number;
-	totalSessions: number;
-	avgPerPeriod: number;
-	costData: number[];
-	totalCost: number;
-	avgCostPerPeriod: number;
-	locData?: number[];
-	linesAddedData?: number[];
-	linesRemovedData?: number[];
-	languageDatasets?: ModelDataset[];
-	locEditorDatasets?: ModelDataset[];
-	locRepositoryDatasets?: RepositoryDataset[];
-	totalLinesAdded?: number;
-	totalLinesRemoved?: number;
-	avgLocPerPeriod?: number;
-	editorCostDatasets?: ModelDataset[];
-	billingGroupCostDatasets?: ModelDataset[];
-	modelCostDatasets?: ModelDataset[];
-	modelSessionsDatasets?: ModelDataset[];
-	editorSessionsDatasets?: ModelDataset[];
-	providerSessionsDatasets?: ModelDataset[];
-	providerTokensDatasets?: ModelDataset[];
-};
+/**
+ * The dataset and payload shapes come straight from the shared types (src/types.ts) that the
+ * one shared builder (`buildChartData`) every host calls must satisfy. A field this view starts
+ * relying on has to be added there, and the builder must then emit it — a missing field is a
+ * compile error in every host, not a blank Chart view (#2304, #2316).
+ */
+type ModelDataset = ChartDataset;
 
 type ChartPeriod = import('./projectionUtils').ChartPeriod;
 
-type InitialChartData = {
-	labels: string[];
-	tokensData: number[];
-	sessionsData: number[];
-	modelDatasets: ModelDataset[];
-	editorDatasets: EditorDataset[];
-	repositoryDatasets: RepositoryDataset[];
-	editorTotalsMap: Record<string, number>;
-	repositoryTotalsMap: Record<string, number>;
-	dailyCount: number;
-	totalTokens: number;
-	avgTokensPerDay: number;
-	totalSessions: number;
-	lastUpdated: string;
+/** The shared payload plus the host-specific view settings the extension layers on top. */
+type InitialChartData = Omit<ChartDataPayload, 'backendConfigured'> & {
 	backendConfigured?: boolean;
-	compactNumbers?: boolean;
 	monthlyCostBudget?: number;
-	periodsReady?: boolean;
-	hasLocData?: boolean;
 	initialPeriod?: ChartPeriod;
 	initialTimeWindow?: ChartTimeWindow;
 	initialView?: 'total' | 'model' | 'editor' | 'repository' | 'cost' | 'task' | 'taskCategory';
 	initialMetric?: 'tokens' | 'output' | 'cost' | 'sessions';
 	initialSplit?: 'total' | 'model' | 'editor' | 'repository' | 'language' | 'provider' | 'task' | 'taskCategory';
+	/** Host-persisted collapsed state of "By Editor"; outlives the panel, unlike webview state. */
+	initialEditorListCollapsed?: boolean;
 	monthlyBudget?: number;
-	periods?: {
-		day: ChartPeriodData;
-		week: ChartPeriodData;
-		month: ChartPeriodData;
-	};
 };
 
 // VS Code injects this in the webview environment
@@ -102,17 +53,13 @@ declare function acquireVsCodeApi<TState = unknown>(): {
 	getState: () => TState | undefined;
 };
 
-type VSCodeApi = ReturnType<typeof acquireVsCodeApi>;
 
-const vscode: VSCodeApi = acquireVsCodeApi();
+const vscode = acquireVsCodeApi<ChartWebviewState>();
+installSurfaceNavigation(vscode, 'chart');
 const initialData = getWindowData<InitialChartData & { localization?: Record<string, string> }>('__INITIAL_CHART__');
 
 // Initialize localization for webview
-if (initialData?.localization) {
-	initializeWebviewLocalization(initialData.localization);
-	const language = initialData.localization['__language__'] || 'en';
-	setCurrentLanguage(language);
-}
+applyWebviewLocale(initialData);
 
 let chart: ChartInstance | undefined;
 let Chart: ChartConstructor | undefined;
@@ -124,23 +71,26 @@ async function loadChartModule(): Promise<void> {
 	const mod = await import('chart.js/auto');
 	Chart = mod.default;
 }
-let currentMetric: 'tokens' | 'output' | 'cost' | 'sessions' = 'tokens';
-let currentSplit: 'total' | 'model' | 'editor' | 'repository' | 'language' | 'provider' | 'task' | 'taskCategory' = 'total';
+let currentMetric: ChartMetric = 'tokens';
+let currentSplit: ChartSplit = 'total';
 let currentPeriod: ChartPeriod = 'day';
 let currentTimeWindow: ChartTimeWindow = 'last30';
 // Stores state to restore after a background data update re-initializes the chart
-let pendingMetric: typeof currentMetric | null = null;
-let pendingSplit: typeof currentSplit | null = null;
+let pendingMetric: ChartMetric | null = null;
+let pendingSplit: ChartSplit | null = null;
 let pendingPeriod: ChartPeriod | null = null;
 
 type DisplayMode = 'actual' | 'rolling';
 let currentDisplayMode: DisplayMode = 'actual';
 
+type ChartMetric = 'tokens' | 'output' | 'cost' | 'sessions';
+type ChartSplit = 'total' | 'model' | 'editor' | 'repository' | 'language' | 'provider' | 'task' | 'taskCategory';
+
 type ChartWebviewState = {
 	period: ChartPeriod;
 	timeWindow: ChartTimeWindow;
-	metric: 'tokens' | 'output' | 'cost' | 'sessions';
-	split: 'total' | 'model' | 'editor' | 'repository' | 'language' | 'provider' | 'task' | 'taskCategory';
+	metric: ChartMetric;
+	split: ChartSplit;
 	displayMode: DisplayMode;
 	/** Whether the per-editor breakdown cards under the Summary section are collapsed. */
 	editorListCollapsed: boolean;
@@ -161,103 +111,6 @@ let editorListCollapsed = false;
 
 function saveWebviewState(): void {
 	chartState.save({ period: currentPeriod, timeWindow: currentTimeWindow, metric: currentMetric, split: currentSplit, displayMode: currentDisplayMode, editorListCollapsed });
-}
-
-function sliceByIndices<T>(arr: T[] | undefined, indices: number[]): T[] | undefined {
-	if (!arr) { return undefined; }
-	return indices.map(i => arr[i]);
-}
-
-function sliceDatasetsByIndices(datasets: object[] | undefined, indices: number[]): object[] | undefined {
-	if (!datasets) { return undefined; }
-	return datasets.map(ds => {
-		const d = ds as { data: number[] };
-		return { ...d, data: indices.map(i => d.data[i]) };
-	});
-}
-
-function getFilterStartKey(timeWindow: ChartTimeWindow, periodType: ChartPeriod, now: Date): string {
-	return periodType === 'month'
-		? getTimeWindowStartMonthKey(timeWindow, now)
-		: getTimeWindowStartDayKey(timeWindow, now);
-}
-
-function buildCoreFilteredPeriod(period: ChartPeriodData, indices: number[]): ChartPeriodData {
-	const totalTokens = indices.reduce((sum, i) => sum + period.tokensData[i], 0);
-	const totalSessions = indices.reduce((sum, i) => sum + period.sessionsData[i], 0);
-	const costData = sliceByIndices(period.costData, indices) as number[];
-	const totalCost = costData.reduce((a, b) => a + b, 0);
-	return {
-		labels: indices.map(i => period.labels[i]),
-		periodKeys: indices.map(i => period.periodKeys[i]),
-		tokensData: indices.map(i => period.tokensData[i]),
-		sessionsData: indices.map(i => period.sessionsData[i]),
-		modelDatasets: sliceDatasetsByIndices(period.modelDatasets, indices) as ModelDataset[],
-		editorDatasets: sliceDatasetsByIndices(period.editorDatasets, indices) as EditorDataset[],
-		repositoryDatasets: sliceDatasetsByIndices(period.repositoryDatasets, indices) as RepositoryDataset[],
-		periodCount: indices.length,
-		totalTokens,
-		totalSessions,
-		avgPerPeriod: indices.length > 0 ? Math.round(totalTokens / indices.length) : 0,
-		costData,
-		totalCost,
-		avgCostPerPeriod: indices.length > 0 ? totalCost / indices.length : 0,
-	};
-}
-
-function copyFilteredLocFields(source: ChartPeriodData, target: ChartPeriodData, indices: number[]): void {
-	const locData = sliceByIndices(source.locData, indices);
-	const linesAddedData = sliceByIndices(source.linesAddedData, indices);
-	const linesRemovedData = sliceByIndices(source.linesRemovedData, indices);
-
-	if (locData) { target.locData = locData as number[]; }
-	if (linesAddedData) { target.linesAddedData = linesAddedData as number[]; }
-	if (linesRemovedData) { target.linesRemovedData = linesRemovedData as number[]; }
-	if (source.totalLinesAdded !== undefined) { target.totalLinesAdded = (linesAddedData as number[] ?? []).reduce((a, b) => a + b, 0); }
-	if (source.totalLinesRemoved !== undefined) { target.totalLinesRemoved = (linesRemovedData as number[] ?? []).reduce((a, b) => a + b, 0); }
-	if (source.avgLocPerPeriod !== undefined) {
-		target.avgLocPerPeriod = locData && locData.length > 0 ? (locData as number[]).reduce((a, b) => a + b, 0) / locData.length : 0;
-	}
-}
-
-function copyFilteredDatasetFields(source: ChartPeriodData, target: ChartPeriodData, indices: number[]): void {
-	const datasetFields: Array<{ key: keyof ChartPeriodData; source: object[] | undefined }> = [
-		{ key: 'languageDatasets', source: source.languageDatasets },
-		{ key: 'locEditorDatasets', source: source.locEditorDatasets },
-		{ key: 'locRepositoryDatasets', source: source.locRepositoryDatasets },
-		{ key: 'editorCostDatasets', source: source.editorCostDatasets },
-		{ key: 'billingGroupCostDatasets', source: source.billingGroupCostDatasets },
-		{ key: 'modelCostDatasets', source: source.modelCostDatasets },
-		{ key: 'modelSessionsDatasets', source: source.modelSessionsDatasets },
-		{ key: 'editorSessionsDatasets', source: source.editorSessionsDatasets },
-		{ key: 'providerSessionsDatasets', source: source.providerSessionsDatasets },
-		{ key: 'providerTokensDatasets', source: source.providerTokensDatasets },
-		{ key: 'taskCategoryDatasets', source: source.taskCategoryDatasets },
-	];
-	for (const { key, source: ds } of datasetFields) {
-		if (ds) { (target as Record<string, object[]>)[key] = sliceDatasetsByIndices(ds, indices) as object[]; }
-	}
-}
-
-function copyFilteredOptionalFields(source: ChartPeriodData, target: ChartPeriodData, indices: number[]): void {
-	copyFilteredLocFields(source, target, indices);
-	copyFilteredDatasetFields(source, target, indices);
-}
-
-function filterPeriodByTimeWindow(period: ChartPeriodData, timeWindow: ChartTimeWindow, periodType: ChartPeriod): ChartPeriodData {
-	if (timeWindow === 'last30' && periodType === 'day') {
-		return period;
-	}
-	const startKey = getFilterStartKey(timeWindow, periodType, new Date());
-	const indices: number[] = [];
-	for (let i = 0; i < period.periodKeys.length; i++) {
-		if (period.periodKeys[i] >= startKey) { indices.push(i); }
-	}
-	if (indices.length === 0) { return period; }
-
-	const filtered = buildCoreFilteredPeriod(period, indices);
-	copyFilteredOptionalFields(period, filtered, indices);
-	return filtered;
 }
 
 const ROLLING_WINDOW: Record<ChartPeriod, number> = { day: 7, week: 4, month: 3 };
@@ -313,18 +166,11 @@ function getChartTitle(): string {
 	if (currentMetric === 'output') {
 		return periodMeta.outputTitle;
 	}
-	if (currentMetric === 'sessions') {
-		return periodMeta.sessionsTitle;
-	}
 	let titleText = periodMeta.title;
 	if (currentDisplayMode === 'rolling' && currentSplit === 'total') {
 		titleText += ` (${getRollingLabel()})`;
 	}
 	return titleText;
-}
-
-function getAggregationIndicator(): string {
-	return PERIOD_LABELS[currentPeriod].aggregationLabel;
 }
 
 /** Returns period data for the current period, falling back to legacy flat fields. */
@@ -524,7 +370,7 @@ function renderLayout(data: InitialChartData): void {
 	const root = document.getElementById('root');
 	if (!root) { return; }
 	root.replaceChildren();
-	const themeStyle = document.createElement('style'); themeStyle.textContent = themeStyles;
+	const themeStyle = document.createElement('style'); themeStyle.textContent = `${themeStyles}\n${dataTableStyles}`;
 	const style = document.createElement('style'); style.textContent = styles;
 	const periodData = getActivePeriodData(data);
 	const periodMeta = PERIOD_LABELS[currentPeriod];
@@ -568,6 +414,7 @@ function buildEditorCards(editorTotals: Record<string, number>): HTMLElement | n
 	wrap.id = 'editor-cards';
 	entries.forEach(([editor, tokens]) => {
 		const card = buildCard(`editor-${editor}`, editor, formatCompact(tokens));
+			card.prepend(buildEditorLogo(editor));
 		// JetBrains only persists user messages + assistant text in its JSONL
 		// — no API counts, no thinking tokens. Flag the caveat with an
 		// info marker on the card so users don't compare apples-to-oranges.
@@ -663,11 +510,13 @@ function wireEditorListToggle(): void {
 		toggle.title = editorListCollapsed ? 'Show per-editor breakdown' : 'Hide per-editor breakdown';
 		if (chevron) { chevron.textContent = editorListCollapsed ? '▸' : '▾'; }
 		chartState.patch({ editorListCollapsed });
+		vscode.postMessage({ command: 'setEditorListCollapsed', collapsed: editorListCollapsed });
 	});
 }
 
 function wireInteractions(data: InitialChartData): void {
 	wireEditorListToggle();
+	syncLogoTheme();
 
 	const refresh = document.getElementById('btn-refresh');
 	refresh?.addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
@@ -707,7 +556,7 @@ function wireInteractions(data: InitialChartData): void {
 	});
 
 	// Chart metric toggle buttons
-	const metricButtons: Array<{ id: string; metric: typeof currentMetric }> = [
+	const metricButtons: Array<{ id: string; metric: ChartMetric }> = [
 		{ id: 'metric-tokens', metric: 'tokens' },
 		{ id: 'metric-output', metric: 'output' },
 		{ id: 'metric-cost',   metric: 'cost'   },
@@ -719,7 +568,7 @@ function wireInteractions(data: InitialChartData): void {
 	});
 
 	// Chart split toggle buttons
-	const splitButtons: Array<{ id: string; split: typeof currentSplit }> = [
+	const splitButtons: Array<{ id: string; split: ChartSplit }> = [
 		{ id: 'split-total',      split: 'total'      },
 		{ id: 'split-model',      split: 'model'      },
 		{ id: 'split-editor',     split: 'editor'     },
@@ -798,7 +647,7 @@ async function switchPeriod(period: ChartPeriod, data: InitialChartData): Promis
 	chart = new Chart(ctx, createConfig(data));
 }
 
-function clampSplitForMetric(metric: typeof currentMetric): void {
+function clampSplitForMetric(metric: ChartMetric): void {
 	const normalizedSplit = currentSplit === 'taskCategory' ? 'task' : currentSplit;
 	if (metric === 'cost' && normalizedSplit !== 'model' && normalizedSplit !== 'editor' && normalizedSplit !== 'provider' && normalizedSplit !== 'task') { currentSplit = 'total'; return; }
 	if (metric === 'output' && (normalizedSplit === 'model' || normalizedSplit === 'provider' || normalizedSplit === 'task')) { currentSplit = 'total'; return; }
@@ -806,7 +655,7 @@ function clampSplitForMetric(metric: typeof currentMetric): void {
 	if (metric === 'sessions' && normalizedSplit !== 'total' && normalizedSplit !== 'model' && normalizedSplit !== 'editor' && normalizedSplit !== 'provider' && normalizedSplit !== 'task') { currentSplit = 'total'; }
 }
 
-async function switchMetric(metric: typeof currentMetric, data: InitialChartData): Promise<void> {
+async function switchMetric(metric: ChartMetric, data: InitialChartData): Promise<void> {
 	if (currentMetric === metric) { return; }
 	currentSplit = getPreferredSplitForMetric(metric, currentSplit);
 	currentMetric = metric;
@@ -835,7 +684,7 @@ async function switchTimeWindow(timeWindow: ChartTimeWindow, data: InitialChartD
 	await reinitChart(data);
 }
 
-function getPreferredSplitForMetric(metric: typeof currentMetric, split: typeof currentSplit): typeof currentSplit {
+function getPreferredSplitForMetric(metric: ChartMetric, split: ChartSplit): ChartSplit {
 	const normalized = split === 'taskCategory' ? 'task' : split;
 	if (metric === 'cost') {
 		return (normalized === 'editor' || normalized === 'provider' || normalized === 'task') ? normalized : 'total';
@@ -852,7 +701,7 @@ function getPreferredSplitForMetric(metric: typeof currentMetric, split: typeof 
 	return normalized;
 }
 
-function isSplitSupported(metric: typeof currentMetric, split: typeof currentSplit): boolean {
+function isSplitSupported(metric: ChartMetric, split: ChartSplit): boolean {
 	const normalized = split === 'taskCategory' ? 'task' : split;
 	if (metric === 'sessions') {
 		return normalized === 'total' || normalized === 'model' || normalized === 'editor' || normalized === 'provider' || normalized === 'task';
@@ -861,7 +710,7 @@ function isSplitSupported(metric: typeof currentMetric, split: typeof currentSpl
 		return normalized === 'total' || normalized === 'model' || normalized === 'editor' || normalized === 'provider' || normalized === 'task';
 	}
 	if (metric === 'output') {
-		return normalized !== 'model' && normalized !== 'provider' && normalized !== 'task' && normalized !== 'taskCategory';
+		return normalized !== 'model' && normalized !== 'provider' && normalized !== 'task';
 	}
 	return normalized !== 'language' && normalized !== 'provider';
 }
@@ -893,7 +742,7 @@ async function reinitChart(data: InitialChartData): Promise<void> {
 	chart = new Chart(ctx, createConfig(data));
 }
 
-async function switchSplit(split: typeof currentSplit, data: InitialChartData): Promise<void> {
+async function switchSplit(split: ChartSplit, data: InitialChartData): Promise<void> {
 	if (currentSplit === split) { return; }
 	if (!isSplitSupported(currentMetric, split)) { return; }
 	currentSplit = split;
@@ -919,7 +768,7 @@ function setActivePeriod(period: ChartPeriod): void {
 	});
 }
 
-function setActiveMetric(metric: typeof currentMetric): void {
+function setActiveMetric(metric: ChartMetric): void {
 	(['metric-tokens', 'metric-output', 'metric-cost', 'metric-sessions'] as const).forEach(id => {
 		const btn = document.getElementById(id);
 		if (!btn) { return; }
@@ -927,7 +776,7 @@ function setActiveMetric(metric: typeof currentMetric): void {
 	});
 }
 
-function setActiveSplit(split: typeof currentSplit): void {
+function setActiveSplit(split: ChartSplit): void {
 	const normalized = split === 'taskCategory' ? 'task' : split;
 	(['split-total', 'split-model', 'split-editor', 'split-repository', 'split-language', 'split-provider', 'split-task'] as const).forEach(id => {
 		const btn = document.getElementById(id);
@@ -949,7 +798,7 @@ function updateSplitButtonStates(): void {
 	splits.forEach(({ id, split }) => {
 		const btn = document.getElementById(id) as HTMLButtonElement | null;
 		if (!btn) { return; }
-		const supported = isSplitSupported(currentMetric, split as typeof currentSplit);
+		const supported = isSplitSupported(currentMetric, split as ChartSplit);
 		btn.disabled = !supported;
 		btn.classList.toggle('disabled', !supported);
 		btn.title = supported ? '' : `Not available for ${currentMetric} metric`;
@@ -996,13 +845,13 @@ function getChartColors(): ChartColors {
 
 function buildBaseOptions(c: ChartColors, periodsReady: boolean) {
 	const title = !periodsReady && (currentTimeWindow === 'last90' || currentTimeWindow === 'allTime')
-		? `${PERIOD_LABELS[currentTimeWindow]} (loading history…)`
-		: PERIOD_LABELS[currentTimeWindow];
+		? `${TIME_WINDOW_LABELS[currentTimeWindow]} (loading history…)`
+		: TIME_WINDOW_LABELS[currentTimeWindow];
 	return {
 		responsive: true, maintainAspectRatio: false,
 		interaction: { mode: 'index' as const, intersect: false },
 		plugins: {
-			title: { display: true, text: title, color: c.textColor, font: { size: 14, weight: 'bold' }, padding: { top: 4, bottom: 12 } },
+			title: { display: true, text: title, color: c.textColor, font: { size: 14, weight: 'bold' as const }, padding: { top: 4, bottom: 12 } },
 			legend: { position: 'top' as const, labels: { color: c.textColor, font: { size: 12 } } },
 			tooltip: { backgroundColor: c.bgColor, titleColor: c.textColor, bodyColor: c.textColor, borderColor: c.borderColor, borderWidth: 1, padding: 10, displayColors: true }
 		},
@@ -1059,7 +908,7 @@ function buildSessionsViewConfig(view: string, period: ChartPeriodData, baseOpti
 		data: { labels: period.labels, datasets: seriesDatasets as any },
 		options: { ...baseOptions, plugins: { ...baseOptions.plugins, legend: { display: showLegend, position: 'top' as const, labels: { color: c.textColor, font: { size: 12 } } }, tooltip: { ...baseOptions.plugins.tooltip, callbacks: { label: (ctx: any) => ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toLocaleString()} sessions` } } },
 			scales: { x: { stacked: stackAxes, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 } } },
-				y: { stacked: stackAxes, type: 'linear' as const, display: true, position: 'left' as const, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() }, title: { display: true, text: 'Sessions', color: c.textColor, font: { size: 12, weight: 'bold' } } }
+				y: { stacked: stackAxes, type: 'linear' as const, display: true, position: 'left' as const, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() }, title: { display: true, text: 'Sessions', color: c.textColor, font: { size: 12, weight: 'bold' as const } } }
 			}
 		}
 	};
@@ -1081,8 +930,8 @@ function buildTotalViewConfig(period: ChartPeriodData, baseOptions: ReturnType<t
 		] },
 		options: { ...baseOptions, scales: {
 			x: { stacked: true, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 } } },
-			y: { stacked: true, type: 'linear' as const, display: true, position: 'left' as const, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() }, title: { display: true, text: 'Tokens', color: c.textColor, font: { size: 12, weight: 'bold' } } },
-			y1: { type: 'linear' as const, display: true, position: 'right' as const, grid: { drawOnChartArea: false }, ticks: { color: c.textColor, font: { size: 11 } }, title: { display: true, text: 'Sessions', color: c.textColor, font: { size: 12, weight: 'bold' } } }
+			y: { stacked: true, type: 'linear' as const, display: true, position: 'left' as const, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() }, title: { display: true, text: 'Tokens', color: c.textColor, font: { size: 12, weight: 'bold' as const } } },
+			y1: { type: 'linear' as const, display: true, position: 'right' as const, grid: { drawOnChartArea: false }, ticks: { color: c.textColor, font: { size: 11 } }, title: { display: true, text: 'Sessions', color: c.textColor, font: { size: 12, weight: 'bold' as const } } }
 		} }
 	};
 }
@@ -1220,8 +1069,6 @@ function buildCostViewConfig(period: ChartPeriodData, baseOptions: ReturnType<ty
 	const lastIdx = period.costData.length - 1;
 	const projExtra = !isRolling && lastIdx >= 0 ? computeProjectionExtra(period.costData[lastIdx], getCurrentPeriodFraction(currentPeriod)) : null;
 	const projDs = projExtra !== null ? [{ label: PROJECTION_LABELS[currentPeriod], data: period.costData.map((_: number, i: number) => i === lastIdx ? projExtra : 0), backgroundColor: 'rgba(34, 197, 94, 0.2)', borderColor: 'rgba(34, 197, 94, 0.5)', borderWidth: 1, yAxisID: 'y' }] : [];
-	const budget = monthlyBudget;
-	const budgetDs = budget > 0 && currentPeriod === 'month' ? [{ label: `Monthly Budget ($${budget.toFixed(2)})`, data: period.labels.map(() => budget), type: 'line' as const, borderColor: 'rgba(255, 165, 0, 0.9)', borderWidth: 2, borderDash: [6, 4], pointRadius: 0, fill: false, yAxisID: 'y' }] : [];
 	const rollingLabel = getRollingLabel();
 	const showBudgetLine = currentPeriod === 'month' && monthlyBudget > 0;
 	const budgetLinePlugin = showBudgetLine ? buildBudgetLinePlugin(monthlyBudget) : null;
@@ -1243,7 +1090,7 @@ function buildOutputViewConfig(view: string, period: ChartPeriodData, baseOption
 	return {
 		type: 'bar' as const, data: { labels: period.labels, datasets: locDatasets as any },
 		options: { ...baseOptions, plugins: { ...baseOptions.plugins, legend: { position: 'top' as const, labels: { color: c.textColor, font: { size: 11 } } }, tooltip: { ...baseOptions.plugins.tooltip, callbacks: { label: (ctx: any) => ` ${Math.abs(Number(ctx.parsed.y)).toLocaleString()} lines` } } },
-			scales: { x: { stacked, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 } } }, y: { stacked, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 }, callback: (value: any) => Math.abs(Number(value)).toLocaleString() }, title: { display: true, text: 'Lines of Code', color: c.textColor, font: { size: 12, weight: 'bold' } } } }
+			scales: { x: { stacked, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 } } }, y: { stacked, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 }, callback: (value: any) => Math.abs(Number(value)).toLocaleString() }, title: { display: true, text: 'Lines of Code', color: c.textColor, font: { size: 12, weight: 'bold' as const } } } }
 		}
 	};
 }
@@ -1418,12 +1265,12 @@ function buildStackedViewConfig(view: string, period: ChartPeriodData, baseOptio
 				if (items.some(i => i?.dataset?.label === 'Antigravity')) { return 'Antigravity: estimates from transcript content.\nActual API counts are not stored locally.'; }
 				return '';
 			} } } },
-			scales: { ...baseOptions.scales, y: { stacked: true, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() }, title: { display: true, text: 'Tokens', color: c.textColor, font: { size: 12, weight: 'bold' } } }, x: { stacked: true, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 } } }, y1: { type: 'linear' as const, display: true, position: 'right' as const, grid: { drawOnChartArea: false }, ticks: { color: c.textColor, font: { size: 11 } }, title: { display: true, text: 'Sessions', color: c.textColor, font: { size: 12, weight: 'bold' } } } }
+			scales: { ...baseOptions.scales, y: { stacked: true, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() }, title: { display: true, text: 'Tokens', color: c.textColor, font: { size: 12, weight: 'bold' as const } } }, x: { stacked: true, grid: { color: c.gridColor }, ticks: { color: c.textColor, font: { size: 11 } } }, y1: { type: 'linear' as const, display: true, position: 'right' as const, grid: { drawOnChartArea: false }, ticks: { color: c.textColor, font: { size: 11 } }, title: { display: true, text: 'Sessions', color: c.textColor, font: { size: 12, weight: 'bold' as const } } } }
 		}
 	};
 }
 
-function resolveTokensView(split: typeof currentSplit): string {
+function resolveTokensView(split: ChartSplit): string {
 	if (split === 'model') { return 'model'; }
 	if (split === 'editor') { return 'editor'; }
 	if (split === 'repository') { return 'repository'; }
@@ -1432,7 +1279,7 @@ function resolveTokensView(split: typeof currentSplit): string {
 	return 'total';
 }
 
-function resolveCostView(split: typeof currentSplit): string {
+function resolveCostView(split: ChartSplit): string {
 	if (split === 'model') { return 'cost-model'; }
 	if (split === 'editor') { return 'cost-editor'; }
 	if (split === 'provider') { return 'cost-provider'; }
@@ -1440,7 +1287,7 @@ function resolveCostView(split: typeof currentSplit): string {
 	return 'cost';
 }
 
-function resolveSessionsView(split: typeof currentSplit): string {
+function resolveSessionsView(split: ChartSplit): string {
 	if (split === 'model') { return 'sessions-model'; }
 	if (split === 'editor') { return 'sessions-editor'; }
 	if (split === 'provider') { return 'sessions-provider'; }
@@ -1448,7 +1295,7 @@ function resolveSessionsView(split: typeof currentSplit): string {
 	return 'sessions';
 }
 
-function resolveChartView(metric: typeof currentMetric, split: typeof currentSplit): string {
+function resolveChartView(metric: ChartMetric, split: ChartSplit): string {
 	const normalized = split === 'taskCategory' ? 'task' : split;
 	if (metric === 'output') { return `output-${normalized}`; }
 	if (metric === 'sessions') { return resolveSessionsView(normalized); }
@@ -1478,7 +1325,7 @@ function createConfig(data: InitialChartData): ChartConfig {
 }
 
 
-type MetricSplit = { metric: typeof currentMetric; split: typeof currentSplit };
+type MetricSplit = { metric: ChartMetric; split: ChartSplit };
 
 function migrateViewKey(view: string): MetricSplit {
 	const map: Record<string, MetricSplit> = {
@@ -1493,31 +1340,12 @@ function migrateViewKey(view: string): MetricSplit {
 	return map[view] ?? { metric: 'tokens', split: 'total' };
 }
 
-function applyInitialChartState(data: InitialChartData): void {
-	if (data.initialPeriod) { currentPeriod = data.initialPeriod; }
-	if (data.initialMetric) { currentMetric = data.initialMetric; }
-	if (data.initialSplit) { currentSplit = data.initialSplit; return; }
-	if (!data.initialView) { return; }
-	const m = migrateViewKey(data.initialView);
-	currentMetric = m.metric;
-	currentSplit = m.split;
-}
-
-function applySavedChartState(saved: ChartWebviewState): void {
-	currentPeriod = saved.period;
-	currentDisplayMode = saved.displayMode;
-	if (saved.view && !saved.metric) {
-		const m = migrateViewKey(saved.view);
-		currentMetric = m.metric;
-		currentSplit = m.split;
-		return;
-	}
-	currentMetric = saved.metric ?? 'tokens';
-	currentSplit = saved.split ?? 'total';
-}
-
 function restoreChartState(initialData: InitialChartData): void {
 	const saved = chartState.restore();
+	// Webview state is newest for an existing panel (the host value is a snapshot embedded when the
+	// panel was created); the host value only seeds a brand-new panel, which has no saved flag.
+	const savedFlag = (vscode.getState() as Partial<ChartWebviewState> | undefined)?.editorListCollapsed;
+	editorListCollapsed = savedFlag ?? initialData.initialEditorListCollapsed ?? false;
 	if (!vscode.getState()) {
 		if (initialData.initialPeriod) { currentPeriod = initialData.initialPeriod; }
 		if (initialData.initialTimeWindow) { currentTimeWindow = initialData.initialTimeWindow; }
@@ -1533,7 +1361,6 @@ function restoreChartState(initialData: InitialChartData): void {
 	currentPeriod = saved.period ?? 'day';
 	currentTimeWindow = saved.timeWindow ?? 'last30';
 	currentDisplayMode = saved.displayMode ?? 'actual';
-	editorListCollapsed = saved.editorListCollapsed ?? false;
 	if (saved.view && !saved.metric) {
 		const m = migrateViewKey(saved.view);
 		currentMetric = m.metric;
@@ -1560,7 +1387,7 @@ async function bootstrap(): Promise<void> {
 void bootstrap();
 
 // Listen for background data updates from the extension
-registerMessageHandler((message) => {
+registerMessageHandler<{ command?: string; data?: unknown }>((message) => {
 	if (message.command === 'updateChartData') {
 		// Save current toggles for restoration after chart re-initializes
 		pendingMetric = currentMetric;

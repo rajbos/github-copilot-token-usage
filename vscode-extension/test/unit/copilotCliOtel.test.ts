@@ -15,6 +15,13 @@ import {
 	loadCopilotCliOtelIndex,
 	clearCopilotCliOtelCache,
 	expireCopilotCliOtelCacheForTests,
+	readByteRange,
+	loadOtelRecordsInProcess,
+	setCopilotCliOtelSnapshotPath,
+	setCopilotCliOtelLogger,
+	isCopilotCliOtelIndexReady,
+	onCopilotCliOtelIndexReady,
+	whenCopilotCliOtelIndexReady,
 } from '../../../src/copilotCliOtel';
 
 type StoreRow = {
@@ -150,6 +157,44 @@ async function withHomedir<T>(t: import('node:test').TestContext, fn: (homeDir: 
 // extractCopilotCliSessionId's events.jsonl branch uses path.dirname/path.basename, which are
 // separator-sensitive — paths here must be built with path.join (not hardcoded Windows-style
 // backslash literals) so these tests are meaningful on POSIX CI runners too.
+test('readByteRange: refuses a range past the in-process limit instead of letting Node abort the host', async () => {
+	// A multi-GB OTel export is real (the file is append-only and unbounded). Asking fs.read for
+	// >2 GiB trips a native assertion that kills the whole process, so this must reject cleanly —
+	// and it must do so before touching the file, so a tiny file is enough to prove it.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'otel-range-'));
+	const file = path.join(dir, 'copilot-otel.jsonl');
+	fs.writeFileSync(file, '{"a":1}\n');
+	try {
+		await assert.rejects(readByteRange(file, 0, 3_000_000_000), RangeError);
+		const small = await readByteRange(file, 0, 8);
+		assert.equal(small.toString('utf8'), '{"a":1}\n', 'ordinary small reads are unaffected');
+		assert.equal((await readByteRange(file, 5, 5)).length, 0, 'an empty range stays empty');
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('loadOtelRecordsInProcess: bounds the whole plan, not just each range, so a split multi-GB export is not read on the host', async () => {
+    // Two ranges that are each under the per-range cap but together over the budget: before the aggregate bound the
+    // fallback would have read and parsed both.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'otel-plan-'));
+    const span = (id: string) => JSON.stringify({ type: 'span', name: 'chat gpt-4o', attributes: { 'gen_ai.conversation.id': id, 'gen_ai.usage.input_tokens': 5, 'gen_ai.usage.output_tokens': 7 } }) + '\n';
+    fs.writeFileSync(path.join(dir, 'a.jsonl'), span('11111111-1111-4111-8111-111111111111'));
+    fs.writeFileSync(path.join(dir, 'b.jsonl'), span('22222222-2222-4222-8222-222222222222'));
+    const sizeA = fs.statSync(path.join(dir, 'a.jsonl')).size;
+    const sizeB = fs.statSync(path.join(dir, 'b.jsonl')).size;
+    const plan = [{ name: 'a.jsonl', start: 0, end: sizeA }, { name: 'b.jsonl', start: 0, end: sizeB }];
+    try {
+        const within = await loadOtelRecordsInProcess(dir, plan, sizeA + sizeB);
+        assert.equal(within.records.length, 2, 'a plan within the budget is parsed');
+        const over = await loadOtelRecordsInProcess(dir, plan, sizeA + sizeB - 1);
+        assert.deepEqual(over.records, [], 'a plan over the budget is not read at all');
+        assert.deepEqual(over.consumed, {}, 'and no offset advances, so it is picked up again later');
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+});
+
 test('extractCopilotCliSessionId: matches events.jsonl paths', () => {
 	const file = eventsJsonlPath('C:\\Users\\x', SESSION_ID);
 	assert.equal(extractCopilotCliSessionId(file), SESSION_ID);
@@ -336,5 +381,90 @@ test('getCopilotCliExactUsage: falls back to OTel file export when session-store
 		const usage = await getCopilotCliExactUsage(eventsJsonlPath(homeDir, SESSION_ID), storeAccess);
 		assert.ok(usage);
 		assert.equal(usage!.actualTokens, 110);
+	});
+});
+
+async function waitForFile(file: string): Promise<void> {
+	for (let i = 0; i < 100 && !fs.existsSync(file); i++) { await new Promise((r) => setTimeout(r, 20)); }
+	assert.ok(fs.existsSync(file), 'the snapshot was written');
+}
+
+test('the OTel index is saved to disk and restored, so a restart reads only what was appended', async (t) => {
+	await withHomedir(t, async (homeDir) => {
+		const otelDir = path.join(homeDir, '.copilot', 'otel');
+		const snapshot = path.join(homeDir, 'storage', 'otel-index.json');
+		setCopilotCliOtelSnapshotPath(snapshot);
+		t.after(() => setCopilotCliOtelSnapshotPath(undefined));
+		writeOtelSpans(otelDir, [chatSpan(SESSION_ID)]);
+		await loadCopilotCliOtelIndex();
+		await waitForFile(snapshot);
+
+		// Mark the saved total so a restored index is distinguishable from a rebuilt one.
+		const saved = JSON.parse(fs.readFileSync(snapshot, 'utf8'));
+		saved.sessions[0][1].actualTokens = 5000;
+		fs.writeFileSync(snapshot, JSON.stringify(saved));
+
+		appendOtelSpans(otelDir, [chatSpan(SESSION_ID, { 'gen_ai.usage.input_tokens': 50, 'gen_ai.usage.output_tokens': 5 })]);
+		clearCopilotCliOtelCache(); // a new process: nothing in memory
+		const usage = await getCopilotCliOtelUsage(eventsJsonlPath(homeDir, SESSION_ID));
+		assert.equal(usage!.actualTokens, 5000 + 55, 'restored from the snapshot plus the appended span, not re-read from the start');
+	});
+});
+
+test('a saved OTel index is discarded when the export file was replaced, not just appended to', async (t) => {
+	await withHomedir(t, async (homeDir) => {
+		const otelDir = path.join(homeDir, '.copilot', 'otel');
+		const snapshot = path.join(homeDir, 'storage', 'otel-index.json');
+		setCopilotCliOtelSnapshotPath(snapshot);
+		t.after(() => setCopilotCliOtelSnapshotPath(undefined));
+		writeOtelSpans(otelDir, [chatSpan(SESSION_ID)]);
+		await loadCopilotCliOtelIndex();
+		await waitForFile(snapshot);
+
+		// A different, larger file under the same name: bigger than the saved offset, but not the same bytes.
+		writeOtelSpans(otelDir, [chatSpan(SESSION_ID_2), chatSpan(SESSION_ID_2), chatSpan(SESSION_ID_2)]);
+		clearCopilotCliOtelCache();
+		const index = await loadCopilotCliOtelIndex();
+		assert.equal(index.get(SESSION_ID), undefined, 'the old file totals are gone');
+		assert.equal(index.get(SESSION_ID_2)?.actualTokens, 330);
+	});
+});
+
+test('subscribers are told once when the OTel index is ready, instead of each waiting on their own read', async (t) => {
+	await withHomedir(t, async (homeDir) => {
+		writeOtelSpans(path.join(homeDir, '.copilot', 'otel'), [chatSpan(SESSION_ID)]);
+		let told = 0;
+		const off = onCopilotCliOtelIndexReady(() => { told++; });
+		t.after(off);
+		assert.equal(isCopilotCliOtelIndexReady(), false);
+		assert.equal(await whenCopilotCliOtelIndexReady(20), false, 'a load that has not started is not ready');
+		const waiting = whenCopilotCliOtelIndexReady(5_000);
+		await loadCopilotCliOtelIndex();
+		assert.equal(await waiting, true);
+		assert.equal(isCopilotCliOtelIndexReady(), true);
+		expireCopilotCliOtelCacheForTests();
+		await loadCopilotCliOtelIndex(); // a refresh is not a new "ready"
+		assert.equal(told, 1);
+	});
+});
+
+test('the OTel index reports when it is ready, saved, and restored, so the output log can show it', async (t) => {
+	await withHomedir(t, async (homeDir) => {
+		const otelDir = path.join(homeDir, '.copilot', 'otel');
+		const snapshot = path.join(homeDir, 'storage', 'otel-index.json');
+		const messages: string[] = [];
+		setCopilotCliOtelLogger((m) => messages.push(m));
+		setCopilotCliOtelSnapshotPath(snapshot);
+		t.after(() => { setCopilotCliOtelSnapshotPath(undefined); setCopilotCliOtelLogger(undefined); });
+		writeOtelSpans(otelDir, [chatSpan(SESSION_ID)]);
+		await loadCopilotCliOtelIndex();
+		await waitForFile(snapshot);
+		for (let i = 0; i < 50 && !messages.some((m) => /saved to disk/.test(m)); i++) { await new Promise((r) => setTimeout(r, 20)); }
+		assert.ok(messages.some((m) => /OTel index ready after .*\(1 sessions\)/.test(m)), messages.join(' | '));
+		assert.ok(messages.some((m) => /OTel index saved to disk \(1 sessions/.test(m)), messages.join(' | '));
+
+		clearCopilotCliOtelCache();
+		await loadCopilotCliOtelIndex();
+		assert.ok(messages.some((m) => /OTel index restored from disk \(1 sessions\)/.test(m)), messages.join(' | '));
 	});
 });

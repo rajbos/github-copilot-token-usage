@@ -12,6 +12,12 @@ export type { CustomizationTypeStatus, WorkspaceCustomizationMatrix as Sanitized
 
 const VALID_STATUSES = new Set<string>(['✅', '⚠️', '❌']);
 
+function coerceStringArray(value: unknown): string[] | undefined {
+	if (!Array.isArray(value)) { return undefined; }
+	const strings = value.filter((v): v is string => typeof v === 'string');
+	return strings.length > 0 ? strings : undefined;
+}
+
 function coerceNumber(value: unknown): number {
 	const n = Number(value);
 	return Number.isFinite(n) ? n : 0;
@@ -47,20 +53,24 @@ export function sanitizeCustomizationMatrix(rawMatrix: unknown): WorkspaceCustom
 				for (const [key, val] of Object.entries(rawStatuses)) {
 					typeStatuses[key] = VALID_STATUSES.has(val as string) ? (val as CustomizationTypeStatus) : '❌';
 				}
+				const memberPaths = coerceStringArray(w.memberPaths);
 				return {
 					workspacePath: typeof w.workspacePath === 'string' ? w.workspacePath : '',
 					workspaceName: typeof w.workspaceName === 'string' ? w.workspaceName : '',
 					sessionCount: coerceNumber(w.sessionCount),
 					interactionCount: coerceNumber(w.interactionCount),
 					typeStatuses,
+					...(memberPaths ? { memberPaths } : {}),
 				};
 			})
 		: [];
 
+	const ungroupedWorkspaceNames = coerceStringArray(m.ungroupedWorkspaceNames);
 	return {
 		customizationTypes,
 		workspaces,
 		totalWorkspaces: coerceNumber(m.totalWorkspaces),
 		workspacesWithIssues: coerceNumber(m.workspacesWithIssues),
+		...(ungroupedWorkspaceNames ? { ungroupedWorkspaceNames } : {}),
 	};
 }

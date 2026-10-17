@@ -1,0 +1,185 @@
+{
+  "$comment": [
+    "Messages the shared webview bundles can post that desktop/src/main.ts does not handle.",
+    "Checked by scripts/validate-desktop-contract.js (npm run check:contract in desktop/).",
+    "status 'hidden': the controls that post it are hidden; hiddenBy is the CSS that hides them, injected by main.ts.",
+    "status 'gap':    the control is still visible and does nothing in the desktop app. A known gap, not a decision.",
+    "status 'no-op':  a background notice (telemetry, preference, failure report) with no visible control; ignoring it is harmless.",
+    "Remove an entry when its command gets a handler in registerIpcHandlers: the check fails on stale entries.",
+    "unresolvedControlSites (per 'hidden' entry): 'file#function' -> reason, for a post site whose control the check cannot determine; every other site's control must be in hiddenBy.",
+    "unresolvedComputedCommands: postMessage sites ('file#function:expression') whose command name is computed at runtime and cannot be resolved from data-* markup or a literal-union parameter; each needs a reason."
+  ],
+  "unresolvedComputedCommands": {
+    "vscode-extension/src/webview/usage/main.ts#wireInsightCardButtons:command": "Insight 'execute' buttons post a VS Code command id taken from the insight data. The desktop sends insights: [], so no such button is rendered."
+  },
+  "commands": {
+    "showUsageAnalysisRepoPrs": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-open-repo-prs", ".value-hint"],
+      "reason": "Efficiency Value tab: the 'Connect GitHub and open Repository PRs' hint and its button. The desktop app has no GitHub sign-in or Repository PR loader, so the whole hint is hidden."
+    },
+    "openFormattedJsonlFile": {
+      "status": "hidden",
+      "hiddenBy": [".view-formatted-link"],
+      "reason": "Diagnostics: the formatted-file viewer is a VS Code editor tab."
+    },
+    "reportNewEditorPath": {
+      "status": "hidden",
+      "hiddenBy": [".report-editor-link"],
+      "reason": "Diagnostics: editor-path reporting is not wired up in the desktop app."
+    },
+    "authenticateGitHub": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-authenticate-github", "#btn-team-server-auth-warning"],
+      "reason": "Diagnostics: GitHub sign-in uses VS Code's authentication provider."
+    },
+    "signOutGitHub": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-sign-out-github"],
+      "reason": "Diagnostics: GitHub sign-in uses VS Code's authentication provider."
+    },
+    "configureBackend": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-configure-backend"],
+      "reason": "Diagnostics: backend setup is a VS Code configuration panel."
+    },
+    "configureTeamServer": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-configure-backend-team"],
+      "reason": "Diagnostics: team-server setup is a VS Code configuration panel."
+    },
+    "openSettings": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-open-settings"],
+      "reason": "Diagnostics: opens VS Code settings."
+    },
+    "openDisplaySettings": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-open-display-settings"],
+      "reason": "Diagnostics: opens VS Code settings."
+    },
+    "openToolFamiliesSettings": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-open-tool-families-settings"],
+      "reason": "Diagnostics: opens VS Code settings."
+    },
+    "pickFolder": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-browse-folder"],
+      "reason": "Diagnostics: folder analysis is not wired up in the desktop app."
+    },
+    "analyzeFolder": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-analyze-folder"],
+      "reason": "Diagnostics: folder analysis is not wired up in the desktop app."
+    },
+    "clearCache": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-clear-cache", "#btn-clear-cache-tab"],
+      "reason": "Diagnostics: the desktop cache is not reset from the page."
+    },
+    "resetInsightsState": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-reset-insights", "#btn-reset-insights-tab"],
+      "reason": "Diagnostics: insight state lives in VS Code global state."
+    },
+    "resetDiscoveredEditors": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-reset-discovered-editors"],
+      "reason": "Diagnostics: discovered-editor state lives in VS Code global state."
+    },
+    "resetDebugCounters": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-reset-debug-counters"],
+      "reason": "Diagnostics: debug counters live in VS Code global state."
+    },
+    "shareToSocial": {
+      "status": "hidden",
+      "hiddenBy": [".share-btn-linkedin", ".share-btn-bluesky", ".share-btn-mastodon"],
+      "unresolvedControlSites": {
+        "vscode-extension/src/webview/maturity/main.ts#handleShareToSocial": "Both share rows (the score and the AI coding toolbox card) get their buttons from shared/socialShare.ts, whose ids are built per row; every one carries a .share-btn-<platform> class, which is what hides them."
+      },
+      "reason": "Fluency Score: social sharing (score and toolbox card) is not wired up in the desktop app."
+    },
+    "saveChartImage": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-export-toggle", ".export-menu-item"],
+      "reason": "Fluency Score: the export menu (PNG / PDF / PowerPoint) saves through VS Code. The menu items post the commands; the toggle that opens the menu is hidden too."
+    },
+    "exportPdf": {
+      "status": "hidden",
+      "hiddenBy": [".export-menu-item"],
+      "reason": "Fluency Score: PDF export from the export menu saves through VS Code."
+    },
+    "exportPptx": {
+      "status": "hidden",
+      "hiddenBy": [".export-menu-item"],
+      "reason": "Fluency Score: PowerPoint export from the export menu saves through VS Code."
+    },
+    "installHook": {
+      "status": "hidden",
+      "hiddenBy": [".hook-reminder-btn"],
+      "reason": "Fluency Score: session-reminder hooks are installed by the extension (command name read from the button's data-action)."
+    },
+    "uninstallHook": {
+      "status": "hidden",
+      "hiddenBy": [".hook-reminder-btn"],
+      "reason": "Fluency Score: session-reminder hooks are removed by the extension (command name read from the button's data-action)."
+    },
+
+    "analyzeModelUsage": { "status": "gap", "reason": "Diagnostics: model-usage analysis action is visible and unhandled." },
+    "analyzeTtft": { "status": "gap", "reason": "Diagnostics: TTFT analysis action is visible and unhandled." },
+    "updateDisplaySetting": { "status": "gap", "reason": "Diagnostics: display-setting inputs are visible and unhandled." },
+    "setDebugCounter": { "status": "gap", "reason": "Diagnostics debug tab; only rendered in debug mode, which the desktop never enables." },
+    "setDebugFlag": { "status": "gap", "reason": "Diagnostics debug tab; only rendered in debug mode, which the desktop never enables." },
+
+    "dismissTips": { "status": "gap", "reason": "Fluency Score: dismissing tips is unhandled." },
+    "resetDismissedTips": { "status": "gap", "reason": "Fluency Score: resetting dismissed tips is unhandled." },
+    "searchMcpExtensions": { "status": "gap", "reason": "Fluency Score: MCP marketplace search is a VS Code action." },
+    "shareToIssue": { "status": "gap", "reason": "Fluency Score: share to issue is unhandled." },
+
+    "analyseAllRepositories": { "status": "gap", "reason": "Usage Analysis: repository analysis is unhandled." },
+    "analyseRepository": { "status": "gap", "reason": "Usage Analysis: repository analysis is unhandled." },
+    "checkCcrActivity": { "status": "gap", "reason": "Usage Analysis: Copilot code review lookup needs GitHub auth." },
+    "loadRepoPrStats": { "status": "gap", "reason": "Usage Analysis: the repository PR tab never loads (needs GitHub auth)." },
+    "loadAgentSessions": { "status": "gap", "reason": "Usage Analysis: the cloud-agent tab never loads (needs GitHub auth)." },
+    "refreshGitHubActivity": { "status": "gap", "reason": "Usage Analysis: the Refresh now button on the repository PR and cloud-agent freshness banners; those tabs never load in the desktop app (needs GitHub auth)." },
+    "loadReadiness": { "status": "gap", "reason": "Usage Analysis: the readiness tab never loads." },
+    "loadRecentSessions": { "status": "gap", "reason": "Usage Analysis: changing the sessions look-back period never loads." },
+    "draftCopilotChatWithPrompt": { "status": "gap", "reason": "Usage Analysis: opens Copilot Chat, which only exists in VS Code." },
+    "openCopilotChatWithPrompt": { "status": "gap", "reason": "Usage Analysis: opens Copilot Chat, which only exists in VS Code." },
+    "draftServerMemoryPromotion": { "status": "gap", "reason": "Usage Analysis server memories: drafts a Copilot Chat prompt. Not rendered in the desktop app today (its payload has no serverMemoriesAnalysis); handle or hide it before adding that data." },
+    "openServerMemoryCitation": { "status": "gap", "reason": "Usage Analysis server memories: opens a cited file. Not rendered in the desktop app today (its payload has no serverMemoriesAnalysis); handle or hide it before adding that data." },
+    "openToolPicker": { "status": "gap", "reason": "Usage Analysis: opens VS Code's tool selection menu (command name read from the button's data-command)." },
+    "manageExtension": { "status": "gap", "reason": "Usage Analysis: opens the VS Code extensions view." },
+    "openAgentPlugins": { "status": "gap", "reason": "Usage Analysis: opens a VS Code view." },
+    "openFileFromList": { "status": "gap", "reason": "Usage Analysis: opening customization files is unhandled." },
+    "suppressUnknownTool": { "status": "gap", "reason": "Usage Analysis: suppressing an unknown tool writes VS Code settings." },
+    "insightAction": { "status": "gap", "reason": "Usage Analysis: insight actions (seen, dismiss) are unhandled." },
+    "scanWorktrees": { "status": "gap", "reason": "Usage Analysis: worktree scan is unhandled." },
+    "cancelWorktreeScan": { "status": "gap", "reason": "Usage Analysis: worktree scan is unhandled." },
+    "pickWorktreeRoot": { "status": "gap", "reason": "Usage Analysis: worktree scan is unhandled." },
+    "cleanupPushedWorktrees": { "status": "gap", "reason": "Usage Analysis: worktree cleanup is unhandled." },
+    "cancelCleanupPushedWorktrees": { "status": "gap", "reason": "Usage Analysis: worktree cleanup is unhandled." },
+    "deleteWorktree": { "status": "gap", "reason": "Usage Analysis: worktree cleanup is unhandled." },
+    "openWorktreeInEditor": { "status": "gap", "reason": "Usage Analysis: opens a VS Code window." },
+
+    "extensionPointAction": { "status": "no-op", "reason": "The desktop registers no extension-point buttons (window.__EXTENSION_POINT_BUTTONS__ is empty), so none is ever rendered." },
+    "setEditorListCollapsed": { "status": "no-op", "reason": "Preference the extension persists; the desktop keeps it in the view's own setState storage." },
+    "setPeriodPreference": { "status": "no-op", "reason": "Preference the extension persists; the desktop keeps it in the view's own setState storage." },
+    "setTimeWindowPreference": { "status": "no-op", "reason": "Preference the extension persists; the desktop keeps it in the view's own setState storage." },
+    "setViewPreference": { "status": "no-op", "reason": "Preference the extension persists; the desktop keeps it in the view's own setState storage." },
+    "saveSortSettings": { "status": "no-op", "reason": "Details table sort works while the view is open, but the desktop does not persist it: it resets to name ascending when the view reloads." },
+    "saveSessionColumnSettings": { "status": "no-op", "reason": "Preference the extension persists; the column choice is not kept across desktop restarts." },
+    "surfaceNavReady": { "status": "no-op", "reason": "Readiness handshake for What's New \"Take me there\" reveals; the desktop has no What's New and never queues a reveal." },
+    "surfaceRevealHandled": { "status": "no-op", "reason": "Acknowledges a What's New reveal request, which the desktop never sends." },
+    "efficiencyWebviewReady": { "status": "no-op", "reason": "Replay handshake for buffered Efficiency value updates (Repository PR data), which the desktop app never sends." },
+    "viewTabOpened": { "status": "no-op", "reason": "Feeds the extension's What's New announcer, which the desktop does not have." },
+    "usageWebviewReady": { "status": "no-op", "reason": "Handshake for GitHub activity data, which the desktop does not provide." },
+    "usageWebviewTrace": { "status": "no-op", "reason": "Debug trace for the extension's output channel." },
+    "traceUsageCuration": { "status": "no-op", "reason": "Debug trace for the extension's output channel." },
+    "copyFailed": { "status": "no-op", "reason": "Failure notice; the extension shows an error toast, the desktop has none." },
+    "exportImageFailed": { "status": "no-op", "reason": "Failure notice; the extension shows an error toast, the desktop has none." },
+    "shareToSocialFailed": { "status": "no-op", "reason": "Failure notice; the extension shows an error toast, the desktop has none." }
+  }
+}

@@ -512,6 +512,233 @@ function fetchPrCommitMessagesPage(owner: string, repo: string, prNumber: number
 	});
 }
 
+// ---------------------------------------------------------------------------
+// Copilot Code Review (CCR) activity — reviews + who requested them
+// ---------------------------------------------------------------------------
+
+/** Login GitHub's code review bot posts completed reviews as. */
+const COPILOT_REVIEWER_BOT_LOGIN = 'copilot-pull-request-reviewer[bot]';
+/** Name GitHub uses for Copilot on `review_requested` timeline events — distinct from the bot login above. */
+const COPILOT_REVIEWER_REQUEST_NAME = 'Copilot';
+
+export type CcrReview = {
+	/** ISO timestamp the review was submitted. */
+	submittedAt: string;
+	/** GitHub review state, e.g. "COMMENTED", "APPROVED", "CHANGES_REQUESTED". */
+	state: string;
+};
+
+export type CcrReviewRequest = {
+	/** Login of the actor (human or bot) who requested Copilot as a reviewer. */
+	requestedBy: string;
+	/** ISO timestamp the request was made. */
+	requestedAt: string;
+};
+
+export type PrCopilotReviewActivity = {
+	/** Completed Copilot code reviews on the PR — each one is a billable CCR event. */
+	reviews: CcrReview[];
+	/**
+	 * `review_requested` events that named Copilot — the best non-admin-reachable signal for who
+	 * is likely billed for each review. GitHub bills either the requester (manual per-review
+	 * request) or the PR author (repo-wide auto-review setting); this API cannot distinguish the
+	 * two modes, so `requestedBy` is a proxy, not a confirmed billing attribution.
+	 */
+	requests: CcrReviewRequest[];
+	error?: string;
+};
+
+/**
+ * True when a review row from `GET /pulls/{number}/reviews` is both Copilot's and actually
+ * submitted. GitHub's reviews endpoint can include a `PENDING` review — one drafted but not yet
+ * submitted, with no real `submitted_at` — which is not a billable CCR event yet and must not be
+ * counted as completed activity.
+ */
+export function isCompletedCopilotReview(review: { user?: { login?: string }; state?: string } | null | undefined): boolean {
+	return review?.user?.login === COPILOT_REVIEWER_BOT_LOGIN && typeof review?.state === 'string' && review.state !== 'PENDING';
+}
+
+/**
+ * Fetch one page of completed Copilot code reviews for one PR via `GET /pulls/{number}/reviews`.
+ * `pageSize` is the raw item count for this page (before filtering to completed Copilot reviews) —
+ * callers must page on that, not on `reviews.length`, since most reviews on a PR are not Copilot's.
+ */
+function fetchPrCopilotReviewsPage(owner: string, repo: string, prNumber: number, token: string, page: number): Promise<{ reviews: CcrReview[]; pageSize?: number; statusCode?: number; error?: string }> {
+	const { hostname, restPathPrefix } = getGitHubApiEndpoints();
+	return new Promise((resolve) => {
+		const req = https.request(
+			{
+				hostname,
+				path: `${restPathPrefix}/repos/${owner}/${repo}/pulls/${prNumber}/reviews?per_page=100&page=${page}`,
+				headers: {
+					Authorization: `Bearer ${token}`,
+					'User-Agent': GITHUB_API_USER_AGENT,
+					Accept: GITHUB_API_ACCEPT_V3,
+				},
+			},
+			(res) => {
+				let data = '';
+				res.on('data', (chunk) => (data += chunk));
+				res.on('end', () => {
+					try {
+						const parsed = JSON.parse(data);
+						if (!Array.isArray(parsed)) {
+							resolve({ reviews: [], statusCode: res.statusCode, error: parsed.message ?? 'Unexpected API response' });
+							return;
+						}
+						const reviews: CcrReview[] = parsed
+							.filter(isCompletedCopilotReview)
+							.map((r: any) => ({ submittedAt: r.submitted_at, state: r.state }));
+						resolve({ reviews, pageSize: parsed.length, statusCode: res.statusCode });
+					} catch (e) {
+						resolve({ reviews: [], statusCode: res.statusCode, error: String(e) });
+					}
+				});
+			},
+		);
+		attachRequestFailureHandling(req, 15000, (message) => resolve({ reviews: [], error: message }));
+		req.end();
+	});
+}
+
+/**
+ * True when a timeline event is a `review_requested` naming Copilot AND has a real actor login to
+ * attribute it to. An event with no real actor login (e.g. a deleted account) is not attributable —
+ * it is dropped rather than synthesized into a fake "unknown" requester, which would have no real
+ * meaning to a viewer and would leak into the UI as if it were data.
+ */
+export function isAttributableCopilotReviewRequest(
+	event: { event?: string; requested_reviewer?: { login?: string }; actor?: { login?: string } } | null | undefined,
+): boolean {
+	return event?.event === 'review_requested'
+		&& event?.requested_reviewer?.login === COPILOT_REVIEWER_REQUEST_NAME
+		&& typeof event?.actor?.login === 'string' && event.actor.login.length > 0;
+}
+
+/**
+ * Fetch one page of `review_requested` timeline events naming Copilot for one PR via
+ * `GET /issues/{number}/timeline`. `pageSize` is the raw event count for this page (before
+ * filtering to Copilot review requests) — callers must page on that, not on `requests.length`,
+ * since most timeline events on a PR are not review requests at all.
+ */
+function fetchPrCopilotReviewRequestsPage(owner: string, repo: string, prNumber: number, token: string, page: number): Promise<{ requests: CcrReviewRequest[]; pageSize?: number; statusCode?: number; error?: string }> {
+	const { hostname, restPathPrefix } = getGitHubApiEndpoints();
+	return new Promise((resolve) => {
+		const req = https.request(
+			{
+				hostname,
+				path: `${restPathPrefix}/repos/${owner}/${repo}/issues/${prNumber}/timeline?per_page=100&page=${page}`,
+				headers: {
+					Authorization: `Bearer ${token}`,
+					'User-Agent': GITHUB_API_USER_AGENT,
+					// The Timeline API is long-GA on github.com, but some older GitHub Enterprise Server
+					// versions still gate it behind the "mockingbird" preview media type and 415 without
+					// it. Listing both keeps this working on github.com (which ignores the unused
+					// preview type) and on those older GHES instances alike.
+					Accept: `application/vnd.github.mockingbird-preview+json,${GITHUB_API_ACCEPT_V3}`,
+				},
+			},
+			(res) => {
+				let data = '';
+				res.on('data', (chunk) => (data += chunk));
+				res.on('end', () => {
+					try {
+						const parsed = JSON.parse(data);
+						if (!Array.isArray(parsed)) {
+							resolve({ requests: [], statusCode: res.statusCode, error: parsed.message ?? 'Unexpected API response' });
+							return;
+						}
+						const requests: CcrReviewRequest[] = parsed
+							.filter(isAttributableCopilotReviewRequest)
+							.map((e: any) => ({ requestedBy: e.actor.login, requestedAt: e.created_at }));
+						resolve({ requests, pageSize: parsed.length, statusCode: res.statusCode });
+					} catch (e) {
+						resolve({ requests: [], statusCode: res.statusCode, error: String(e) });
+					}
+				});
+			},
+		);
+		attachRequestFailureHandling(req, 15000, (message) => resolve({ requests: [], error: message }));
+		req.end();
+	});
+}
+
+/** Cap on pages fetched per PR for reviews/timeline events — 500 of each, same bound as {@link fetchRepoPrs}. */
+const MAX_CCR_PAGES = 5;
+
+/**
+ * Fetch completed Copilot code reviews for one PR, paginating as needed.
+ * @param fetcher Injectable low-level single-page fetcher for testing; defaults to the real HTTPS implementation.
+ */
+export async function fetchPrCopilotReviews(
+	owner: string,
+	repo: string,
+	prNumber: number,
+	token: string,
+	fetcher: (owner: string, repo: string, prNumber: number, token: string, page: number) => Promise<{ reviews: CcrReview[]; pageSize?: number; statusCode?: number; error?: string }> = fetchPrCopilotReviewsPage,
+): Promise<{ reviews: CcrReview[]; statusCode?: number; error?: string }> {
+	const reviews: CcrReview[] = [];
+	for (let page = 1; page <= MAX_CCR_PAGES; page++) {
+		const result = await fetcher(owner, repo, prNumber, token, page);
+		if (result.error) { return { reviews, statusCode: result.statusCode, error: result.error }; }
+		reviews.push(...result.reviews);
+		// Page on the raw item count, not the filtered `reviews.length` — most reviews on a PR
+		// are not Copilot's, so a full page can still filter down to zero matches.
+		if ((result.pageSize ?? result.reviews.length) < 100) { break; }
+	}
+	return { reviews };
+}
+
+/**
+ * Fetch `review_requested` timeline events naming Copilot for one PR, paginating as needed.
+ * @param fetcher Injectable low-level single-page fetcher for testing; defaults to the real HTTPS implementation.
+ */
+export async function fetchPrCopilotReviewRequests(
+	owner: string,
+	repo: string,
+	prNumber: number,
+	token: string,
+	fetcher: (owner: string, repo: string, prNumber: number, token: string, page: number) => Promise<{ requests: CcrReviewRequest[]; pageSize?: number; statusCode?: number; error?: string }> = fetchPrCopilotReviewRequestsPage,
+): Promise<{ requests: CcrReviewRequest[]; statusCode?: number; error?: string }> {
+	const requests: CcrReviewRequest[] = [];
+	for (let page = 1; page <= MAX_CCR_PAGES; page++) {
+		const result = await fetcher(owner, repo, prNumber, token, page);
+		if (result.error) { return { requests, statusCode: result.statusCode, error: result.error }; }
+		requests.push(...result.requests);
+		// Page on the raw item count, not the filtered `requests.length` — most timeline events
+		// on a PR are not review requests at all, so a full page can still filter to zero matches.
+		if ((result.pageSize ?? result.requests.length) < 100) { break; }
+	}
+	return { requests };
+}
+
+/**
+ * Fetch a PR's full Copilot Code Review activity (reviews + who requested them), one call each,
+ * run concurrently. Deliberately **not** wired into `fetchRepoPrs` / any bulk aggregation path —
+ * same reasoning as `fetchPrCommitMessages` above: this is two extra requests per PR, so callers
+ * must fetch it for a deliberately bounded set of PRs (e.g. the signed-in user's own PRs in the
+ * current window), not from the bulk path.
+ */
+export async function fetchPrCopilotReviewActivity(
+	owner: string,
+	repo: string,
+	prNumber: number,
+	token: string,
+	fetchReviews: typeof fetchPrCopilotReviews = fetchPrCopilotReviews,
+	fetchRequests: typeof fetchPrCopilotReviewRequests = fetchPrCopilotReviewRequests,
+): Promise<PrCopilotReviewActivity> {
+	const [reviewsResult, requestsResult] = await Promise.all([
+		fetchReviews(owner, repo, prNumber, token),
+		fetchRequests(owner, repo, prNumber, token),
+	]);
+	const error = reviewsResult.error ?? requestsResult.error;
+	return {
+		reviews: reviewsResult.reviews,
+		requests: requestsResult.requests,
+		...(error ? { error } : {}),
+	};
+}
+
 /**
  * Fetch a single page of PRs from GitHub REST API.
  * @param requestFn Injectable request factory for testing; defaults to the real HTTPS implementation.
@@ -663,13 +890,30 @@ export function normalizeRepoKey(owner: string, repo: string): string {
 	return `${(owner ?? '').toLowerCase()}/${(repo ?? '').toLowerCase()}`;
 }
 
+/**
+ * The fields of a raw PR-listing payload this module reads. Every one is `unknown` or optional on
+ * purpose: the payload crosses a network boundary, so each read goes through a guard rather than
+ * trusting the shape.
+ */
+export interface RawGitHubPr {
+	number?: unknown;
+	title?: unknown;
+	html_url?: unknown;
+	created_at?: unknown;
+	updated_at?: unknown;
+	state?: unknown;
+	merged_at?: unknown;
+	user?: { login?: string; type?: string } | null;
+	requested_reviewers?: unknown;
+}
+
 /** Read a string field off a raw PR payload, falling back to '' for anything else. */
 function prString(value: unknown): string {
 	return typeof value === 'string' ? value : '';
 }
 
 /** The AI attribution of every requested reviewer that is an AI bot; humans are not recorded. */
-function reviewerAiTypesOf(pr: any): RepoPrDetail['aiType'][] {
+function reviewerAiTypesOf(pr: RawGitHubPr | undefined): RepoPrDetail['aiType'][] {
 	const reviewers = Array.isArray(pr?.requested_reviewers) ? pr.requested_reviewers : [];
 	const aiTypes: RepoPrDetail['aiType'][] = [];
 	for (const reviewer of reviewers) {
@@ -688,7 +932,7 @@ function reviewerAiTypesOf(pr: any): RepoPrDetail['aiType'][] {
  * pass instead of being reused on a timestamp that cannot be verified. Its `number` is -1 when the
  * payload has none, which is likewise never cacheable.
  */
-function projectRepoPr(pr: any): RepoPrRecord | undefined {
+function projectRepoPr(pr: RawGitHubPr | undefined): RepoPrRecord | undefined {
 	if (!pr || typeof pr !== 'object') { return undefined; }
 	return {
 		number: typeof pr.number === 'number' && Number.isFinite(pr.number) ? pr.number : -1,
@@ -754,7 +998,7 @@ function isRepoPrAiType(value: unknown, nullAllowed: boolean): boolean {
  * see {@link isCacheableRepoPrRecord}. An uncacheable PR is still counted in the current pass (it
  * is in the listing); it simply never enters the cache.
  */
-export function toRepoPrRecord(pr: any): RepoPrRecord | undefined {
+export function toRepoPrRecord(pr: RawGitHubPr | undefined): RepoPrRecord | undefined {
 	const record = projectRepoPr(pr);
 	return isCacheableRepoPrRecord(record) ? record : undefined;
 }
@@ -832,7 +1076,7 @@ export interface RepoPrReconciliation {
  */
 export function reconcileRepoPrRecords(
 	cached: readonly RepoPrRecord[] | undefined,
-	listedPrs: readonly any[],
+	listedPrs: readonly RawGitHubPr[],
 	options: { listingComplete: boolean; since?: Date },
 ): RepoPrReconciliation {
 	const cachedByNumber = indexCachedPrRecords(cached);
@@ -867,7 +1111,7 @@ function isOutsideWindow(record: RepoPrRecord, since: Date | undefined): boolean
 
 /** Walk the fresh listing, reusing each cached record whose timestamp still matches exactly. */
 function projectListedPrs(
-	listedPrs: readonly any[],
+	listedPrs: readonly RawGitHubPr[],
 	cachedByNumber: ReadonlyMap<number, RepoPrRecord>,
 ): { records: RepoPrRecord[]; seen: Set<number>; reused: number; recomputed: number } {
 	const records: RepoPrRecord[] = [];

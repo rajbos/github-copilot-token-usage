@@ -48,8 +48,8 @@ function renderMarkdownReport(report) {
 	if (summary.unchanged) { parts.push(`${summary.unchanged} unchanged`); }
 	lines.push(parts.join(' · '), '');
 
-	lines.push('| View | Theme | Status | Pixels changed | Size |');
-	lines.push('| --- | --- | --- | --- | --- |');
+	lines.push('| View | State | Theme | Status | Pixels changed | Size |');
+	lines.push('| --- | --- | --- | --- | --- | --- |');
 	for (const c of comparisons) {
 		const status = {
 			changed: '🎨 changed',
@@ -59,7 +59,7 @@ function renderMarkdownReport(report) {
 		}[c.status];
 		const pixels = c.status === 'changed' ? formatChange(c) : '—';
 		const size = c.resized ? `${c.baselineSize} → ${c.currentSize}` : (c.currentSize || '—');
-		lines.push(`| \`${c.view}\` | ${c.theme} | ${status} | ${pixels} | ${size} |`);
+		lines.push(`| \`${c.view}\` | ${c.state || 'initial'} | ${c.theme} | ${status} | ${pixels} | ${size} |`);
 	}
 	lines.push('');
 
@@ -67,7 +67,7 @@ function renderMarkdownReport(report) {
 	if (changed.length > 0) {
 		lines.push('### Changed views', '');
 		for (const c of changed) {
-			lines.push(`<details><summary><code>${c.view}</code> — ${c.theme} (${formatChange(c)} changed)</summary>`, '');
+			lines.push(`<details><summary><code>${c.view}</code>${c.state ? ` (${c.state})` : ''} — ${c.theme} (${formatChange(c)} changed)</summary>`, '');
 			lines.push(`| Before | After | Diff |`);
 			lines.push(`| --- | --- | --- |`);
 			// Baseline and current screenshots share a file name and are told apart

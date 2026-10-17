@@ -26,7 +26,7 @@ jobs:
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
       with:
         egress-policy: audit
 
@@ -35,6 +35,10 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Setup pnpm
+      uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      with:
+        version: '11.2.2'
     - name: Determine whether to run
       id: gate
       shell: bash
@@ -54,7 +58,7 @@ jobs:
           vscode-extension/src \
           vscode-extension/test \
           vscode-extension/package.json \
-          vscode-extension/package-lock.json \
+          vscode-extension/pnpm-lock.yaml \
           vscode-extension/stryker.config.mjs \
           vscode-extension/tsconfig.json \
           | wc -l)
@@ -69,21 +73,21 @@ jobs:
 
     - name: Setup Node.js
       if: steps.gate.outputs.should_run == 'true'
-      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version-file: '.nvmrc'
-        cache: 'npm'
-        cache-dependency-path: vscode-extension/package-lock.json
+        cache: 'pnpm'
+        cache-dependency-path: vscode-extension/pnpm-lock.yaml
 
     - name: Install dependencies
       if: steps.gate.outputs.should_run == 'true'
       working-directory: vscode-extension
-      run: npm ci --ignore-scripts
+      run: pnpm install --frozen-lockfile --ignore-scripts
 
     - name: Compile tests
       if: steps.gate.outputs.should_run == 'true'
       working-directory: vscode-extension
-      run: npm run compile-tests
+      run: pnpm run compile-tests
 
     - name: Run mutation tests (concurrency=4)
       id: mutation
@@ -92,10 +96,18 @@ jobs:
       shell: bash
       run: |
         START=$(date +%s)
-        npx stryker run --concurrency 4 || true
+        # Not masked with `|| true`: stryker exits non-zero when the score drops
+        # below thresholds.break in stryker.config.mjs (a ratchet under the
+        # measured score) or the run itself breaks. This job only runs on a
+        # schedule, workflow_dispatch and pushes to its own config paths - it is
+        # not a PR check - so failing it never blocks a merge. Capture the status
+        # so the elapsed time and the report/summary steps still run.
+        status=0
+        pnpm exec stryker run --concurrency 4 || status=$?
         END=$(date +%s)
         ELAPSED=$((END - START))
         echo "elapsed=${ELAPSED}" >> "$GITHUB_OUTPUT"
+        exit "$status"
       timeout-minutes: 120
 
     - name: Publish mutation summary
@@ -146,7 +158,7 @@ jobs:
 
     - name: Upload mutation report
       if: always() && steps.gate.outputs.should_run == 'true'
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: mutation-report
         path: vscode-extension/reports/mutation/
@@ -224,9 +236,13 @@ jobs:
         # --allow-all-tools (not --allow-all): the agent only needs workspace
         # file access and shell tools (gh), so don't grant --allow-all-paths
         # or --allow-all-urls (least privilege).
-        COPILOT_PROMPT_TEXT=$(cat /tmp/copilot-prompt.md)
-        npx @github/copilot \
-          -p "$COPILOT_PROMPT_TEXT" \
+        #
+        # The prompt is piped via stdin rather than passed to -p/--prompt:
+        # the prompt file's content starts with YAML frontmatter ("---"),
+        # and the Copilot CLI's arg parser misreads a -p value starting
+        # with "-" as another flag, failing with "Invalid command format."
+        # even though the shell quoting is correct. Stdin has no such issue.
+        cat /tmp/copilot-prompt.md | npx @github/copilot \
           --silent \
           --allow-all-tools \
           --add-dir "${GITHUB_WORKSPACE}" \

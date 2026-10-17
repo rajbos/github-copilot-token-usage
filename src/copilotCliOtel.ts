@@ -11,6 +11,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as crypto from 'crypto';
+import { EventEmitter } from 'events';
 import { Worker } from 'worker_threads';
 import type { ModelUsage } from './types';
 import { CopilotCliStoreAccess } from './copilotCliStore';
@@ -227,7 +229,8 @@ function loadOtelRecordsViaWorker(dir: string, plan: OtelReadPlanItem[]): Promis
 	return new Promise<OtelReadResult>((resolve, reject) => {
 		let worker: Worker;
 		try {
-			worker = new Worker(OTEL_WORKER_SOURCE, { eval: true, workerData: { dir, plan } });
+			// execArgv: [] — a worker otherwise inherits the host's node flags (--inspect, --require hooks, ...).
+			worker = new Worker(OTEL_WORKER_SOURCE, { eval: true, execArgv: [], workerData: { dir, plan } });
 		} catch (err) {
 			reject(err);
 			return;
@@ -245,9 +248,20 @@ function loadOtelRecordsViaWorker(dir: string, plan: OtelReadPlanItem[]): Promis
 	});
 }
 
+/**
+ * Largest range the in-process path will load into one Buffer. The OTel export is append-only and
+ * unbounded (multi-GB on a long-lived machine); a request past Node's 2 GiB `fs.read` limit trips a
+ * native assertion that aborts the whole extension host rather than throwing. Refusing up front
+ * turns that into an ordinary rejection, which the callers already treat as "unreadable file".
+ */
+const MAX_IN_PROCESS_RANGE_BYTES = 256 * 1024 * 1024;
+
 /** Reads bytes [start, end) of a file into a Buffer (used for small incremental tails read in-process). */
-async function readByteRange(file: string, start: number, end: number): Promise<Buffer> {
+export async function readByteRange(file: string, start: number, end: number): Promise<Buffer> {
 	if (end <= start) { return Buffer.alloc(0); }
+	if (end - start > MAX_IN_PROCESS_RANGE_BYTES) {
+		throw new RangeError(`Refusing to read ${end - start} bytes of ${file} in-process (limit ${MAX_IN_PROCESS_RANGE_BYTES}); use the worker path.`);
+	}
 	const fh = await fs.promises.open(file, 'r');
 	try {
 		const length = end - start;
@@ -264,9 +278,14 @@ async function readByteRange(file: string, start: number, end: number): Promise<
  * the work) and as the fallback when a worker can't be spawned. Mirrors the worker's contract:
  * parse `chat <model>` candidate lines and report how far each file was consumed.
  */
-async function loadOtelRecordsInProcess(dir: string, plan: OtelReadPlanItem[]): Promise<OtelReadResult> {
+export async function loadOtelRecordsInProcess(dir: string, plan: OtelReadPlanItem[], maxBytes: number = MAX_IN_PROCESS_RANGE_BYTES): Promise<OtelReadResult> {
 	const records: OtelSpanRecord[] = [];
 	const consumed: Record<string, number> = {};
+	// The per-range cap in readByteRange() is not enough on its own: a multi-GB export spread over several ranges
+	// each just under it would still be read and parsed in full on the host. Bound the whole plan; an oversized one
+	// is left unread (offsets untouched, like an unreadable file) for the worker path to take on a later attempt.
+	const totalBytes = plan.reduce((sum, item) => sum + Math.max(0, item.end - item.start), 0);
+	if (totalBytes > maxBytes) { return { records, consumed }; }
 	for (const item of plan) {
 		try {
 			const buf = await readByteRange(path.join(dir, item.name), item.start, item.end);
@@ -284,6 +303,20 @@ async function loadOtelRecordsInProcess(dir: string, plan: OtelReadPlanItem[]): 
 
 let cachedIndex: Map<string, CopilotCliOtelSessionUsage> | null = null;
 let cachedAt = 0;
+/** True once a load has finished and `cachedIndex` reflects the export (a snapshot restored from disk does not count). */
+let indexReady = false;
+const indexEvents = new EventEmitter();
+indexEvents.setMaxListeners(0);
+const READY_EVENT = 'ready';
+let otelLog: ((message: string) => void) | undefined;
+let loadStartedAt = 0;
+
+/** Where the index reports what it did (restored, saved, ready, failed to save); unset by default. */
+export function setCopilotCliOtelLogger(log: ((message: string) => void) | undefined): void {
+	otelLog = log;
+}
+
+const formatMb = (bytes: number): string => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 /**
  * Bytes we've already consumed from each export file, keyed by filename. Lets a refresh read
  * only the newly-appended tail instead of re-reading the whole (ever-growing) file, since the
@@ -291,7 +324,8 @@ let cachedAt = 0;
  */
 let fileOffsets = new Map<string, number>();
 /** Re-scan the OTel directory at most this often; the export file grows across a live CLI session. */
-const CACHE_TTL_MS = 30_000;
+export const COPILOT_CLI_OTEL_INDEX_TTL_MS = 30_000;
+const CACHE_TTL_MS = COPILOT_CLI_OTEL_INDEX_TTL_MS;
 /** Reads larger than this go to a worker thread; smaller tails are parsed in-process (sub-ms, no spawn cost). */
 const OTEL_WORKER_MIN_BYTES = 1_000_000;
 /**
@@ -361,6 +395,7 @@ async function readCopilotCliOtelIndex(): Promise<Map<string, CopilotCliOtelSess
 	}
 
 	const sizes = await statOtelFiles(dir, names);
+	if (cachedIndex === null) { await restoreSnapshot(dir, sizes); }
 	const rebuild = otelNeedsRebuild(sizes);
 	const index = rebuild ? new Map<string, CopilotCliOtelSessionUsage>() : cachedIndex!;
 	const baseOffsets = rebuild ? new Map<string, number>() : fileOffsets;
@@ -391,19 +426,156 @@ export async function loadCopilotCliOtelIndex(): Promise<Map<string, CopilotCliO
 	if (cachedIndex && now - cachedAt < CACHE_TTL_MS) { return cachedIndex; }
 	if (inFlightLoad) { return inFlightLoad; }
 
+	if (!indexReady && loadStartedAt === 0) { loadStartedAt = Date.now(); }
 	inFlightLoad = readCopilotCliOtelIndex()
 		.then((index) => {
 			cachedIndex = index;
 			cachedAt = Date.now();
+			void persistSnapshot();
+			if (!indexReady) {
+				indexReady = true;
+				otelLog?.(`OTel index ready after ${((Date.now() - loadStartedAt) / 1000).toFixed(1)}s (${index.size} sessions)`);
+				indexEvents.emit(READY_EVENT);
+			}
 			return index;
 		})
 		.finally(() => { inFlightLoad = null; });
 	return inFlightLoad;
 }
 
+// ── Persisted index ───────────────────────────────────────────────────────
+
+/**
+ * The export is append-only and can reach many GB, so rebuilding the index from scratch in every window costs minutes
+ * of reading. The consolidated index (small: one entry per session) and how far each file was consumed are saved to
+ * disk, and a later start restores them and reads only what was appended since.
+ */
+const SNAPSHOT_VERSION = 1;
+/** Bytes of each file start hashed into the snapshot, to notice a file that was replaced rather than appended to. */
+const SNAPSHOT_HEAD_BYTES = 4096;
+let snapshotPath: string | undefined;
+/** Consumed bytes (summed over files) at the last write, so an unchanged index is not rewritten. */
+let persistedBytes = -1;
+
+interface OtelSnapshot {
+	version: number;
+	files: Record<string, { offset: number; head: string }>;
+	sessions: Array<[string, CopilotCliOtelSessionUsage]>;
+}
+
+/** Where the index is saved between runs; unset (the default) keeps it in memory only, as the CLI does. */
+export function setCopilotCliOtelSnapshotPath(file: string | undefined): void {
+	snapshotPath = file;
+	persistedBytes = -1;
+}
+
+async function hashFileHead(file: string, length: number): Promise<string> {
+	const fh = await fs.promises.open(file, 'r');
+	try {
+		const n = Math.min(SNAPSHOT_HEAD_BYTES, length);
+		const buf = Buffer.alloc(n);
+		const { bytesRead } = await fh.read(buf, 0, n, 0);
+		return crypto.createHash('sha1').update(buf.subarray(0, bytesRead)).digest('hex');
+	} finally {
+		await fh.close();
+	}
+}
+
+/** Loads the saved index into the in-memory state when it still describes the files on disk; otherwise leaves it empty. */
+async function restoreSnapshot(dir: string, sizes: Map<string, number>): Promise<void> {
+	if (!snapshotPath) { return; }
+	try {
+		const snapshot = JSON.parse(await fs.promises.readFile(snapshotPath, 'utf8')) as OtelSnapshot;
+		if (snapshot.version !== SNAPSHOT_VERSION || !Array.isArray(snapshot.sessions) || typeof snapshot.files !== 'object' || snapshot.files === null) { return; }
+		const offsets = new Map<string, number>();
+		for (const [name, info] of Object.entries(snapshot.files)) {
+			if (typeof info?.offset !== 'number') { return; }
+			const size = sizes.get(name);
+			// Shrunk or gone: the saved totals include bytes that no longer exist. Different start: a replaced file.
+			if (size === undefined || size < info.offset) { return; }
+			if (info.offset > 0 && await hashFileHead(path.join(dir, name), info.offset) !== info.head) { return; }
+			offsets.set(name, info.offset);
+		}
+		const index = new Map<string, CopilotCliOtelSessionUsage>();
+		for (const [id, usage] of snapshot.sessions) {
+			if (typeof id === 'string' && !isUnsafeObjectKey(id) && usage && typeof usage.actualTokens === 'number') { index.set(id, usage); }
+		}
+		cachedIndex = index;
+		fileOffsets = offsets;
+		persistedBytes = sumOffsets(offsets);
+		let totalSize = 0;
+		for (const size of sizes.values()) { totalSize += size; }
+		otelLog?.(`OTel index restored from disk (${index.size} sessions); reading ${formatMb(Math.max(0, totalSize - persistedBytes))} of new data`);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') { otelLog?.(`OTel index snapshot could not be used (${error instanceof Error ? error.message : String(error)}); rebuilding from the export`); }
+	}
+}
+
+function sumOffsets(offsets: Map<string, number>): number {
+	let total = 0;
+	for (const off of offsets.values()) { total += off; }
+	return total;
+}
+
+/** Saves the index when it has consumed more of the export than the last saved one. Best effort: a failure costs a rebuild. */
+async function persistSnapshot(): Promise<void> {
+	const target = snapshotPath;
+	if (!target || !cachedIndex) { return; }
+	const total = sumOffsets(fileOffsets);
+	if (total === persistedBytes) { return; }
+	// Copy now: the index is updated in place by later refreshes while the hashes below are being read.
+	const offsets = new Map(fileOffsets);
+	const sessions = JSON.stringify([...cachedIndex]);
+	try {
+		const files: OtelSnapshot['files'] = {};
+		for (const [name, offset] of offsets) {
+			files[name] = { offset, head: offset > 0 ? await hashFileHead(path.join(getCopilotCliOtelDir(), name), offset) : '' };
+		}
+		await fs.promises.mkdir(path.dirname(target), { recursive: true });
+		const tmp = `${target}.${process.pid}.tmp`;
+		await fs.promises.writeFile(tmp, `{"version":${SNAPSHOT_VERSION},"files":${JSON.stringify(files)},"sessions":${sessions}}`);
+		await fs.promises.rename(tmp, target);
+		persistedBytes = total;
+		otelLog?.(`OTel index saved to disk (${cachedIndex.size} sessions, ${formatMb(JSON.stringify(files).length + sessions.length)})`);
+	} catch (error) {
+		// Read-only storage, a vanished file: it is tried again after the next load.
+		otelLog?.(`OTel index could not be saved to disk: ${error instanceof Error ? error.message : String(error)}`);
+	}
+}
+
+// ── One reader, many subscribers ──────────────────────────────────────────
+
+/** True once the index has been built (or brought up to date from the saved one) at least once in this process. */
+export function isCopilotCliOtelIndexReady(): boolean {
+	return indexReady;
+}
+
+/**
+ * Calls `listener` when the index first becomes ready, instead of every consumer asking for it (and waiting) on its
+ * own. Returns the unsubscribe function. Not called for a moment that has already passed: check
+ * {@link isCopilotCliOtelIndexReady} first.
+ */
+export function onCopilotCliOtelIndexReady(listener: () => void): () => void {
+	indexEvents.on(READY_EVENT, listener);
+	return () => { indexEvents.off(READY_EVENT, listener); };
+}
+
+/** Resolves true as soon as the index is ready, or false after `timeoutMs` without it (the load carries on regardless). */
+export function whenCopilotCliOtelIndexReady(timeoutMs: number): Promise<boolean> {
+	if (indexReady) { return Promise.resolve(true); }
+	return new Promise<boolean>((resolve) => {
+		const timer = setTimeout(() => { off(); resolve(false); }, timeoutMs);
+		timer.unref?.();
+		const off = onCopilotCliOtelIndexReady(() => { clearTimeout(timer); off(); resolve(true); });
+	});
+}
+
 /** Clears the cached OTel index and per-file offsets. Exposed for tests. */
 export function clearCopilotCliOtelCache(): void {
 	cachedIndex = null;
+	indexReady = false;
+	loadStartedAt = 0;
+	persistedBytes = -1;
 	cachedAt = 0;
 	inFlightLoad = null;
 	fileOffsets = new Map();
@@ -418,6 +590,22 @@ export function expireCopilotCliOtelCacheForTests(): void {
 	inFlightLoad = null;
 }
 
+type OtelUsageResolver = (sessionFile: string) => Promise<CopilotCliOtelSessionUsage | null>;
+let otelUsageResolver: OtelUsageResolver | undefined;
+
+/**
+ * Routes OTel-export lookups somewhere else, or back to the local index when given `undefined`.
+ *
+ * The OTel index lives in this module's state, so a second thread that imports it builds its own — and the
+ * export is append-only and can be multi-GB. The extension's analysis workers install a resolver that asks the
+ * host, so there is one index however many threads are parsing. Only this fallback goes through the hook: the
+ * session-store database lookup (the common case, and one that must not run on the host thread) stays local.
+ * Unset everywhere else (CLI, tests, the host itself).
+ */
+export function setCopilotCliOtelUsageResolver(resolver: OtelUsageResolver | undefined): void {
+	otelUsageResolver = resolver;
+}
+
 /**
  * Looks up exact OTel-derived usage for a Copilot CLI session file, or null when the
  * path isn't a Copilot CLI session or no matching OTel export data was found.
@@ -425,6 +613,7 @@ export function expireCopilotCliOtelCacheForTests(): void {
 export async function getCopilotCliOtelUsage(sessionFile: string): Promise<CopilotCliOtelSessionUsage | null> {
 	const sessionId = extractCopilotCliSessionId(sessionFile);
 	if (!sessionId) { return null; }
+	if (otelUsageResolver) { return otelUsageResolver(sessionFile); }
 	const index = await loadCopilotCliOtelIndex();
 	return index.get(sessionId) ?? null;
 }
@@ -454,6 +643,7 @@ export async function getCopilotCliStoreUsage(
 	if (!usage) { return null; }
 	return usage;
 }
+
 
 /**
  * Returns the most authoritative exact usage data available for a Copilot CLI session.

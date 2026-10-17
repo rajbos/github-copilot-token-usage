@@ -5,7 +5,12 @@ import * as os from 'os';
 import * as path from 'path';
 
 import {
+	DARK_FACTORY_CACHE_TTL_MS,
 	MAX_SCANNED_REPOS,
+	isReportStale,
+	parseCacheEntry,
+	readinessScopeKey,
+	parseCachedReport,
 	indexPrStats,
 	scanDarkFactoryReadiness,
 	selectRepoRoots,
@@ -88,11 +93,145 @@ test('selectRepoRoots: preserves caller ordering so the most relevant paths surv
 	assert.deepEqual(selectRepoRoots([second, first]).roots, [second, first]);
 });
 
+/** Create a linked worktree of `mainRoot`, laid out the way `git worktree add` does. */
+function makeWorktree(mainRoot: string, name: string): string {
+	const wt = fs.mkdtempSync(path.join(process.cwd(), 'df-wt-'));
+	TEMP_ROOTS.push(wt);
+	const gitDir = path.join(mainRoot, '.git', 'worktrees', name);
+	fs.mkdirSync(gitDir, { recursive: true });
+	fs.writeFileSync(path.join(gitDir, 'commondir'), '../..', 'utf8');
+	fs.writeFileSync(path.join(wt, '.git'), `gitdir: ${gitDir}\n`, 'utf8');
+	return wt;
+}
+
+test('selectRepoRoots: groups linked worktrees under their main checkout', () => {
+	const main = makeRepo({});
+	const wtA = makeWorktree(main, 'a');
+	const wtB = makeWorktree(main, 'b');
+	const { roots, skipped } = selectRepoRoots([wtA, wtB, main]);
+	assert.deepEqual(roots, [main]);
+	assert.equal(skipped, 0);
+});
+
+test('selectRepoRoots: a lone worktree is scanned as itself, never swapped for a checkout the user did not open', () => {
+	const main = makeRepo({});
+	const wt = makeWorktree(main, 'a');
+	assert.deepEqual(selectRepoRoots([wt]).roots, [wt]);
+});
+
+test('selectRepoRoots: falls back to the first worktree when the main checkout is gone', () => {
+	const main = makeRepo({});
+	const wtA = makeWorktree(main, 'a');
+	const wtB = makeWorktree(main, 'b');
+	fs.rmSync(path.join(main, '.git', 'config'));
+	fs.renameSync(path.join(main, '.git'), path.join(main, '.git-moved'));
+	fs.mkdirSync(path.join(main, '.git-moved', 'x'), { recursive: true });
+	// Re-point the worktrees at a common dir that no longer sits at `<root>/.git`.
+	const common = path.join(main, '.git-moved');
+	for (const [wt, name] of [[wtA, 'a'], [wtB, 'b']]) {
+		fs.writeFileSync(path.join(wt, '.git'), `gitdir: ${path.join(common, 'worktrees', name)}\n`, 'utf8');
+	}
+	assert.deepEqual(selectRepoRoots([wtA, wtB]).roots, [wtA]);
+});
+
+test('selectRepoRoots: a bare repository named .git is not mistaken for a main checkout', () => {
+	const container = makeRepo({});
+	fs.writeFileSync(path.join(container, '.git', 'config'), '[core]\n\tbare = true\n', 'utf8');
+	const wt = makeWorktree(container, 'a');
+	assert.deepEqual(selectRepoRoots([wt]).roots, [wt]);
+});
+
+test('selectRepoRoots: a main checkout with a separate git dir is still preferred over its worktree', () => {
+	const sep = fs.mkdtempSync(path.join(process.cwd(), 'df-sepgit-'));
+	TEMP_ROOTS.push(sep);
+	fs.writeFileSync(path.join(sep, 'config'), '[core]\n', 'utf8');
+	const main = fs.mkdtempSync(path.join(process.cwd(), 'df-sepmain-'));
+	TEMP_ROOTS.push(main);
+	fs.writeFileSync(path.join(main, '.git'), `gitdir: ${sep}\n`, 'utf8');
+	const wtGitDir = path.join(sep, 'worktrees', 'a');
+	fs.mkdirSync(wtGitDir, { recursive: true });
+	fs.writeFileSync(path.join(wtGitDir, 'commondir'), '../..', 'utf8');
+	const wt = fs.mkdtempSync(path.join(process.cwd(), 'df-sepwt-'));
+	TEMP_ROOTS.push(wt);
+	fs.writeFileSync(path.join(wt, '.git'), `gitdir: ${wtGitDir}\n`, 'utf8');
+	assert.deepEqual(selectRepoRoots([wt, main]).roots, [main]);
+});
+
+test('readinessScopeKey: crossing the scan cap changes the key even though the selected roots do not', () => {
+	const repos = Array.from({ length: MAX_SCANNED_REPOS }, () => makeRepo({}));
+	const before = readinessScopeKey(repos);
+	const after = readinessScopeKey([...repos, makeRepo({})]);
+	assert.notEqual(before, after);
+});
+
+test('parseCacheEntry: a report with GitHub evidence is withheld while signed out, a filesystem-only one is kept', () => {
+	const a = makeRepo({});
+	const key = readinessScopeKey([a]);
+	const withApi = { ...(reportAt('2026-09-01T12:00:00.000Z') as object), apiSignalsIncluded: true } as never;
+	const fsOnly = { ...(reportAt('2026-09-01T12:00:00.000Z') as object), apiSignalsIncluded: false } as never;
+	assert.equal(parseCacheEntry({ scopeKey: key, report: withApi }, key, true), withApi);
+	assert.equal(parseCacheEntry({ scopeKey: key, report: withApi }, key, false), undefined);
+	assert.equal(parseCacheEntry({ scopeKey: key, report: fsOnly }, key, false), fsOnly);
+});
+
+test('selectRepoRoots: a symlinked main checkout and its worktree are one repository', (t) => {
+	const main = makeRepo({});
+	const wt = makeWorktree(main, 'a');
+	const alias = path.join(os.tmpdir(), `df-alias-${process.pid}-${Date.now()}`);
+	try {
+		fs.symlinkSync(main, alias, 'junction');
+	} catch {
+		t.skip('cannot create symlinks here');
+		return;
+	}
+	TEMP_ROOTS.push(alias);
+	const { roots, skipped } = selectRepoRoots([alias, wt]);
+	assert.equal(roots.length, 1);
+	assert.equal(skipped, 0);
+});
+
 test('selectRepoRoots: caps the scan and reports how many repositories it skipped', () => {
 	const repos = Array.from({ length: MAX_SCANNED_REPOS + 3 }, () => makeRepo({}));
 	const { roots, skipped } = selectRepoRoots(repos);
 	assert.equal(roots.length, MAX_SCANNED_REPOS);
 	assert.equal(skipped, 3);
+});
+
+// ---------------------------------------------------------------------------
+// readiness report cache
+// ---------------------------------------------------------------------------
+
+const reportAt = (scannedAt: string) => ({ scannedAt, repos: [] }) as never;
+
+test('parseCachedReport: accepts a report-shaped value and rejects anything else', () => {
+	const ok = reportAt('2026-09-01T12:00:00.000Z');
+	assert.equal(parseCachedReport(ok), ok);
+	assert.equal(parseCachedReport(Object.assign(Object.create({ inherited: true }), ok)), undefined);
+	for (const bad of [undefined, null, 'x', {}, { repos: [] }, { repos: {}, scannedAt: '2026-09-01T12:00:00.000Z' }, { repos: [], scannedAt: 'nope' }]) {
+		assert.equal(parseCachedReport(bad), undefined);
+	}
+});
+
+test('cache entries only replay for the workspace scope they were scanned for', () => {
+	const a = makeRepo({});
+	const b = makeRepo({});
+	const report = reportAt('2026-09-01T12:00:00.000Z');
+	const keyA = readinessScopeKey([a]);
+	const entry = { scopeKey: keyA, report };
+	assert.equal(parseCacheEntry(entry, keyA), report);
+	// Switching workspace, or gaining a repository, is a cache miss.
+	assert.equal(parseCacheEntry(entry, readinessScopeKey([b])), undefined);
+	assert.equal(parseCacheEntry(entry, readinessScopeKey([a, b])), undefined);
+	assert.equal(parseCacheEntry(report, keyA), undefined);
+	assert.equal(parseCacheEntry(undefined, keyA), undefined);
+});
+
+test('isReportStale: fresh within a day, stale beyond it, and a future timestamp is distrusted', () => {
+	const now = new Date('2026-09-02T12:00:00.000Z');
+	assert.equal(isReportStale(reportAt('2026-09-02T11:00:00.000Z'), now), false);
+	assert.equal(isReportStale(reportAt(new Date(now.getTime() - DARK_FACTORY_CACHE_TTL_MS).toISOString()), now), false);
+	assert.equal(isReportStale(reportAt(new Date(now.getTime() - DARK_FACTORY_CACHE_TTL_MS - 1).toISOString()), now), true);
+	assert.equal(isReportStale(reportAt('2026-09-03T12:00:00.000Z'), now), true);
 });
 
 // ---------------------------------------------------------------------------

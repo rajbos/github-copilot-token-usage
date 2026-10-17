@@ -17,12 +17,11 @@ import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 
 plugins {
-    // Pinned below CodeQL's Kotlin version ceiling: CodeQL (bundle 2.26.1, used by
-    // codeql-action v4.37.3 in .github/workflows/codeql.yml) only supports Kotlin
-    // versions up to 2.4.0 — 2.4.10 fails extraction with "Kotlin version 2.4.10
-    // is too recent". Bump back to 2.4.10+ once CodeQL adds support for it.
-    kotlin("jvm") version "2.4.10"
-    id("org.jetbrains.intellij.platform") version "2.18.1"
+    // Pinned below CodeQL's current Kotlin version ceiling: the CodeQL analysis
+    // job fails on 2.4.20 with "Kotlin version 2.4.20 is too recent". Keep the
+    // last known-good Kotlin line until CodeQL adds support for 2.4.20+.
+    kotlin("jvm") version "2.4.21"
+    id("org.jetbrains.intellij.platform") version "2.19.0"
 }
 
 group = providers.gradleProperty("pluginGroup").get()
@@ -49,6 +48,8 @@ kotlin {
 
 dependencies {
     intellijPlatform {
+        val targetPlatformVersion = providers.gradleProperty("platformVersion").get()
+
         // IntelliJ IDEA Community is the smallest base that bundles JCEF.
         // The resulting plugin also installs into Rider, PyCharm, WebStorm,
         // GoLand, RubyMine, CLion, and the rest of the family because we only
@@ -58,6 +59,12 @@ dependencies {
             providers.gradleProperty("platformVersion").get(),
         )
 
+        // Starting with IntelliJ Platform 2026.2, JCEF is exposed through its
+        // own bundled plugin and must be present on the compile classpath.
+        if (targetPlatformVersion.startsWith("2026.")) {
+            bundledPlugin("com.intellij.modules.jcef")
+        }
+
         // Test fixtures (IntelliJ Platform test framework + JUnit 5).
         testFramework(TestFrameworkType.Platform)
     }
@@ -66,6 +73,10 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("org.opentest4j:opentest4j:1.3.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // The IntelliJ test framework's JUnit 5 session listener references
+    // junit.framework.TestCase, so the JUnit 4 jar must be on the test classpath or
+    // Gradle cannot even start the test executor. Used by no test directly.
+    testRuntimeOnly("junit:junit:4.13.2")
 }
 
 intellijPlatform {
@@ -136,6 +147,11 @@ val prepareBundledAssets by tasks.registering(Copy::class) {
         include(
             "details.js", "chart.js", "usage.js", "diagnostics.js", "environmental.js", "maturity.js",
             "fluency-level-viewer.js",
+            // Resolved webview string dictionaries, one per shipped locale. The bundles
+            // only localize themselves if the host puts one in the panel payload, and
+            // this plugin is Kotlin so it cannot build one from package.nls*.json itself.
+            // esbuild writes these next to the bundles for exactly this reason.
+            "localization.en.json", "localization.zh-cn.json",
         )
         into("webview")
     }

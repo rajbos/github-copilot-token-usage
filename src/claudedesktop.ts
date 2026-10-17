@@ -60,6 +60,9 @@
  * ── INTERACTION COUNTING ────────────────────────────────────────────────────────────────────────
  *   Count only real human turns: type==='user' && !isSidechain && content has text but no tool_result.
  *   Tool-result user events (parentUuid set, content=[{type:'tool_result'}]) are NOT interactions.
+ *   Neither are harness-injected synthetic turns whose text is nothing but a wrapper element such as
+ *   <system-reminder>…</system-reminder> or <task-notification>…</task-notification>; a real prompt
+ *   prefixed by such a wrapper still counts. See utils/claudeUserTurns.ts for the shared rule.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -67,6 +70,7 @@ import * as os from 'os';
 import { normalizeClaudeModelId } from './claudecode';
 import type { ModelUsage, ModelId } from './types';
 import { isUnsafeObjectKey } from './utils/protoGuard';
+import { isHumanUserTurn } from './utils/claudeUserTurns';
 import { normalizePathForComparison, normalizePath } from './workspaceHelpers';
 
 /** Package name for the Claude Desktop Windows Store app. */
@@ -192,6 +196,104 @@ export class ClaudeDesktopDataAccess {
 	}
 
 	/**
+	 * Report how much of what Claude Desktop still lists is actually readable on this disk.
+	 *
+	 * Claude Desktop keeps one small `local_<id>.json` metadata record per Cowork session, but the
+	 * transcript itself lives elsewhere — modern sessions write to the shared `~/.claude/projects`
+	 * tree (linked by `cliSessionId`), older ones to a `local_<id>/` directory beside the metadata.
+	 * Metadata outlives the transcript: Claude Code prunes `~/.claude/projects` on its own retention
+	 * schedule (`cleanupPeriodDays`, default 30), and sessions that ran in the cloud never wrote a
+	 * transcript to this machine at all. Either way Desktop's own sidebar keeps listing them, so its
+	 * session count legitimately exceeds what this extension can measure.
+	 *
+	 * Counting the leftover metadata is what lets the UI explain that gap with a real number instead
+	 * of leaving the user to assume sessions were lost. Reads only the small metadata files.
+	 */
+	async getDesktopLocalCoverage(claudeProjectsDir: string): Promise<{ knownSessions: number; withTranscript: number; missingTranscript: number }> {
+		let knownSessions = 0;
+		let withTranscript = 0;
+
+		// Transcript filenames are `<cliSessionId>.jsonl` bucketed under an opaque per-workspace slug,
+		// so the slug list is read once and each session id probed against it.
+		let projectSlugs: string[] = [];
+		try {
+			projectSlugs = (await fs.promises.readdir(claudeProjectsDir, { withFileTypes: true }))
+				.filter(e => e.isDirectory())
+				.map(e => e.name);
+		} catch {
+			// No ~/.claude/projects at all — every record then counts as missing, which is accurate.
+		}
+
+		for (const machineDir of await this.getDesktopMetadataDirs()) {
+			let entries: string[];
+			try {
+				entries = await fs.promises.readdir(machineDir);
+			} catch {
+				continue;
+			}
+			for (const entry of entries) {
+				if (!entry.startsWith('local_') || !entry.endsWith('.json')) { continue; }
+				knownSessions++;
+				if (await this.hasLocalTranscript(machineDir, entry, claudeProjectsDir, projectSlugs)) { withTranscript++; }
+			}
+		}
+
+		return { knownSessions, withTranscript, missingTranscript: knownSessions - withTranscript };
+	}
+
+	/** Resolve the `<base>/<app-uuid>/<machine-uuid>` directories that hold `local_<id>.json` records. */
+	private async getDesktopMetadataDirs(): Promise<string[]> {
+		const dirs: string[] = [];
+		for (const baseDir of this.getDesktopSessionDirs()) {
+			for (const appDir of await this.readSubdirectories(baseDir)) {
+				dirs.push(...await this.readSubdirectories(appDir));
+			}
+		}
+		return dirs;
+	}
+
+	private async readSubdirectories(dir: string): Promise<string[]> {
+		try {
+			return (await fs.promises.readdir(dir, { withFileTypes: true }))
+				.filter(e => e.isDirectory())
+				.map(e => path.join(dir, e.name));
+		} catch {
+			return [];
+		}
+	}
+
+	/** Whether a `local_<id>.json` record's transcript is present in either supported location. */
+	private async hasLocalTranscript(machineDir: string, metadataFile: string, claudeProjectsDir: string, projectSlugs: string[]): Promise<boolean> {
+		let cliSessionId: string | undefined;
+		try {
+			const raw = await fs.promises.readFile(path.join(machineDir, metadataFile), 'utf8');
+			const parsed = JSON.parse(raw);
+			cliSessionId = typeof parsed?.cliSessionId === 'string' ? parsed.cliSessionId : undefined;
+		} catch {
+			// Unreadable/corrupt metadata: fall through to the legacy directory probe below.
+		}
+
+		// Modern layout: transcript in the shared ~/.claude/projects tree, keyed by cliSessionId.
+		// Reject path separators so a hostile id can't escape the projects directory.
+		if (cliSessionId && !/[\\/]/.test(cliSessionId)) {
+			for (const slug of projectSlugs) {
+				try {
+					await fs.promises.access(path.join(claudeProjectsDir, slug, `${cliSessionId}.jsonl`));
+					return true;
+				} catch { /* try the next slug */ }
+			}
+		}
+
+		// Legacy layout: a local_<id>/ directory beside the metadata holding the transcript.
+		const nested = path.join(machineDir, metadataFile.replace(/\.json$/, ''));
+		const found: string[] = [];
+		try {
+			await this.walkForJsonlFiles(nested, found, 0, 8);
+		} catch { /* missing or unreadable — treated as absent */ }
+		return found.length > 0;
+	}
+
+	/**
 	 * Parse all JSONL events from a Cowork session file.
 	 * Public so extension.ts can use it for log viewer turn building.
 	 */
@@ -267,15 +369,9 @@ export class ClaudeDesktopDataAccess {
 		let count = 0;
 		for (const event of events) {
 			if (event.type === 'user' && !event.isSidechain && event.message?.role === 'user') {
-				const content = event.message?.content;
-				if (typeof content === 'string') {
-					count++;
-				} else if (Array.isArray(content)) {
-					const hasText = content.some((c: any) => c.type === 'text');
-					if (hasText && !content.some((c: any) => c.type === 'tool_result')) {
-						count++;
-					}
-				}
+				// Real human turns only — see claudeUserTurns.ts for why synthetic wrapper-only
+				// messages are excluded.
+				if (isHumanUserTurn(event)) { count++; }
 			}
 		}
 		return count;

@@ -11,7 +11,9 @@ A GitHub Copilot Agent Skill that finds all hardcoded `http(s)://` URLs in the T
 ## Files in This Directory
 
 - **SKILL.md** — Main skill file with YAML frontmatter and detailed instructions for the agent
-- **check-urls.js** — Node.js script that performs the scan and HTTP resolution checks
+- **check-urls.js** — Node.js script that performs the scan and HTTP resolution checks (internal/private hosts are skipped, plain `http:` is flagged)
+- **check-urls.test.js** — Unit tests, run with `node --test .github/skills/check-urls/check-urls.test.js`
+- **SECURITY.md** — Security model for the script
 - **README.md** — This file
 
 ## Quick Usage

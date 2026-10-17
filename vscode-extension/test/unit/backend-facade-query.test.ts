@@ -13,9 +13,6 @@ test('BackendFacade queryBackendRollups aggregates, filters, and caches results'
 			const models = Object.keys(mu ?? {});
 			return models.length;
 		},
-		co2Per1kTokens: 0.2,
-		waterUsagePer1kTokens: 0.3,
-		co2AbsorptionPerTreePerYear: 21000,
 		getCopilotSessionFiles: async () => [],
 		estimateTokensFromText: () => 0,
 		getModelFromRequest: () => 'gpt-4o',

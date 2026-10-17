@@ -1,0 +1,28 @@
+allowBuilds:
+  '@vscode/vsce-sign': true
+  core-js: true
+  esbuild: true
+  keytar: true
+
+overrides:
+  tmp: '>=0.2.6'
+  markdown-it: '>=14.3.1'
+  linkify-it: '>=5.0.2'
+  fflate: '>=0.8.3'
+  source-map-js: '>=1.2.2'
+  form-data: '>=4.0.6'
+  browserslist: '>=4.29.3'
+  shell-quote: '>=1.8.4'
+  '@azure/msal-node': '5.1.4'
+  '@babel/core': '>=7.29.6'
+  brace-expansion: '>=5.0.12'
+  js-yaml: '>=4.3.2 <5.0.0'
+  diff: '>=8.0.3'
+  dompurify: '>=3.4.16'
+  fast-uri: '>=4.2.1'
+  image-size: '>=2.0.3'
+  qs: '>=6.16.0'
+  serialize-javascript: '>=7.0.3'
+  cheerio>undici: '>=7.29.1 <8'
+  uuid: '^14.0.0'
+

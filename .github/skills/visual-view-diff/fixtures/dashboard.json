@@ -1,1 +1,76 @@
-{}
+{
+  "personal": {
+    "userId": "u:demo-self",
+    "totalTokens": 5000000000,
+    "totalInteractions": 2523,
+    "totalCost": 15981.5,
+    "devices": ["device-a"],
+    "workspaces": ["project-a", "project-b", "project-c"],
+    "modelUsage": {
+      "claude-sonnet-5": { "inputTokens": 1200000000, "outputTokens": 500000000 },
+      "claude-opus-5": { "inputTokens": 1300000000, "outputTokens": 300000000 },
+      "kimi-k3": { "inputTokens": 500000000, "outputTokens": 218700000 },
+      "gpt-5.6-sol": { "inputTokens": 130000000, "outputTokens": 41100000 },
+      "gpt-5.6-terra": { "inputTokens": 120000000, "outputTokens": 38000000 }
+    }
+  },
+  "team": {
+    "members": [
+      {
+        "userId": "u:demo-self",
+        "datasetId": "ds:demo-team",
+        "totalTokens": 5000000000,
+        "totalInteractions": 2523,
+        "totalCost": 15981.5,
+        "sessions": 456,
+        "avgTurnsPerSession": 6,
+        "uniqueModels": 5,
+        "uniqueWorkspaces": 3,
+        "daysActive": 26,
+        "avgTokensPerTurn": 1981767,
+        "fluencyStage": 3,
+        "fluencyLabel": "Collaborator",
+        "fluencyCategories": [
+          { "category": "Context", "icon": "🧠", "stage": 3, "tips": [] }
+        ],
+        "rank": 1
+      },
+      {
+        "userId": "u:demo-peer-a",
+        "datasetId": "ds:demo-team",
+        "totalTokens": 2900000000,
+        "totalInteractions": 1280,
+        "totalCost": 6500,
+        "sessions": 230,
+        "avgTurnsPerSession": 5,
+        "uniqueModels": 4,
+        "uniqueWorkspaces": 2,
+        "daysActive": 21,
+        "avgTokensPerTurn": 2265625,
+        "rank": 2
+      },
+      {
+        "userId": "u:demo-peer-b",
+        "datasetId": "ds:demo-team",
+        "totalTokens": 1450000000,
+        "totalInteractions": 710,
+        "totalCost": 3210,
+        "sessions": 135,
+        "avgTurnsPerSession": 5,
+        "uniqueModels": 3,
+        "uniqueWorkspaces": 4,
+        "daysActive": 18,
+        "avgTokensPerTurn": 2042254,
+        "rank": 3
+      }
+    ],
+    "totalTokens": 9350000000,
+    "totalInteractions": 4513,
+    "averageTokensPerUser": 3116666667,
+    "firstDate": "2026-02-13",
+    "lastDate": "2026-03-14"
+  },
+  "lookbackDays": 30,
+  "lastUpdated": "2026-03-14T09:30:00.000Z",
+  "compactNumbers": true
+}

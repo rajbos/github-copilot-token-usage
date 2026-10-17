@@ -2,7 +2,7 @@ import './vscode-shim-register';
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
+import { makeTmpFixtureDir, reserveTmpFixturePath } from './tmpFixtureDirs';
 import * as path from 'node:path';
 
 import { CacheManager } from '../../src/cacheManager';
@@ -36,7 +36,7 @@ function writeAged(dir: string, name: string, ageMs: number): void {
 }
 
 test('getCacheIdentifier: returns a stable "dev" id in Development mode, independent of vscode.env.sessionId', () => {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctt-dev-cleanup-'));
+	const dir = makeTmpFixtureDir('ctt-dev-cleanup-');
 	const manager = makeDevManager(dir);
 	assert.equal(manager.getCacheIdentifier(), 'dev');
 	// Calling it again (simulating a later debug relaunch with a different session) must
@@ -45,13 +45,13 @@ test('getCacheIdentifier: returns a stable "dev" id in Development mode, indepen
 });
 
 test('getCacheIdentifier: returns "prod" in production mode', () => {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctt-dev-cleanup-'));
+	const dir = makeTmpFixtureDir('ctt-dev-cleanup-');
 	const manager = makeProdManager(dir);
 	assert.equal(manager.getCacheIdentifier(), 'prod');
 });
 
 test('cleanupStaleDevCacheFiles: removes dev cache/lock files older than 24h', async () => {
-	const dir = fs.mkdtempSync(path.join(process.cwd(), 'ctt-dev-cleanup-'));
+	const dir = makeTmpFixtureDir('ctt-dev-cleanup-');
 	writeAged(dir, 'cache_dev-aaaaaaaa.snapshot.json', 25 * 60 * 60 * 1000);
 	writeAged(dir, 'refresh_dev-bbbbbbbb.lock', 48 * 60 * 60 * 1000);
 
@@ -62,7 +62,7 @@ test('cleanupStaleDevCacheFiles: removes dev cache/lock files older than 24h', a
 });
 
 test('cleanupStaleDevCacheFiles: leaves recent dev cache/lock files untouched', async () => {
-	const dir = fs.mkdtempSync(path.join(process.cwd(), 'ctt-dev-cleanup-'));
+	const dir = makeTmpFixtureDir('ctt-dev-cleanup-');
 	writeAged(dir, 'cache_dev-cccccccc.snapshot.json', 60 * 1000); // 1 minute old
 
 	const manager = makeDevManager(dir);
@@ -72,7 +72,7 @@ test('cleanupStaleDevCacheFiles: leaves recent dev cache/lock files untouched', 
 });
 
 test('cleanupStaleDevCacheFiles: leaves non-dev files (e.g. prod snapshot) untouched', async () => {
-	const dir = fs.mkdtempSync(path.join(process.cwd(), 'ctt-dev-cleanup-'));
+	const dir = makeTmpFixtureDir('ctt-dev-cleanup-');
 	writeAged(dir, 'cache_prod.snapshot.json', 48 * 60 * 60 * 1000);
 	writeAged(dir, 'cache_dev-dddddddd.snapshot.json', 48 * 60 * 60 * 1000);
 
@@ -83,7 +83,7 @@ test('cleanupStaleDevCacheFiles: leaves non-dev files (e.g. prod snapshot) untou
 });
 
 test('cleanupStaleDevCacheFiles: no-op in production mode', async () => {
-	const dir = fs.mkdtempSync(path.join(process.cwd(), 'ctt-dev-cleanup-'));
+	const dir = makeTmpFixtureDir('ctt-dev-cleanup-');
 	writeAged(dir, 'cache_dev-eeeeeeee.snapshot.json', 48 * 60 * 60 * 1000);
 
 	const manager = makeProdManager(dir);
@@ -93,7 +93,7 @@ test('cleanupStaleDevCacheFiles: no-op in production mode', async () => {
 });
 
 test('cleanupStaleDevCacheFiles: no-op when globalStorage directory does not exist', async () => {
-	const dir = path.join(process.cwd(), 'ctt-dev-cleanup-missing-' + Date.now());
+	const dir = reserveTmpFixturePath('ctt-dev-cleanup-missing-');
 	const manager = makeDevManager(dir);
 	await assert.doesNotReject(manager.cleanupStaleDevCacheFiles());
 });

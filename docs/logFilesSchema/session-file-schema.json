@@ -1023,7 +1023,7 @@
             "description": "Parent event ID"
           }
         },
-        "usedBy": "Extension does not currently use this event type"
+        "usedBy": "usageAnalysis.ts counts the tool call (toolCalls.byTool / mcpTools), unwraps `arguments.skill` into skillCalls, and stores toolCallId + timestamp + mcpServerName so the matching tool.execution_complete can record latency and failure (see docs/adr/TOOL-EXECUTION-STATS.md)"
       },
       {
         "type": "tool.execution_complete",
@@ -1072,7 +1072,7 @@
             "description": "Parent event ID"
           }
         },
-        "usedBy": "Extension does not currently use this event type"
+        "usedBy": "usageAnalysis.ts matches it to its tool.execution_start by toolCallId: `success === false` increments toolCalls.failuresByTool (and mcpTools.failuresByServer), the timestamp delta feeds toolCalls.latencyByTool (and mcpTools.latencyByServer), `result.content` feeds outputTokensByTool, and successful edit/create calls update editScope LOC"
       },
       {
         "type": "tool.result",

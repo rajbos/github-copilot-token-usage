@@ -2,13 +2,17 @@
  * Workspace resolution and utility helper functions.
  * Pure functions extracted from CopilotTokenTracker.
  */
-import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import type { CustomizationFileEntry } from './types';
-import * as packageJson from '../vscode-extension/package.json';
 import customizationPatternsData from './customizationPatterns.json';
-import { resolveFileUri } from './workspacePathResolver';
+import { parseWorkspaceStorageJsonFile, resolveFileUri } from './workspacePathResolver';
+
+// Re-exported for backward compatibility: this helper now lives in workspacePathResolver.ts
+// (a VS Code-free module) so that src/copilotMemoryFiles.ts — a shared Node module consumed
+// by both the CLI and the extension — can use it without pulling in the `vscode` API.
+export { parseWorkspaceStorageJsonFile };
 import {
 	fileUriToPath,
 	getRepoNameFromWorkspacePath,
@@ -16,6 +20,7 @@ import {
 	normalizePath,
 	normalizePathForComparison,
 	normalizePathForDedup,
+	joinedChildPrefixForComparison,
 	splitNormalizedPath,
 	stripWindowsDriveUriPrefix,
 	toPlatformPath
@@ -23,8 +28,10 @@ import {
 import { withErrorRecoverySync } from './utils/errors';
 import { isGuidMcpTool, lookupKnownToolName } from './utils/toolUtils';
 import { isCopilotAppClientName } from './copilotCliStore';
+import { isCustomAgentFile } from './agentUsage';
 
 export {
+	dedupeByNormalizedKeyKeepGreatest,
 	fileUriToPath,
 	normalizePath,
 	normalizePathForComparison,
@@ -77,36 +84,6 @@ interface CustomizationPatternsConfig {
 	stalenessThresholdDays?: number;
 	excludeDirs?: string[];
 	patterns?: CustomizationPattern[];
-}
-
-/**
- * Resolve the workspace folder full path from a session file path.
- * Looks for a `workspaceStorage/<id>/` segment and reads `workspace.json` or `meta.json`.
- * Synchronous by design to keep the analysis flow simple and cached.
- */
-// Helper: read a workspaceStorage JSON file and extract a candidate folder path from configured keys
-export function parseWorkspaceStorageJsonFile(jsonPath: string, candidateKeys: string[]): string | undefined {
-	if (typeof jsonPath !== 'string' || !jsonPath || !Array.isArray(candidateKeys)) { return undefined; }
-	try {
-		const raw = fs.readFileSync(jsonPath, 'utf8');
-		const obj = JSON.parse(raw);
-		if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) { return undefined; }
-		for (const key of candidateKeys) {
-			const candidate = obj[key];
-			if (typeof candidate !== 'string') { continue; }
-			// Resolve file:// URIs using the safe resolver (handles Windows, POSIX, UNC, encoded chars).
-			if (candidate.startsWith('file://')) {
-				const resolved = resolveFileUri(candidate);
-				if (resolved) { return resolved; }
-				continue;
-			}
-			// Non-URI value — treat as a plain filesystem path.
-			return candidate;
-		}
-	} catch {
-		// ignore parse/read errors
-	}
-	return undefined;
 }
 
 /**
@@ -395,16 +372,10 @@ export function scanWorkspaceCustomizationFiles(workspaceFolderPath: string): Cu
 	return Object.values(uniq);
 }
 
-// Helper method to get repository URL from package.json
-export function getRepositoryUrl(): string {
-	const repoUrl = packageJson.repository?.url?.replace(/^git\+/, '').replace(/\.git$/, '');
-	return repoUrl || 'https://github.com/rajbos/ai-engineering-fluency';
-}
-
 function getModeFromAgentKind(id: string | undefined): 'agent' | 'plan' | 'customAgent' {
 	if (!id || id === 'agent') { return 'agent'; }
 	if (id.includes('plan-agent/Plan.agent.md')) { return 'plan'; }
-	if (id.includes('.agent.md')) { return 'customAgent'; }
+	if (isCustomAgentFile(id)) { return 'customAgent'; }
 	return 'agent';
 }
 
@@ -570,7 +541,7 @@ export function getRepoDisplayName(repoUrl: string): string {
 	if (!repoUrl || repoUrl === 'Unknown') { return 'Unknown'; }
 
 	// Remove .git suffix if present
-	let url = repoUrl.replace(/\.git$/, '');
+	const url = repoUrl.replace(/\.git$/, '');
 
 	// Handle SSH URLs like git@github.com:owner/repo
 	if (url.includes('@') && url.includes(':')) {
@@ -641,14 +612,8 @@ export function parseGitRemoteUrl(gitConfigContent: string): string | undefined 
 	return undefined;
 }
 
-/**
- * Check if a tool name indicates it's an MCP (Model Context Protocol) tool.
- * MCP tools are identified by names starting with "mcp." or "mcp_"
- * Claude Code uses double-underscore format: "mcp__server__tool"
- */
-export function isMcpTool(toolName: string): boolean {
-	return toolName.startsWith('mcp.') || toolName.startsWith('mcp_') || toolName.startsWith('mcp__');
-}
+// isMcpTool moved to utils/toolUtils.ts (webview-safe); re-exported so existing importers keep working.
+export { isMcpTool } from './utils/toolUtils';
 
 /**
  * Normalize an MCP tool name so that equivalent tools from different servers
@@ -849,6 +814,24 @@ async function tryReadWorktreeGitRemote(potentialRoot: string): Promise<string |
  * @param contentReferences Array of content reference objects from session data
  * @returns The repository remote URL if found, undefined otherwise
  */
+/**
+ * The remote of the git repository a folder belongs to: the folder's own `.git` (a checkout or a
+ * linked worktree's pointer), else the nearest ancestor's — so a workspace that is a sub-folder
+ * of a repository, or an in-repo worktree, resolves to that repository. Undefined when no
+ * repository is found (including when the folder no longer exists and no ancestor is one).
+ */
+export async function findRepositoryRemoteForFolder(folderPath: string): Promise<string | undefined> {
+	// buildPotentialGitRoots() lists a path's parents; a placeholder child makes the folder itself the first one.
+	for (const potentialRoot of buildPotentialGitRoots(`${folderPath.replace(/[\\/]+$/, '')}/_`)) {
+		// The nearest `.git` is the repository boundary: a nested clone without an origin has no
+		// remote, rather than borrowing the outer repository's.
+		const hasGit = await fs.promises.stat(path.join(potentialRoot, '.git')).then(() => true, () => false);
+		if (!hasGit) { continue; }
+		return await tryReadGitConfigRemote(potentialRoot) ?? await tryReadWorktreeGitRemote(potentialRoot);
+	}
+	return undefined;
+}
+
 export async function extractRepositoryFromContentReferences(contentReferences: ContentReferenceItem[]): Promise<string | undefined> {
 	if (!Array.isArray(contentReferences)) { return undefined; }
 
@@ -868,11 +851,12 @@ export async function extractRepositoryFromContentReferences(contentReferences: 
 	return undefined;
 }
 
-function _resolveCodeWorkspaceEntry(entry: unknown): string | undefined {
+function _resolveCodeWorkspaceEntry(entry: unknown, workspaceFileDir: string): string | undefined {
 	if (typeof entry !== 'object' || entry === null) { return undefined; }
 	const e = entry as { path?: unknown; uri?: unknown };
 	let folderPath: string | undefined;
-	if (typeof e.path === 'string') { folderPath = e.path; }
+	// A relative `path` is relative to the .code-workspace file, not to this process's working directory.
+	if (typeof e.path === 'string') { folderPath = path.isAbsolute(e.path) ? e.path : path.resolve(workspaceFileDir, e.path); }
 	else if (typeof e.uri === 'string' && e.uri.startsWith('file://')) { folderPath = resolveFileUri(e.uri); }
 	if (!folderPath) { return undefined; }
 	try { return fs.realpathSync.native(folderPath); } catch { return folderPath; }
@@ -894,7 +878,7 @@ export function parseCodeWorkspaceFolders(codeWorkspacePath: string): string[] {
 		}
 		const folders: string[] = [];
 		for (const entry of obj.folders) {
-			const resolved = _resolveCodeWorkspaceEntry(entry);
+			const resolved = _resolveCodeWorkspaceEntry(entry, path.dirname(codeWorkspacePath));
 			if (resolved) { folders.push(resolved); }
 		}
 		return folders;
@@ -1037,11 +1021,23 @@ function isVSCodeServerPath(lowerPath: string): boolean {
 	return lowerPath.includes('.vscode-server/') || lowerPath.includes('.vscode-remote/');
 }
 
-/** Returns true for Visual Studio path segments (`/.vs/.../copilot-chat/.../sessions/`). */
+/**
+ * Returns true for Visual Studio path segments: `/copilot-chat/.../sessions/` under either
+ * a solution's `/.vs/` folder or VS's own `/vsgithubcopilot/` AppData folder (solution-less chats).
+ */
 function isVisualStudioPath(lowerPath: string): boolean {
-	return lowerPath.includes('/.vs/') &&
-		lowerPath.includes('/copilot-chat/') &&
-		lowerPath.includes('/sessions/');
+	if (!lowerPath.includes('/copilot-chat/') || !lowerPath.includes('/sessions/')) { return false; }
+	return lowerPath.includes('/.vs/') || lowerPath.includes('/vsgithubcopilot/copilot-chat/');
+}
+
+/**
+ * Returns true for SQL Server Management Studio Copilot Chat sessions
+ * (`…/SSMS/<version>/SSMSGitHubCopilot/copilot-chat/<hash>/sessions/<uuid>`).
+ * Checked before {@link isVisualStudioPath} so SSMS keeps its own label — the same
+ * split `VisualStudioAdapter.getDisplayName()` makes.
+ */
+function isSsmsPath(lowerPath: string): boolean {
+	return lowerPath.includes('/ssmsgithubcopilot/copilot-chat/') && lowerPath.includes('/sessions/');
 }
 
 /** Returns true for VS Code Insiders via loose substring match (used by detectEditorSource). */
@@ -1093,6 +1089,32 @@ function detectCopilotFamilyFromPath(lowerPath: string): string | undefined {
  * @internal
  */
 export function detectClaudeCodeEditorVariant(filePath: string): string {
+	const known = claudeCodeVariantCache.get(filePath);
+	if (known !== undefined) { return known; }
+	const found = readClaudeCodeEditorVariant(filePath);
+	if (found !== undefined) {
+		// The entrypoint a session records never changes once written, so a definitive answer is kept. A file with
+		// no entrypoint yet is deliberately not cached: it may gain one, and must be re-read when it does.
+		if (claudeCodeVariantCache.size >= CLAUDE_CODE_VARIANT_CACHE_MAX) { claudeCodeVariantCache.clear(); }
+		claudeCodeVariantCache.set(filePath, found);
+		return found;
+	}
+	return 'Claude Code';
+}
+
+/**
+ * Called once per Claude Code session file for *every* label lookup, from several views at once. Each call used to
+ * open the file and read 64 KB synchronously on the extension host (the dominant cost of the host's longest
+ * stalls on a machine with hundreds of Claude Code sessions), so the answer is remembered per path.
+ */
+const claudeCodeVariantCache = new Map<string, string>();
+const CLAUDE_CODE_VARIANT_CACHE_MAX = 50_000;
+
+/** Test hook: forget remembered variants so a test can rewrite a file at the same path. */
+export function resetClaudeCodeEditorVariantCacheForTests(): void { claudeCodeVariantCache.clear(); }
+
+/** Reads the entrypoint from the head of a session file; `undefined` when none is recorded (or it is unreadable). */
+function readClaudeCodeEditorVariant(filePath: string): string | undefined {
 	try {
 		const fd = fs.openSync(filePath, 'r');
 		try {
@@ -1112,7 +1134,47 @@ export function detectClaudeCodeEditorVariant(filePath: string): string {
 			fs.closeSync(fd);
 		}
 	} catch { /* file unreadable — fall back to default below */ }
-	return 'Claude Code';
+	return undefined;
+}
+
+/**
+ * $CODEX_HOME / $HERMES_HOME as their adapters use them (codexcli.ts getCodexHome,
+ * hermes.ts getConfigDir): the raw value when non-blank — relative values stay relative,
+ * no `~` expansion.
+ */
+function rawAgentHome(value: string | undefined): string | undefined {
+	return value && value.trim() ? value : undefined;
+}
+
+/** Session entries Codex keeps directly under its home: rollout dirs and `state_<N>.sqlite#<id>` thread paths. */
+const CODEX_HOME_OWNED_CHILD_RE = /^(sessions\/|archived_sessions\/|state_\d+\.sqlite#)/;
+
+/** $VIBE_HOME as mistralvibe.ts getVibeHomeDir uses it: `~` expanded, then resolved to absolute. */
+function vibeAgentHome(value: string | undefined): string | undefined {
+	return value ? path.resolve(value.replace(/^~/, os.homedir())) : undefined;
+}
+
+/**
+ * Detect CLI agents whose data root was relocated with $CODEX_HOME, $VIBE_HOME or
+ * $HERMES_HOME to a folder not named like the default (.codex, .vibe, hermes), which the
+ * default-name substring checks cannot recognise. Only the adapters' own session
+ * sub-paths under the configured root match, so a broad root (e.g. the home dir) does
+ * not swallow unrelated files. Each home is interpreted exactly as its adapter does and
+ * prefixes are built with `path.join`, like the adapters' own paths, so edge cases such
+ * as `.` or `/` line up with what the adapter discovers. Shared by the extension and the
+ * CLI detectors.
+ * @internal
+ */
+export function detectRelocatedAgentHomeFromPath(lowerPath: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+	const codexHome = rawAgentHome(env['CODEX_HOME']);
+	const codexPrefix = codexHome === undefined ? undefined : joinedChildPrefixForComparison(codexHome);
+	if (codexPrefix !== undefined && lowerPath.startsWith(codexPrefix) &&
+		CODEX_HOME_OWNED_CHILD_RE.test(lowerPath.slice(codexPrefix.length))) { return 'Codex CLI'; }
+	const vibeHome = vibeAgentHome(env['VIBE_HOME']);
+	if (vibeHome && lowerPath.startsWith(joinedChildPrefixForComparison(path.join(vibeHome, 'logs', 'session')))) { return 'Mistral Vibe'; }
+	const hermesHome = rawAgentHome(env['HERMES_HOME']);
+	if (hermesHome && lowerPath.startsWith(`${normalizePathForComparison(path.join(hermesHome, 'state.db'))}#`)) { return 'Hermes'; }
+	return undefined;
 }
 
 /**
@@ -1139,7 +1201,7 @@ function detectCliAgentStoreFromPath(lowerPath: string): string | undefined {
 	// before the loose 'code' substring fallbacks in detectIDEEditorSource /
 	// detectVSCodeVariantFromPath ('codex' contains 'code' and would misclassify as VS Code).
 	if (lowerPath.includes('/.codex/')) { return 'Codex CLI'; }
-	return undefined;
+	return detectRelocatedAgentHomeFromPath(lowerPath);
 }
 
 /**
@@ -1187,6 +1249,7 @@ function detectVSCodeVariantFromPath(lowerPath: string): string | undefined {
 	if (lowerPath.includes('/cursor/')) { return 'Cursor'; }
 	if (lowerPath.includes('.vscode-server-insiders/')) { return 'VS Code Server (Insiders)'; }
 	if (isVSCodeServerPath(lowerPath)) { return 'VS Code Server'; }
+	if (isSsmsPath(lowerPath)) { return 'SSMS'; }
 	if (isVisualStudioPath(lowerPath)) { return 'Visual Studio'; }
 	if (lowerPath.includes('/code/')) { return 'VS Code'; }
 	return undefined;
@@ -1291,6 +1354,7 @@ function detectIDEEditorSource(lowerPath: string): string | undefined {
 	// irrelevant here (disjoint word), but Devin's own data folder is named '.devin'.
 	if (lowerPath.includes('devin')) { return 'Devin'; }
 	if (lowerPath.includes('windsurf')) { return 'Windsurf'; }
+	if (isSsmsPath(lowerPath)) { return 'SSMS'; }
 	if (isVisualStudioPath(lowerPath)) { return 'Visual Studio'; }
 	if (lowerPath.includes('code')) { return 'VS Code'; }
 	return undefined;

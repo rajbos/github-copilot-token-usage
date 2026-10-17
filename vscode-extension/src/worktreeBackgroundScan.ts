@@ -137,6 +137,17 @@ export function parseCleanupPushedWorktreesMessage(message: any): ParsedCleanupP
 	return { candidates, scopeRepoLabel };
 }
 
+/**
+ * Appends candidates to a running cleanup's queue, skipping paths already in it (processed or
+ * waiting). Returns only the entries actually added, so the webview can mirror the queue.
+ */
+export function enqueueCleanupCandidates(queue: CleanupWorktreeCandidate[], incoming: CleanupWorktreeCandidate[]): CleanupWorktreeCandidate[] {
+	const known = new Set(queue.map((c) => c.path.toLowerCase()));
+	const added = incoming.filter((c) => !known.has(c.path.toLowerCase()) && known.add(c.path.toLowerCase()));
+	queue.push(...added);
+	return added;
+}
+
 /** Confirmation prompt title, naming the repository when the cleanup is scoped to one. */
 export function buildCleanupConfirmTitle(count: number, scopeRepoLabel?: string): string {
 	const scopeText = scopeRepoLabel ? ` in "${scopeRepoLabel}"` : "";

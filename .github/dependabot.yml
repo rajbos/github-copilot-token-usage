@@ -8,6 +8,9 @@ updates:
       day: "monday"
       time: "04:00"
       timezone: "UTC"
+    # Wait 8 days after a release before proposing it (supply-chain safety).
+    cooldown:
+      default-days: 8
     open-pull-requests-limit: 10
     commit-message:
       prefix: "npm"
@@ -38,8 +41,14 @@ updates:
       # These should be handled manually to avoid breaking changes
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
+      # @types/vscode bumps the minimum VS Code version enterprise users need
+      # (engines.vscode must be >= @types/vscode or vsce refuses to package -
+      # see the incident that broke the nightly pre-release for over a week).
+      # Dependabot allows one update entry per ecosystem + directory and cannot
+      # set cooldown days per dependency, so it cannot get its own longer
+      # cooldown. Ignore it entirely; .github/workflows/bump-vscode-types.yml
+      # proposes the bump (with engines.vscode) once a release is 42 days old.
       - dependency-name: "@types/vscode"
-        update-types: ["version-update:semver-major"]
       - dependency-name: "vscode"
         update-types: ["version-update:semver-major"]
 
@@ -51,6 +60,9 @@ updates:
       day: "monday"
       time: "04:00"
       timezone: "UTC"
+    # Wait 8 days after a release before proposing it (supply-chain safety).
+    cooldown:
+      default-days: 8
     open-pull-requests-limit: 5
     commit-message:
       prefix: "github-actions"
@@ -79,6 +91,9 @@ updates:
       day: "monday"
       time: "04:00"
       timezone: "UTC"
+    # Wait 8 days after a release before proposing it (supply-chain safety).
+    cooldown:
+      default-days: 8
     open-pull-requests-limit: 5
     commit-message:
       prefix: "gradle"
@@ -105,6 +120,9 @@ updates:
       day: "monday"
       time: "04:00"
       timezone: "UTC"
+    # Wait 8 days after a release before proposing it (supply-chain safety).
+    cooldown:
+      default-days: 8
     reviewers:
       - "rajbos"
     assignees:
@@ -119,6 +137,29 @@ updates:
           - "minor"
           - "patch"
 
+  # Hash-pinned Python requirements installed by copilot-setup-steps.yml
+  # (.github/requirements/*.txt). Each .txt is a pip-compile --generate-hashes
+  # lock of the matching .in file, so on a bump Dependabot re-runs pip-compile
+  # and re-resolves every hash and transitive pin together. (When the .txt was
+  # hand-written it only rewrote one line, and twice left a stale hash behind.)
+  # check-pip-requirements.yml installs the result on every such PR.
+  - package-ecosystem: "pip"
+    directory: "/.github/requirements"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "UTC"
+    # Wait 8 days after a release before proposing it (supply-chain safety).
+    cooldown:
+      default-days: 8
+    reviewers:
+      - "rajbos"
+    assignees:
+      - "rajbos"
+    labels:
+      - "dependencies"
+
   # Enable version updates for the dev container configuration
   - package-ecosystem: "devcontainers"
     directory: "/"
@@ -127,6 +168,9 @@ updates:
       day: "monday"
       time: "04:00"
       timezone: "UTC"
+    # Wait 8 days after a release before proposing it (supply-chain safety).
+    cooldown:
+      default-days: 8
     reviewers:
       - "rajbos"
     assignees:
@@ -138,6 +182,9 @@ updates:
     directory: /.github/scripts
     schedule:
       interval: daily
+    # Wait 8 days after a release before proposing it (supply-chain safety).
+    cooldown:
+      default-days: 8
     groups:
       minor-and-patch-updates:
         patterns:
@@ -150,6 +197,9 @@ updates:
     directory: /.github/skills/azure-storage-loader
     schedule:
       interval: daily
+    # Wait 8 days after a release before proposing it (supply-chain safety).
+    cooldown:
+      default-days: 8
     groups:
       minor-and-patch-updates:
         patterns:
@@ -162,6 +212,9 @@ updates:
     directory: /cli
     schedule:
       interval: daily
+    # Wait 8 days after a release before proposing it (supply-chain safety).
+    cooldown:
+      default-days: 8
     groups:
       minor-and-patch-updates:
         patterns:
@@ -174,6 +227,9 @@ updates:
     directory: /desktop
     schedule:
       interval: daily
+    # Wait 8 days after a release before proposing it (supply-chain safety).
+    cooldown:
+      default-days: 8
     groups:
       minor-and-patch-updates:
         patterns:

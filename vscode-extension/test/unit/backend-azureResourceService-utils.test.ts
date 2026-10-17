@@ -1,4 +1,3 @@
-// @ts-nocheck
 import './vscode-shim-register';
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
@@ -39,7 +38,7 @@ test('AzureResourceService - buildProfileOptions returns correct options', () =>
 	}
 	
 	// Verify specific profiles
-	const profiles = options.map(o => o.profile);
+	const profiles = options.map((o: { profile: string }) => o.profile);
 	assert.ok(profiles.includes('off'));
 	assert.ok(profiles.includes('teamAnonymized'));
 	assert.ok(profiles.includes('teamPseudonymous'));
@@ -47,7 +46,7 @@ test('AzureResourceService - buildProfileOptions returns correct options', () =>
 	assert.ok(profiles.includes('soloFull'));
 	
 	// Verify sharing levels are in order
-	const levels = options.map(o => o.sharingLevel);
+	const levels = options.map((o: { sharingLevel: number }) => o.sharingLevel);
 	assert.deepEqual(levels, [0, 1, 2, 3, 4]);
 });
 

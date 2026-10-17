@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 
 /**
- * Sync CHANGELOG.md with GitHub release notes
- * 
- * This script fetches GitHub release notes and updates the local CHANGELOG.md file
- * to ensure consistency between local documentation and published releases.
- * 
+ * Backfill CHANGELOG.md with GitHub release notes
+ *
+ * The per-project CHANGELOG.md files are the source of release notes: they are
+ * written in the release-prep PR (scripts/release-changelog.js promote) and the
+ * release workflows copy them into the GitHub release. This script only works in
+ * the other direction for releases the changelog does not know about yet: it
+ * adds a section for each GitHub release whose version has no "## [<version>]"
+ * section, and never rewrites a section that already exists.
+ *
  * Usage:
  *   node scripts/sync-changelog.js [--test]
  * 
@@ -14,13 +18,19 @@
  * 
  * Requirements:
  *   - GitHub CLI (gh) installed and authenticated OR GITHUB_TOKEN environment variable
- *   - Run from the repository root directory
+ *   - Paths resolve from the repository root, so any working directory works
  */
 
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const { parseSections, serializeSections, detectEol, terminateLast } = require('./release-changelog');
+
+// Resolve every path from the repo root, not the working directory: the script is
+// run from the root (workflow) and from vscode-extension/ (npm run sync-changelog).
+const REPO_ROOT = path.resolve(__dirname, '..');
+const PACKAGE_JSON = path.join(REPO_ROOT, 'vscode-extension', 'package.json');
 
 const TEST_MODE = process.argv.includes('--test');
 
@@ -63,7 +73,7 @@ const EXPECTED_REPO = 'ai-engineering-fluency';
  * what package.json happens to contain.
  */
 function getGitHubOwnerRepo() {
-  const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  const packageJson = JSON.parse(fs.readFileSync(PACKAGE_JSON, 'utf8'));
   const repoUrl = packageJson.repository?.url || '';
   const match = repoUrl.match(/github\.com[\/:]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/);
   if (!match) {
@@ -165,12 +175,6 @@ async function syncReleaseNotes() {
   try {
     console.log('🔄 Syncing per-project CHANGELOG files with GitHub release notes...');
     
-    // Check if we're in the right directory
-    if (!fs.existsSync('package.json')) {
-      console.error('❌ Error: This script must be run from the repository root directory');
-      process.exit(1);
-    }
-    
     const releases = await fetchGitHubReleases();
     
     console.log(`📋 Found ${releases.length} releases`);
@@ -202,16 +206,20 @@ async function syncReleaseNotes() {
         changelogPath = routingMap['cli'];
       } else if (tag.startsWith('vs/v')) {
         changelogPath = routingMap['vs'];
-      } else {
+      } else if (/^v\d/.test(tag)) {
         // Legacy bare v* tags belong to the VS Code extension
         changelogPath = routingMap['vscode'];
+      } else {
+        // Other components (jetbrains/v*, ...) have no changelog here.
+        console.log(`⏭️ Skipping ${tag}: no changelog for this component`);
+        continue;
       }
       if (!byChangelog.has(changelogPath)) byChangelog.set(changelogPath, []);
       byChangelog.get(changelogPath).push(release);
     }
 
     for (const [changelogPath, changelogReleases] of byChangelog) {
-      await writeChangelog(changelogPath, changelogReleases);
+      await writeChangelog(path.join(REPO_ROOT, changelogPath), changelogReleases);
     }
 
     console.log('✅ All per-project changelogs synced successfully!');
@@ -221,8 +229,103 @@ async function syncReleaseNotes() {
   }
 }
 
+const DEFAULT_HEADER = `# Change Log\n\nAll notable changes to this project will be documented in this file.\n\nCheck [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.\n\n## [Unreleased]\n`;
+
+/** Strip the tag prefix (vscode/v, cli/v, vs/v, plain v) to get the version. */
+function versionFromTag(tagName) {
+  return tagName.replace(/^(?:vscode|cli|vs)\/v/, '').replace(/^v/, '');
+}
+
+/** Turn a GitHub release body into changelog bullet lines. */
+function formatReleaseBody(release, version) {
+  const body = (release.body || '').replace(/\*\*Full Changelog\*\*:.*$/gm, '').trim();
+  if (!body) {
+    return [`- Release ${version}`];
+  }
+  return body.split('\n').map(line => {
+    line = line.trim();
+    if (line && !line.startsWith('-') && !line.startsWith('*') && !line.startsWith('#')) {
+      return `- ${line}`;
+    }
+    return line;
+  }).filter(line => line.length > 0);
+}
+
+/** Compare two "x.y.z" versions numerically; null when either does not parse. */
+function compareVersions(a, b) {
+  const pa = /^(\d+)\.(\d+)\.(\d+)/.exec(a);
+  const pb = /^(\d+)\.(\d+)\.(\d+)/.exec(b);
+  if (!pa || !pb) { return null; }
+  for (let i = 1; i <= 3; i++) {
+    const diff = Number(pa[i]) - Number(pb[i]);
+    if (diff !== 0) { return diff; }
+  }
+  return 0;
+}
+
 /**
- * Write (or update) a single changelog file from a list of releases.
+ * Add a section for each release whose version is not in the changelog yet.
+ * Existing sections — including the curated ones written by
+ * release-changelog.js promote — are kept byte-for-byte, each line with its
+ * own line ending, so even a mixed CRLF/LF file only gains the new lines. New
+ * lines use the file's majority ending. A new section goes before the first
+ * existing section with a lower version, or at the end.
+ * @param {string} text     - current changelog ('' when the file is new)
+ * @param {Array}  releases - GitHub releases
+ * @returns {{ text: string, added: string[] }}
+ */
+function mergeReleases(text, releases) {
+  const source = text || DEFAULT_HEADER;
+  const { preamble, sections } = parseSections(source);
+  const eol = detectEol(source);
+  const added = [];
+  for (const release of releases) {
+    const version = versionFromTag(release.tagName);
+    if (sections.some(s => s.name === version)) { continue; }
+    const releaseType = release.isPrerelease ? ' - Pre-release' : '';
+    const section = {
+      name: version,
+      heading: `## [${version}]${releaseType}${eol}`,
+      body: [eol, ...formatReleaseBody(release, version).map(line => line + eol)],
+    };
+    const before = sections.findIndex(s => {
+      const cmp = compareVersions(s.name, version);
+      return cmp !== null && cmp < 0;
+    });
+    if (before >= 0) {
+      section.body.push(eol); // blank line before the section that follows
+      sections.splice(before, 0, section);
+    } else {
+      appendBlankLineAfter(sections.length > 0 ? sections[sections.length - 1] : null, preamble, eol);
+      sections.push(section);
+    }
+    added.push(version);
+  }
+  if (added.length === 0) {
+    return { text, added };
+  }
+  return { text: serializeSections(preamble, sections), added };
+}
+
+/**
+ * Before appending a section at the end of the file, terminate the file's
+ * last line if it was unterminated and add a blank line unless there is one.
+ */
+function appendBlankLineAfter(lastSection, preamble, eol) {
+  if (lastSection && lastSection.body.length === 0) {
+    if (!lastSection.heading.endsWith('\n')) { lastSection.heading += eol; }
+    lastSection.body.push(eol);
+    return;
+  }
+  const lines = lastSection ? lastSection.body : preamble;
+  terminateLast(lines, eol);
+  if (lines.length > 0 && lines[lines.length - 1].trim() !== '') {
+    lines.push(eol);
+  }
+}
+
+/**
+ * Add the missing releases to a single changelog file.
  * @param {string} changelogPath - relative file path
  * @param {Array}  releases      - already sorted (newest first)
  */
@@ -246,69 +349,17 @@ async function writeChangelog(changelogPath, releases) {
     console.log(`📝 ${changelogPath} does not exist, creating new file`);
   }
   
-  // Extract the header and unreleased section
-  const lines = changelog.split('\n');
-  const headerEndIndex = lines.findIndex(line => line.startsWith('## [Unreleased]'));
-  const unreleasedEndIndex = lines.findIndex((line, index) => 
-    index > headerEndIndex && line.startsWith('## [') && !line.includes('Unreleased')
-  );
-  
-  let header = '';
-  let unreleasedSection = '';
-  
-  if (headerEndIndex >= 0) {
-    header = lines.slice(0, headerEndIndex + 1).join('\n');
-    if (unreleasedEndIndex >= 0) {
-      unreleasedSection = lines.slice(headerEndIndex + 1, unreleasedEndIndex).join('\n');
-    } else {
-      const restOfFile = lines.slice(headerEndIndex + 1);
-      const nextReleaseIndex = restOfFile.findIndex(line => line.startsWith('## [') && !line.includes('Unreleased'));
-      if (nextReleaseIndex >= 0) {
-        unreleasedSection = restOfFile.slice(0, nextReleaseIndex).join('\n');
-      } else {
-        unreleasedSection = restOfFile.join('\n');
-      }
-    }
-  } else {
-    header = `# Change Log\n\nAll notable changes to this project will be documented in this file.\n\nCheck [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.\n\n## [Unreleased]`;
-    unreleasedSection = '\n';
+  const { text: newChangelog, added } = mergeReleases(changelog, releases);
+  if (added.length === 0) {
+    console.log(`ℹ️ No changes needed — every release already has a section in ${changelogPath}`);
+    return;
   }
-  
-  // Build new changelog content
-  let newChangelog = header + unreleasedSection + '\n';
-  
-  console.log(`✏️ Building changelog entries for ${changelogPath}...`);
-  
-  // Add releases
-  for (const release of releases) {
-    // Strip any prefix (vscode/v, cli/v, vs/v, plain v)
-    let version = release.tagName;
-    version = version.replace(/^(?:vscode|cli|vs)\/v/, '').replace(/^v/, '');
-    const releaseType = release.isPrerelease ? ' - Pre-release' : '';
-    
-    newChangelog += `## [${version}]${releaseType}\n\n`;
-    
-    if (release.body && release.body.trim()) {
-      let body = release.body.trim();
-      body = body.replace(/\*\*Full Changelog\*\*:.*$/gm, '').trim();
-      const bodyLines = body.split('\n').map(line => {
-        line = line.trim();
-        if (line && !line.startsWith('-') && !line.startsWith('*') && !line.startsWith('#')) {
-          return `- ${line}`;
-        }
-        return line;
-      }).filter(line => line.length > 0);
-      newChangelog += bodyLines.join('\n') + '\n\n';
-    } else {
-      newChangelog += `- Release ${version}\n\n`;
-    }
-  }
-  
-  fs.writeFileSync(changelogPath, newChangelog.trim() + '\n');
-  console.log(`💾 ${changelogPath} updated successfully!`);
+
+  fs.writeFileSync(changelogPath, newChangelog);
+  console.log(`💾 Added ${added.join(', ')} to ${changelogPath}`);
   
   try {
-    const diff = execSync(`git diff "${changelogPath}"`, { encoding: 'utf8' });
+    const diff = execSync(`git diff "${changelogPath}"`, { encoding: 'utf8', cwd: REPO_ROOT });
     if (diff.trim()) {
       console.log(`📊 Changes made to ${changelogPath}:`);
       console.log(diff);
@@ -325,4 +376,4 @@ if (require.main === module) {
   syncReleaseNotes();
 }
 
-module.exports = { syncReleaseNotes };
+module.exports = { syncReleaseNotes, mergeReleases, versionFromTag, compareVersions };

@@ -5,16 +5,17 @@
  * This script loads and displays the AI Engineering Fluency's local cache data.
  * The cache stores pre-computed session file statistics to avoid re-processing unchanged files.
  * 
- * The extension's cache is stored in VS Code's globalState, which is persisted in a SQLite
- * database (state.vscdb). This script looks for a cache export file that the extension or
- * tests may write to disk in a known location for inspection.
+ * The extension persists its cache to a snapshot file in its globalStorage directory
+ * (cache_<prod|dev>.snapshot.json), which this script reads. The cache is not kept in
+ * VS Code's globalState.
  * 
  * Usage:
- *   node .github/skills/load-cache-data/load-cache-data.js [--last N] [--json]
+ *   node .github/skills/load-cache-data/load-cache-data.js [--last N] [--json] [--include-sensitive]
  * 
  * Options:
- *   --last N     Show only the last N cache entries (default: 10)
+ *   --last N     Show only the last N cache entries (default: 10, maximum: 100)
  *   --json       Output as JSON
+ *   --include-sensitive  Include session titles, prompts, paths, and repository URLs
  *   --help       Show this help message
  */
 
@@ -22,17 +23,34 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+const DEFAULT_LAST_COUNT = 10;
+const MAX_LAST_COUNT = 100;
+
 // Parse command line arguments
 const args = process.argv.slice(2);
-const lastCount = (() => {
-    const lastIndex = args.indexOf('--last');
-    if (lastIndex !== -1 && args[lastIndex + 1]) {
-        return parseInt(args[lastIndex + 1], 10) || 10;
-    }
-    return 10;
-})();
-const jsonOutput = args.includes('--json');
+const includeSensitive = args.includes('--include-sensitive');
 const showHelp = args.includes('--help');
+
+function parseLastCount() {
+    for (let index = 0; index < args.length; index++) {
+        if (args[index] !== '--last') {
+            continue;
+        }
+
+        const value = args[index + 1];
+        if (!value || !/^\d+$/.test(value)) {
+            throw new Error('--last must be a positive integer.');
+        }
+
+        const count = Number(value);
+        if (Number.isNaN(count) || count < 1) {
+            throw new Error('--last must be a positive integer.');
+        }
+
+        return Math.min(count, MAX_LAST_COUNT);
+    }
+    return DEFAULT_LAST_COUNT;
+}
 
 if (showHelp) {
     console.log(`
@@ -42,8 +60,9 @@ This script loads and displays the GitHub Copilot Token Tracker's local cache da
 The cache contains pre-computed statistics for session files.
 
 CACHE STRUCTURE:
-  The cache is stored in VS Code's globalState under the key 'sessionFileCache'.
-  Each entry contains:
+  The cache is persisted to cache_<prod|dev>.snapshot.json in the extension's
+  globalStorage directory, as an envelope whose 'entries' map is keyed by session
+  file path. Each entry contains:
   - tokens: total token count
   - interactions: number of interactions
   - modelUsage: per-model token breakdown
@@ -51,20 +70,23 @@ CACHE STRUCTURE:
   - usageAnalysis: detailed usage statistics (optional)
 
 CACHE FILE LOCATIONS:
-  This script looks for cache export files in the following locations:
-  1. VS Code globalStorage: %APPDATA%\\Code\\User\\globalStorage\\rajbos.copilot-token-tracker\\cache.json
-  2. Temp directory: %TEMP%\\copilot-token-tracker-cache.json
-  3. Current directory: ./cache-export.json
+  This script looks only in VS Code globalStorage for Code, Insiders,
+  Exploration, VSCodium, and Cursor. It reads the extension's shared cache
+  snapshot (cache_prod.snapshot.json, then cache_dev.snapshot.json), falling back
+  to a legacy session-cache.json export. It does not trust files in temp or
+  current-working directories.
 
-  To create a cache export for testing or inspection, the extension or tests
-  can write the cache data to one of these locations.
+  Session titles, prompts, correction excerpts, workspace paths, referenced file
+  paths, per-file-type line counts, repository URLs, and cache file paths are
+  omitted by default. Use --include-sensitive only when you intend to expose them.
 
 USAGE:
-  node .github/skills/load-cache-data/load-cache-data.js [--last N] [--json]
+  node .github/skills/load-cache-data/load-cache-data.js [--last N] [--json] [--include-sensitive]
 
 OPTIONS:
-  --last N     Show only the last N cache entries (default: 10)
+  --last N     Show only the last N cache entries (default: 10, maximum: 100)
   --json       Output as JSON format
+  --include-sensitive  Include session titles, prompts, paths, and repository URLs
   --help       Show this help message
 
 EXAMPLES:
@@ -74,15 +96,14 @@ EXAMPLES:
   # Show last 5 cache entries as JSON
   node .github/skills/load-cache-data/load-cache-data.js --last 5 --json
 
-  # Show all cache entries
-  node .github/skills/load-cache-data/load-cache-data.js --last 99999
+  # Include session-identifying fields only when explicitly needed
+  node .github/skills/load-cache-data/load-cache-data.js --include-sensitive --json
 
 FOR DEVELOPERS:
   To access the cache programmatically within the extension:
   
-  // Get cache data from global state
-  const cacheData = context.globalState.get('sessionFileCache');
-  const cacheEntries = Object.entries(cacheData || {});
+  // CacheManager.cache is a Map<string, SessionFileCache>
+  const cacheEntries = Array.from(cacheManager.cache.entries());
   
   // Get last 10 entries (sorted by modification time)
   const last10 = cacheEntries
@@ -90,9 +111,9 @@ FOR DEVELOPERS:
     .slice(0, 10);
 
   // Display cache entries
-  for (const [filePath, cacheEntry] of last10) {
+  for (const [index, [, cacheEntry]] of last10.entries()) {
     console.log({
-      file: filePath,
+      session: \`session-\${index + 1}\`,
       tokens: cacheEntry.tokens,
       interactions: cacheEntry.interactions,
       modelUsage: cacheEntry.modelUsage,
@@ -101,6 +122,14 @@ FOR DEVELOPERS:
   }
 `);
     process.exit(0);
+}
+
+let lastCount;
+try {
+    lastCount = parseLastCount();
+} catch (error) {
+    console.error(error.message);
+    process.exit(2);
 }
 
 /**
@@ -114,51 +143,216 @@ function getCacheFilePaths() {
 
     // VS Code variants to check
     const vscodeVariants = ['Code', 'Code - Insiders', 'Code - Exploration', 'VSCodium', 'Cursor'];
-    // Support both the original author id and the machine-specific id (robbos)
-    const extensionId = 'robbos.copilot-token-tracker';
-    // Candidate cache file names to look for (include session-cache.json used on the user's machine)
-    const candidateFiles = ['session-cache.json'];
+    // Current extension id (publisher.name, lowercased) and the pre-rename id
+    const extensionIds = ['robbos.ai-engineering-fluency', 'robbos.copilot-token-tracker'];
+    // The extension's shared cache snapshot (CacheManager.getSharedSnapshotPath(): prod, then
+    // Extension Development Host), then a legacy flat export written by hand or by tests
+    const candidateFiles = ['cache_prod.snapshot.json', 'cache_dev.snapshot.json', 'session-cache.json'];
 
     if (platform === 'win32') {
         // Windows: %APPDATA%\Code\User\globalStorage\<extensionId>\<cacheFile>
         const appDataPath = process.env.APPDATA || path.join(homedir, 'AppData', 'Roaming');
         for (const variant of vscodeVariants) {
-            for (const fileName of candidateFiles) {
-                paths.push(path.join(appDataPath, variant, 'User', 'globalStorage', extensionId, fileName));
+            for (const extensionId of extensionIds) {
+                for (const fileName of candidateFiles) {
+                    paths.push(path.join(appDataPath, variant, 'User', 'globalStorage', extensionId, fileName));
+                }
             }
         }
-        // Also check temp directory for common export names
-        const tempPath = process.env.TEMP || process.env.TMP || path.join(homedir, 'AppData', 'Local', 'Temp');
-        paths.push(path.join(tempPath, 'copilot-token-tracker-cache.json'));
-        paths.push(path.join(tempPath, 'session-cache.json'));
     } else if (platform === 'darwin') {
         // macOS: ~/Library/Application Support/<variant>/User/globalStorage/<extensionId>/<cacheFile>
         for (const variant of vscodeVariants) {
-            for (const fileName of candidateFiles) {
-                paths.push(path.join(homedir, 'Library', 'Application Support', variant, 'User', 'globalStorage', extensionId, fileName));
+            for (const extensionId of extensionIds) {
+                for (const fileName of candidateFiles) {
+                    paths.push(path.join(homedir, 'Library', 'Application Support', variant, 'User', 'globalStorage', extensionId, fileName));
+                }
             }
         }
-        // Also check temp directory
-        paths.push(path.join(os.tmpdir(), 'copilot-token-tracker-cache.json'));
-        paths.push(path.join(os.tmpdir(), 'session-cache.json'));
     } else {
         // Linux: ~/.config/Code/User/globalStorage/extensionId/cache.json
         const xdgConfigHome = process.env.XDG_CONFIG_HOME || path.join(homedir, '.config');
         for (const variant of vscodeVariants) {
-            for (const fileName of candidateFiles) {
-                paths.push(path.join(xdgConfigHome, variant, 'User', 'globalStorage', extensionId, fileName));
+            for (const extensionId of extensionIds) {
+                for (const fileName of candidateFiles) {
+                    paths.push(path.join(xdgConfigHome, variant, 'User', 'globalStorage', extensionId, fileName));
+                }
             }
         }
-        // Also check temp directory
-        paths.push(path.join(os.tmpdir(), 'copilot-token-tracker-cache.json'));
-        paths.push(path.join(os.tmpdir(), 'session-cache.json'));
     }
-
-    // Also check current directory and common export names
-    paths.push(path.join(process.cwd(), 'cache-export.json'));
-    paths.push(path.join(process.cwd(), 'session-cache.json'));
     
     return paths;
+}
+
+const SAFE_CACHE_ENTRY_FIELDS = new Set([
+    'tokens', 'interactions', 'modelUsage', 'mtime', 'size', 'detailsOnly',
+    'usageAnalysis', 'taskCategory', 'taskCategoryShares', 'firstInteraction',
+    'lastInteraction', 'repositoryResolved', 'thinkingTokens', 'actualTokens',
+    'cacheReadTokens', 'modelTurns', 'debugLogInputTokens', 'debugLogOutputTokens',
+    'debugLogChecked', 'subAgentCalls', 'copilotExactCostDollars', 'truncationCount',
+    'messagesRemovedByTruncation', 'maxRequestInputTokens', 'contextTier',
+    'dailyRollups', 'linesAdded', 'linesRemoved'
+    // languageUsage is omitted: it is keyed by file extension, or by the whole basename for
+    // extensionless files (Dockerfile, .env, private file names)
+]);
+
+// usageAnalysis fields whose maps are keyed by session-supplied names
+const NAME_KEYED_USAGE_FIELDS = ['toolCalls', 'mcpTools', 'skillCalls'];
+
+// CorrectionMoment fields that are counts, flags, timestamps or this repo's own labels
+const SAFE_CORRECTION_MOMENT_FIELDS = new Set([
+    'type', 'turnNumber', 'timestamp', 'retried', 'matchedPattern', 'intensity', 'escalated', 'corroboratedBy'
+]);
+
+// Reference/variable kinds VS Code Chat writes (and the ones src/usageAnalysis.ts adds)
+const KNOWN_REFERENCE_KINDS = new Set([
+    'reference', 'pullRequest', 'file', 'directory', 'dir', 'image', 'copilot.image', 'prompt',
+    'promptFile', 'promptText', 'symbol', 'selection', 'workspace', 'tool', 'toolset', 'implicit',
+    'paste', 'link', 'generic', 'diagnostic', 'terminalCommand', 'scmHistoryItem',
+    'notebookOutput', 'element'
+]);
+
+function bucketReferenceKinds(byKind) {
+    const bucketed = {};
+    for (const [kind, count] of Object.entries(byKind)) {
+        if (typeof count !== 'number') {
+            continue;
+        }
+        const label = KNOWN_REFERENCE_KINDS.has(kind) ? kind : 'other';
+        bucketed[label] = (bucketed[label] || 0) + count;
+    }
+    return bucketed;
+}
+
+function sanitizeCacheEntry(cacheEntry) {
+    if (!cacheEntry || typeof cacheEntry !== 'object' || Array.isArray(cacheEntry)) {
+        return {};
+    }
+    const safeEntry = Object.fromEntries(
+        Object.entries(cacheEntry).filter(([key]) => SAFE_CACHE_ENTRY_FIELDS.has(key))
+    );
+
+    const usageAnalysis = safeEntry.usageAnalysis;
+    if (usageAnalysis && typeof usageAnalysis === 'object' && !Array.isArray(usageAnalysis)) {
+        const safeUsageAnalysis = { ...usageAnalysis };
+        delete safeUsageAnalysis.firstUserPrompt;
+        const contextReferences = safeUsageAnalysis.contextReferences;
+        if (contextReferences && typeof contextReferences === 'object' && !Array.isArray(contextReferences)) {
+            // byPath is keyed by the referenced files' local paths
+            const safeContextReferences = { ...contextReferences };
+            delete safeContextReferences.byPath;
+            // byKind keys are copied verbatim from the session's contentReferences/variableData
+            // `kind`; keep known kinds and count every other value under "other"
+            if (isPlainObject(contextReferences.byKind)) {
+                safeContextReferences.byKind = bucketReferenceKinds(contextReferences.byKind);
+            }
+            safeUsageAnalysis.contextReferences = safeContextReferences;
+        }
+        const editScope = safeUsageAnalysis.editScope;
+        if (editScope && typeof editScope === 'object' && !Array.isArray(editScope)) {
+            // Same basename-keyed map as the top-level languageUsage
+            const safeEditScope = { ...editScope };
+            delete safeEditScope.languageUsage;
+            safeUsageAnalysis.editScope = safeEditScope;
+        }
+        const modelSwitching = safeUsageAnalysis.modelSwitching;
+        if (isPlainObject(modelSwitching)) {
+            // selectedModelExtensions lists the ids of the extensions that supplied the selected
+            // models (e.g. a private or internal model-provider extension), not model ids
+            const safeModelSwitching = { ...modelSwitching };
+            delete safeModelSwitching.selectedModelExtensions;
+            safeUsageAnalysis.modelSwitching = safeModelSwitching;
+        }
+        // Tool, MCP server/tool and skill names come straight from the session (an MCP server
+        // or skill can carry a private project or customer name). Keep each usage object's
+        // scalar totals; drop its name-keyed maps (byTool, byServer, byName, latencyBy*, ...).
+        for (const field of NAME_KEYED_USAGE_FIELDS) {
+            const usage = safeUsageAnalysis[field];
+            if (isPlainObject(usage)) {
+                safeUsageAnalysis[field] = Object.fromEntries(
+                    Object.entries(usage).filter(([, value]) => value === null || typeof value !== 'object')
+                );
+            }
+        }
+        // Custom agent names are user-defined labels that can carry a private project or customer
+        // name. Keep only how many agents were used and how many requests they handled.
+        if (isPlainObject(safeUsageAnalysis.agentUsage)) {
+            const agents = isPlainObject(safeUsageAnalysis.agentUsage.byAgent)
+                ? Object.values(safeUsageAnalysis.agentUsage.byAgent).filter(isPlainObject)
+                : [];
+            safeUsageAnalysis.agentUsage = {
+                agents: agents.length,
+                requests: agents.reduce((sum, agent) => sum + (typeof agent.requests === 'number' ? agent.requests : 0), 0)
+            };
+        }
+        if (Array.isArray(safeUsageAnalysis.correctionMoments)) {
+            // Allowlist: snippet (message text), tool (session tool name) and file (local path)
+            // and any future field are dropped
+            safeUsageAnalysis.correctionMoments = safeUsageAnalysis.correctionMoments
+                .filter(isPlainObject)
+                .map(moment => Object.fromEntries(
+                    Object.entries(moment).filter(([key]) => SAFE_CORRECTION_MOMENT_FIELDS.has(key))
+                ));
+        }
+        safeEntry.usageAnalysis = safeUsageAnalysis;
+    }
+
+    return safeEntry;
+}
+
+/**
+ * Drop credentials (user:token@) from a remote URL. Applied even with
+ * --include-sensitive: opting in to repository URLs is not opting in to secrets.
+ */
+function stripUrlUserinfo(remote) {
+    if (typeof remote !== 'string') {
+        return remote;
+    }
+    return remote.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^\/@]*@/i, '$1');
+}
+
+function includeSensitiveEntry(cacheEntry) {
+    if (!cacheEntry || typeof cacheEntry !== 'object' || Array.isArray(cacheEntry) || !('repository' in cacheEntry)) {
+        return cacheEntry;
+    }
+    return { ...cacheEntry, repository: stripUrlUserinfo(cacheEntry.repository) };
+}
+
+function isPlainObject(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isSnapshotFile(filePath) {
+    return path.basename(filePath).endsWith('.snapshot.json');
+}
+
+/**
+ * The extension's snapshot wraps the cache map in an envelope
+ * ({ schemaVersion, cacheVersion, cacheId, generatedAt, entryCount, entries });
+ * a legacy export is the bare map. Returns { entries } or { error }.
+ *
+ * A snapshot that does not parse or lacks a usable envelope is an error, not a
+ * reason to fall back: falling back would silently report an older legacy export
+ * as the current cache, and treating the envelope as a bare map would print its
+ * metadata fields as cache entries.
+ */
+function parseCacheEntries(filePath, content) {
+    const fileName = path.basename(filePath);
+    let data;
+    try {
+        data = JSON.parse(content);
+    } catch {
+        return { error: `Malformed cache file ${fileName}: not valid JSON` };
+    }
+    if (isSnapshotFile(filePath)) {
+        if (!isPlainObject(data) || typeof data.schemaVersion !== 'number' || !isPlainObject(data.entries)) {
+            return { error: `Malformed cache snapshot ${fileName}: expected an envelope with a numeric schemaVersion and an entries object` };
+        }
+        return { entries: data.entries };
+    }
+    if (!isPlainObject(data)) {
+        return { error: `Malformed cache file ${fileName}: expected an object of cache entries` };
+    }
+    return { entries: data };
 }
 
 /**
@@ -167,119 +361,54 @@ function getCacheFilePaths() {
  */
 function readCacheFile() {
     const possiblePaths = getCacheFilePaths();
-    
+
+    // All decisions are made about the open descriptor, never a path checked beforehand:
+    // 1. Open the candidate (O_NOFOLLOW on POSIX refuses a symlink outright; O_NONBLOCK makes
+    //    opening a FIFO return at once instead of waiting forever for a writer - it does not
+    //    affect reads from a regular file).
+    // 2. fstat the descriptor: it must be a regular file.
+    // 3. lstat the path (not following links) and require a regular file with the same
+    //    dev + ino as the descriptor. This refuses a symlink on Windows, where O_NOFOLLOW
+    //    does not exist and open() followed it (lstat reports the link, not the target),
+    //    and refuses a path that was swapped after the open.
+    // 4. Read through the same descriptor.
+    const openFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0);
     for (const filePath of possiblePaths) {
+        let fd;
+        let content;
         try {
-            if (fs.existsSync(filePath)) {
-                const content = fs.readFileSync(filePath, 'utf8');
-                const data = JSON.parse(content);
-                return { success: true, data, filePath };
+            fd = fs.openSync(filePath, openFlags);
+            const fileStat = fs.fstatSync(fd, { bigint: true });
+            if (!fileStat.isFile()) {
+                continue;
             }
+            const linkStat = fs.lstatSync(filePath, { bigint: true });
+            if (linkStat.isSymbolicLink() || !linkStat.isFile()
+                || linkStat.dev !== fileStat.dev || linkStat.ino !== fileStat.ino) {
+                continue;
+            }
+            content = fs.readFileSync(fd, 'utf8');
         } catch (error) {
-            // Continue to next path if this one fails
+            // Missing, unreadable, a refused symlink or swapped file: try the next candidate
             continue;
+        } finally {
+            if (fd !== undefined) {
+                fs.closeSync(fd);
+            }
         }
+
+        // The first file that exists decides the result; a malformed one stops the search.
+        const parsed = parseCacheEntries(filePath, content);
+        if (parsed.error) {
+            return { success: false, malformed: true, error: parsed.error };
+        }
+        return { success: true, data: parsed.entries, filePath };
     }
-    
-    return { 
-        success: false, 
-        error: 'No cache file found',
-        searchedPaths: possiblePaths 
+
+    return {
+        success: false,
+        error: 'No cache file found'
     };
-}
-
-/**
- * Format cache data for display
- */
-function formatCacheEntries(cacheData, limit = 10) {
-    const entries = Object.entries(cacheData);
-    
-    // Sort by modification time (most recent first)
-    entries.sort((a, b) => (b[1].mtime || 0) - (a[1].mtime || 0));
-    
-    // Take last N entries
-    const limitedEntries = entries.slice(0, limit);
-    
-    return limitedEntries.map(([filePath, cacheEntry]) => ({
-        file: path.basename(filePath),
-        fullPath: filePath,
-        tokens: cacheEntry.tokens,
-        interactions: cacheEntry.interactions,
-        modelUsage: cacheEntry.modelUsage,
-        lastModified: cacheEntry.mtime ? new Date(cacheEntry.mtime).toISOString() : 'unknown',
-        usageAnalysis: cacheEntry.usageAnalysis
-    }));
-}
-
-/**
- * Display cache entries in human-readable format
- */
-function displayCacheEntries(entries, sourceFile) {
-    console.log('='.repeat(80));
-    console.log('GitHub Copilot Token Tracker - Local Cache Data');
-    console.log('='.repeat(80));
-    console.log('');
-    
-    if (sourceFile) {
-        console.log(`Cache file: ${sourceFile}`);
-        console.log('');
-    }
-    
-    console.log(`Showing ${entries.length} cache entries (sorted by most recent):`);
-    console.log('');
-    
-    entries.forEach((entry, index) => {
-        console.log(`${index + 1}. ${entry.file}`);
-        console.log(`   Path: ${entry.fullPath}`);
-        console.log(`   Tokens: ${entry.tokens.toLocaleString()}`);
-        console.log(`   Interactions: ${entry.interactions}`);
-        console.log(`   Last Modified: ${entry.lastModified}`);
-        console.log(`   Model Usage:`);
-        
-        for (const [model, usage] of Object.entries(entry.modelUsage)) {
-            console.log(`     - ${model}:`);
-            console.log(`       Input: ${usage.inputTokens.toLocaleString()} tokens`);
-            console.log(`       Output: ${usage.outputTokens.toLocaleString()} tokens`);
-        }
-        
-        if (entry.usageAnalysis) {
-            console.log(`   Usage Analysis:`);
-            console.log(`     Tool Calls: ${entry.usageAnalysis.toolCalls.total}`);
-            console.log(`     Mode Usage: Ask=${entry.usageAnalysis.modeUsage.ask}, Edit=${entry.usageAnalysis.modeUsage.edit}, Agent=${entry.usageAnalysis.modeUsage.agent}`);
-            const contextRefs = entry.usageAnalysis.contextReferences;
-            const totalRefs = Object.values(contextRefs).reduce((sum, val) => sum + val, 0);
-            console.log(`     Context References: ${totalRefs} total`);
-        }
-        
-        console.log('');
-    });
-    
-    console.log('='.repeat(80));
-}
-
-/**
- * Display message when no cache file is found
- */
-function displayNoCacheFound(searchedPaths) {
-    console.log('='.repeat(80));
-    console.log('GitHub Copilot Token Tracker - Local Cache Data');
-    console.log('='.repeat(80));
-    console.log('');
-    console.log('NO CACHE FILE FOUND');
-    console.log('');
-    console.log('This script looks for cache export files in the following locations:');
-    searchedPaths.forEach(p => console.log(`  - ${p}`));
-    console.log('');
-    console.log('The extension stores its cache in VS Code\'s internal globalState,');
-    console.log('which is not directly accessible from external scripts.');
-    console.log('');
-    console.log('To export cache data for inspection:');
-    console.log('  1. The extension can be modified to write cache to disk');
-    console.log('  2. Tests can export cache data to one of the above locations');
-    console.log('  3. Use the extension\'s API to access cache at runtime');
-    console.log('');
-    console.log('See --help for more information on cache structure and access patterns.');
-    console.log('='.repeat(80));
 }
 
 // Main execution
@@ -288,14 +417,16 @@ function displayNoCacheFound(searchedPaths) {
     const cacheResult = readCacheFile();
 
     if (cacheResult.success) {
-        // Return raw cache data (limit to last N entries) as JSON only
         const entries = Object.entries(cacheResult.data || {});
-        entries.sort((a, b) => (b[1].mtime || 0) - (a[1].mtime || 0));
+        entries.sort((a, b) => ((b[1] && b[1].mtime) || 0) - ((a[1] && a[1].mtime) || 0));
         const limited = entries.slice(0, lastCount);
-        const limitedObj = Object.fromEntries(limited);
+        const limitedObj = Object.fromEntries(limited.map(([filePath, cacheEntry], index) => [
+            includeSensitive ? filePath : `session-${index + 1}`,
+            includeSensitive ? includeSensitiveEntry(cacheEntry) : sanitizeCacheEntry(cacheEntry)
+        ]));
 
         const output = {
-            cacheFile: cacheResult.filePath,
+            ...(includeSensitive ? { cacheFile: cacheResult.filePath } : {}),
             requestedCount: lastCount,
             totalCacheEntries: Object.keys(cacheResult.data || {}).length,
             entries: limitedObj
@@ -305,11 +436,16 @@ function displayNoCacheFound(searchedPaths) {
         return;
     }
 
+    if (cacheResult.malformed) {
+        // A cache file exists but cannot be used: say so instead of reporting "not found"
+        console.log(JSON.stringify({ cacheFound: true, malformed: true, error: cacheResult.error }));
+        process.exit(3);
+    }
+
     // No cache found: output JSON error
     const errorOut = {
         cacheFound: false,
-        error: cacheResult.error,
-        searchedPaths: cacheResult.searchedPaths
+        error: cacheResult.error
     };
     console.log(JSON.stringify(errorOut));
     process.exit(1);

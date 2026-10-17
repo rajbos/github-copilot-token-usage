@@ -180,6 +180,35 @@ function mergeNumericValues(existing: unknown, delta: number): number {
 	return (typeof existing === 'number' ? existing : 0) + delta;
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** The additive latency histogram shape from src/latencyHistogram.ts: `{ count, sumMs, buckets[] }`. */
+function isLatencyHistogramLike(value: unknown): value is { count: number; sumMs: number; buckets: number[] } {
+	return isPlainRecord(value) && typeof value.count === 'number' && Array.isArray(value.buckets);
+}
+
+/** Element-wise sum of two histograms; bucket arrays of different length are padded, never truncated. */
+function mergeLatencyHistogramLike(
+	existing: { count: number; sumMs: number; buckets: number[] },
+	incoming: { count: number; sumMs: number; buckets: number[] }
+): { count: number; sumMs: number; buckets: number[] } {
+	const buckets = [...existing.buckets];
+	incoming.buckets.forEach((n, i) => { buckets[i] = (buckets[i] ?? 0) + (typeof n === 'number' ? n : 0); });
+	return {
+		count: existing.count + incoming.count,
+		sumMs: (typeof existing.sumMs === 'number' ? existing.sumMs : 0) + (typeof incoming.sumMs === 'number' ? incoming.sumMs : 0),
+		buckets,
+	};
+}
+
+/**
+ * Add `incoming` into `existing` key by key. Numbers add; nested records recurse so
+ * per-tool maps of histograms (`latencyByTool`) or counts stay additive across the
+ * sessions rolled into one day — assigning the incoming object wholesale would keep
+ * only the last session's histogram and corrupt uploaded p50/p95.
+ */
 function mergeNestedObject(
 	existing: Record<string, unknown>,
 	incoming: Record<string, unknown>
@@ -187,9 +216,16 @@ function mergeNestedObject(
 	const merged = { ...existing };
 	for (const key in incoming) {
 		const incomingVal = incoming[key];
-		merged[key] = typeof incomingVal === 'number'
-			? mergeNumericValues(existing[key], incomingVal)
-			: incomingVal;
+		const existingVal = existing[key];
+		if (typeof incomingVal === 'number') {
+			merged[key] = mergeNumericValues(existingVal, incomingVal);
+		} else if (isLatencyHistogramLike(incomingVal) && isLatencyHistogramLike(existingVal)) {
+			merged[key] = mergeLatencyHistogramLike(existingVal, incomingVal);
+		} else if (isPlainRecord(incomingVal) && isPlainRecord(existingVal)) {
+			merged[key] = mergeNestedObject(existingVal, incomingVal);
+		} else {
+			merged[key] = incomingVal;
+		}
 	}
 	return merged;
 }

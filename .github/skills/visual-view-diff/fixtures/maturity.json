@@ -111,5 +111,83 @@
     "$fromRepoJson": "src/fluencyLevelData.json"
   },
   "backendConfigured": false,
-  "installedHooks": []
+  "installedHooks": [],
+  "shareCard": [
+    {
+      "period": "last30",
+      "sessions": 54,
+      "interactions": 812,
+      "tokens": 18400000,
+      "editors": [
+        {
+          "name": "VS Code",
+          "sessions": 31
+        },
+        {
+          "name": "Claude Code",
+          "sessions": 14
+        },
+        {
+          "name": "Copilot CLI",
+          "sessions": 9
+        }
+      ]
+    },
+    {
+      "period": "today",
+      "sessions": 3,
+      "interactions": 41,
+      "tokens": 920000,
+      "editors": [
+        {
+          "name": "VS Code",
+          "sessions": 2
+        },
+        {
+          "name": "Claude Code",
+          "sessions": 1
+        }
+      ]
+    },
+    {
+      "period": "currentMonth",
+      "sessions": 21,
+      "interactions": 305,
+      "tokens": 7100000,
+      "editors": [
+        {
+          "name": "VS Code",
+          "sessions": 12
+        },
+        {
+          "name": "Claude Code",
+          "sessions": 6
+        },
+        {
+          "name": "Copilot CLI",
+          "sessions": 3
+        }
+      ]
+    },
+    {
+      "period": "lastMonth",
+      "sessions": 47,
+      "interactions": 690,
+      "tokens": 15200000,
+      "editors": [
+        {
+          "name": "VS Code",
+          "sessions": 28
+        },
+        {
+          "name": "Claude Code",
+          "sessions": 12
+        },
+        {
+          "name": "Copilot CLI",
+          "sessions": 7
+        }
+      ]
+    }
+  ]
 }

@@ -1,0 +1,221 @@
+name: Desktop - Build & Publish Windows installer
+
+# Tag push (desktop/v*): build the NSIS installer and publish it as a GitHub
+# release, then point the auto-update feed at it.
+# Manual run: build only — the installer is attached to the run as an artifact
+# and nothing is released, even when the run is dispatched against a tag. Use
+# it to try an installer before tagging.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'desktop/v*'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  build:
+    name: Build Windows installer
+    runs-on: windows-latest
+    permissions:
+      contents: write # create the GitHub release and upload its assets
+    # One desktop publish at a time, never cancelled midway: two versions must
+    # not race each other to the shared update feed.
+    concurrency:
+      group: desktop-publish
+      cancel-in-progress: false
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: '11.2.2'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+          cache-dependency-path: |
+            vscode-extension/pnpm-lock.yaml
+            cli/pnpm-lock.yaml
+            desktop/pnpm-lock.yaml
+
+      - name: Read version
+        id: version
+        working-directory: desktop
+        run: |
+          $version = node -p "require('./package.json').version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "desktop/v$version") {
+            throw "Tag $env:GITHUB_REF_NAME does not match desktop/package.json version (desktop/v$version)"
+          }
+
+      # The desktop app bundles the extension's webview bundles and imports the
+      # CLI's stats logic from source, so all three packages need dependencies.
+      - name: Install extension dependencies
+        working-directory: vscode-extension
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install CLI dependencies
+        working-directory: cli
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # Build the extension explicitly in production mode. Left to the desktop
+      # build's own fallback, the webview bundles would ship unminified.
+      - name: Build extension webview bundles (production)
+        working-directory: vscode-extension
+        run: node esbuild.js --production
+
+      - name: Type-check desktop app
+        working-directory: desktop
+        run: pnpm run check-types
+
+      - name: Build installer
+        working-directory: desktop
+        run: pnpm run dist
+
+      - name: Upload installer as workflow artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-windows-installer
+          path: |
+            desktop/release/AI-Engineering-Fluency-Setup-*.exe
+            desktop/release/AI-Engineering-Fluency-Setup-*.exe.blockmap
+            desktop/release/latest.yml
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $tag = "desktop/v$env:VERSION"
+          $assets = @(
+            "release/AI-Engineering-Fluency-Setup-$env:VERSION.exe"
+            "release/AI-Engineering-Fluency-Setup-$env:VERSION.exe.blockmap"
+            "release/latest.yml"
+          )
+
+          $installer = "AI-Engineering-Fluency-Setup-$env:VERSION.exe"
+          $published = gh release view $tag --json assets --jq '.assets[].name' 2>$null
+          $releaseExists = $LASTEXITCODE -eq 0
+          $global:LASTEXITCODE = 0
+
+          if ($releaseExists) {
+            # A published installer is immutable. Builds are not byte-for-byte
+            # reproducible, and the live update feed advertises the sha512 of
+            # the bytes that were published; replacing them would make every
+            # update download fail verification. On a re-run, keep what is
+            # there, upload only what is missing, and carry the *published*
+            # metadata forward so the feed step describes the real asset.
+            if (@($published) -contains $installer) {
+              if (@($published) -notcontains 'latest.yml') {
+                throw "Release $tag has the installer but no latest.yml, so its checksum cannot be recovered. Delete the release's assets and re-run to publish a fresh, consistent set."
+              }
+              Write-Host "Installer already published for $tag - keeping it and reusing its metadata."
+              gh release download $tag --pattern latest.yml --dir release --clobber
+              if ($LASTEXITCODE -ne 0) { throw "Could not download the published latest.yml for $tag" }
+              # Nothing else is uploaded either: a blockmap from this rebuild
+              # would not describe the published bytes. If one is missing the
+              # updater simply falls back to a full download.
+              $assets = @()
+            } else {
+              # No installer yet. Any metadata already there came from a
+              # different build and must not be paired with this one: a later
+              # re-run would read that checksum as the installer's. Refuse
+              # instead of mixing assets from two builds.
+              $leftovers = @($published) | Where-Object { $_ -in @('latest.yml', "$installer.blockmap") }
+              if ($leftovers.Count -gt 0) {
+                throw "Release $tag has $($leftovers -join ', ') from an earlier build but no installer. Delete the release's assets and re-run to publish a fresh, consistent set."
+              }
+            }
+            if ($assets.Count -gt 0) { gh release upload $tag $assets }
+          } else {
+            # --latest=false: this repo ships several products; the desktop app
+            # must not take the repo-wide "Latest release" badge from them.
+            gh release create $tag $assets --verify-tag --generate-notes --latest=false --title "Desktop App v$env:VERSION"
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Publishing release $tag failed" }
+
+      # electron-updater's GitHub provider follows the repo's "latest release",
+      # which here is usually another product (VS Code extension, CLI, JetBrains)
+      # with no latest.yml. So the app reads its feed from a fixed place instead:
+      # the rolling `desktop-latest` release holds one latest.yml whose URLs
+      # point at the versioned release's installer. Updated last, so installed
+      # apps only see a version whose installer is already downloadable.
+      # The feed only ever moves forward: a re-run of an older tag republishes
+      # that release's assets but must not point installed apps back at it.
+      - name: Update auto-update feed (desktop-latest)
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $installer = "AI-Engineering-Fluency-Setup-$env:VERSION.exe"
+          $downloadUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/desktop/v$env:VERSION/$installer"
+
+          $feed = Get-Content release/latest.yml -Raw
+          if (-not $feed.Contains($installer)) { throw "release/latest.yml does not reference $installer" }
+          New-Item -ItemType Directory -Force release/feed | Out-Null
+          $rewritten = $feed.Replace($installer, $downloadUrl)
+          # The feed release holds nothing but latest.yml, so every file it
+          # references must be an absolute URL into the versioned release. The
+          # .blockmap is not listed here: the updater derives it from the
+          # installer URL. Fail rather than publish a feed with a relative entry.
+          $relative = [regex]::Matches($rewritten, '(?m)^\s*(?:-\s*)?(?:url|path):\s*(?!https://)\S.*$')
+          if ($relative.Count -gt 0) { throw "Update feed still has relative entries: $($relative.Value -join '; ')" }
+          [System.IO.File]::WriteAllText("$PWD/release/feed/latest.yml", $rewritten)
+
+          gh release view desktop-latest | Out-Null
+          $feedExists = $LASTEXITCODE -eq 0
+          $global:LASTEXITCODE = 0
+
+          if ($feedExists) {
+            # Ask which assets exist rather than inferring it from a failed
+            # download: only a release that truly has no latest.yml yet (a first
+            # run that died before its upload) may skip the version check. Any
+            # failure to read an existing feed aborts instead of overwriting it.
+            $assetNames = gh release view desktop-latest --json assets --jq '.assets[].name'
+            if ($LASTEXITCODE -ne 0) { throw "Could not list the assets of the desktop-latest release" }
+            if (@($assetNames) -contains 'latest.yml') {
+              gh release download desktop-latest --pattern latest.yml --dir release/published --clobber
+              if ($LASTEXITCODE -ne 0) { throw "Could not download the published update feed; refusing to overwrite it unchecked" }
+              $published = Get-Content release/published/latest.yml -Raw
+              if ($published -notmatch '(?m)^version:\s*(\S+)\s*$') { throw "Published update feed has no version line" }
+              $publishedVersion = [System.Management.Automation.SemanticVersion]$Matches[1]
+              if ($publishedVersion -gt [System.Management.Automation.SemanticVersion]$env:VERSION) {
+                Write-Host "Update feed already points at $publishedVersion, newer than $env:VERSION - leaving it unchanged."
+                exit 0
+              }
+            }
+          }
+
+          if (-not $feedExists) {
+            gh release create desktop-latest --target $env:GITHUB_SHA --latest=false `
+              --title "Desktop App auto-update feed" `
+              --notes "Update feed read by installed copies of the desktop app. Nothing to download here: get the installer from the newest **Desktop App vX.Y.Z** release."
+            if ($LASTEXITCODE -ne 0) { throw "Creating the desktop-latest release failed" }
+          }
+          gh release upload desktop-latest release/feed/latest.yml --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Uploading the update feed failed" }

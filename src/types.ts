@@ -94,6 +94,12 @@ export interface EditorUsage {
   [editorType: string]: {
     tokens: number;
     sessions: number;
+    /**
+     * User-request turns for this editor on this day. Optional because older
+     * in-memory stats (and fixtures) predate it; treat a missing value as 0
+     * rather than as "unknown".
+     */
+    interactions?: number;
     linesAdded?: number;
     linesRemoved?: number;
   };
@@ -190,6 +196,13 @@ export interface DailyTokenStats {
    * Absent when no session on this day carried per-model efficiency data.
    */
   modelEfficiency?: DailyModelEfficiency;
+  /**
+   * Per-editor split of {@link modelEfficiency}. Every session contributes to
+   * exactly one editor, so merging all editors reproduces `modelEfficiency`
+   * exactly — which is what lets the Efficiency view offer an editor filter
+   * without a second, divergent aggregation path.
+   */
+  editorModelEfficiency?: { [editor: string]: DailyModelEfficiency };
 }
 
 /**
@@ -230,15 +243,31 @@ export interface DailyModelEfficiency {
 export type ChartTimeWindow = 'today' | 'last7' | 'last30' | 'last90' | 'currentMonth' | 'allTime';
 
 /** Aggregated data for one time window (day/week/month) in the chart. */
+/**
+ * One Chart.js dataset the chart webview draws. Every dataset the shared builder
+ * (src/chartDataBuilder.ts) emits has this shape, and the webview reads it from the same
+ * type, so a field it relies on cannot go missing in one host without a compile error.
+ */
+export interface ChartDataset {
+  label: string;
+  /** One value per bar, aligned with the period's `labels`. */
+  data: number[];
+  backgroundColor: string;
+  borderColor: string;
+  borderWidth: number;
+  /** Repository datasets: the full repository URL behind the display `label`. */
+  fullRepo?: string;
+}
+
 export interface ChartPeriodData {
   labels: string[];
   /** ISO date keys for each bar, used for time-window filtering. Day=YYYY-MM-DD, week=Monday YYYY-MM-DD, month=YYYY-MM. */
   periodKeys: string[];
   tokensData: number[];
   sessionsData: number[];
-  modelDatasets: object[];
-  editorDatasets: object[];
-  repositoryDatasets: object[];
+  modelDatasets: ChartDataset[];
+  editorDatasets: ChartDataset[];
+  repositoryDatasets: ChartDataset[];
   /** Number of bars / data points in this period. */
   periodCount: number;
   totalTokens: number;
@@ -254,9 +283,9 @@ export interface ChartPeriodData {
   locData?: number[];
   linesAddedData?: number[];
   linesRemovedData?: number[];
-  languageDatasets?: object[];
-  locEditorDatasets?: object[];
-  locRepositoryDatasets?: object[];
+  languageDatasets?: ChartDataset[];
+  locEditorDatasets?: ChartDataset[];
+  locRepositoryDatasets?: ChartDataset[];
   totalLinesAdded?: number;
   totalLinesRemoved?: number;
   avgLocPerPeriod?: number;
@@ -265,36 +294,36 @@ export interface ChartPeriodData {
    * Each dataset's `data` array aligns with `labels`; values are estimated costs in USD.
    * Computed from per-day `editorModelUsage` using the appropriate pricing source for each editor.
    */
-  editorCostDatasets?: object[];
+  editorCostDatasets?: ChartDataset[];
   /**
    * Cost datasets split by billing provider — one dataset per provider group.
    * Groups: "GitHub Copilot" (all Copilot surfaces), "Anthropic" (Claude Code, etc.),
    * "Google" (Gemini CLI, etc.), "Mistral AI", "OpenAI", etc.
    * Copilot group uses AI-Credit pricing; all others use direct provider pricing.
    */
-  billingGroupCostDatasets?: object[];
+  billingGroupCostDatasets?: ChartDataset[];
   /** Token datasets split by task category (e.g. "Coding", "Debugging", "Testing") — one stacked-bar dataset per category. */
-  taskCategoryDatasets?: object[];
+  taskCategoryDatasets?: ChartDataset[];
   /** Task-token datasets split by category. */
-  taskCategoryTokenDatasets?: object[];
+  taskCategoryTokenDatasets?: ChartDataset[];
   /** Task-session datasets split by category. */
-  taskCategorySessionDatasets?: object[];
+  taskCategorySessionDatasets?: ChartDataset[];
   /** Task-cost datasets split by category. */
-  taskCategoryCostDatasets?: object[];
+  taskCategoryCostDatasets?: ChartDataset[];
   /**
    * Cost datasets split by model — one dataset per top model (by total cost), plus an
    * "Other models" dataset for the remainder. Each model's usage is priced using the
    * correct pricing source per editor it was used from.
    */
-  modelCostDatasets?: object[];
+  modelCostDatasets?: ChartDataset[];
   /** Session-count datasets split by model — one stacked-bar dataset per model. */
-  modelSessionsDatasets?: object[];
+  modelSessionsDatasets?: ChartDataset[];
   /** Session-count datasets split by editor — one stacked-bar dataset per editor. */
-  editorSessionsDatasets?: object[];
+  editorSessionsDatasets?: ChartDataset[];
   /** Session-count datasets split by billing provider — one stacked-bar dataset per provider group. */
-  providerSessionsDatasets?: object[];
+  providerSessionsDatasets?: ChartDataset[];
   /** Token datasets split by billing provider — one stacked-bar dataset per provider group. */
-  providerTokensDatasets?: object[];
+  providerTokensDatasets?: ChartDataset[];
 }
 
 /** Shape of the data payload sent to the chart webview (via window.__INITIAL_CHART__ or postMessage). */
@@ -302,12 +331,12 @@ export interface ChartDataPayload {
   labels: string[];
   tokensData: number[];
   sessionsData: number[];
-  modelDatasets: object[];
-  editorDatasets: object[];
+  modelDatasets: ChartDataset[];
+  editorDatasets: ChartDataset[];
   editorTotalsMap: Record<string, number>;
-  repositoryDatasets: object[];
+  repositoryDatasets: ChartDataset[];
   repositoryTotalsMap: Record<string, number>;
-  taskCategoryDatasets?: object[];
+  taskCategoryDatasets?: ChartDataset[];
   dailyCount: number;
   totalTokens: number;
   avgTokensPerDay: number;
@@ -349,6 +378,12 @@ export interface SessionFileCache {
   modelUsage: ModelUsage;
   mtime: number; // file modification time as timestamp
   size?: number; // file size in bytes (optional for backward compatibility)
+  /**
+   * True for a placeholder written by the details-only parse (Details/Diagnostics) for a session
+   * that was never fully analyzed: tokens/usageAnalysis are not real. getSessionFileDataCached()
+   * treats it as a miss; the full analysis result replaces it (and never carries this flag).
+   */
+  detailsOnly?: true;
   usageAnalysis?: SessionUsageAnalysis; // New analysis data
   taskCategory?: TaskCategory;
   taskCategoryShares?: TaskCategoryBreakdown;
@@ -417,6 +452,10 @@ export interface ThinkingEffortUsage {
 export interface SessionUsageAnalysis {
   toolCalls: ToolCallUsage;
   modeUsage: ModeUsage;
+  /** Per-interaction autonomy level (autopilot/auto vs supervised). Absent when no surface reported one. */
+  autonomyUsage?: AutonomyUsage;
+  /** Custom agents the user selected, per request. Absent when the session used none. */
+  agentUsage?: AgentUsage;
   contextReferences: ContextReferenceUsage;
   mcpTools: McpToolUsage;
   /** Agent-skill invocation counts for this session. See {@link SkillCallUsage}. */
@@ -477,10 +516,48 @@ export interface SessionUsageAnalysis {
   firstUserPrompt?: string;
 }
 
+/**
+ * Additive, log-spaced latency histogram (see src/latencyHistogram.ts).
+ * `buckets[i]` counts durations in `[2^i, 2^(i+1))` ms; the last bucket is overflow.
+ * Stored as counts + sum (never averages) so it merges correctly across sessions,
+ * cache entries and backend rollups.
+ */
+export interface LatencyHistogram {
+  count: number;
+  sumMs: number;
+  buckets: number[];
+}
+
 export interface ToolCallUsage {
   total: number;
   byTool: { [toolName: string]: number };
   outputTokensByTool?: { [toolName: string]: number };
+  /**
+   * Calls whose session log recorded an explicit verdict (success or failure) on a
+   * completion/result event matched to its start. This is the denominator for
+   * `failuresByTool` and `outputTokensByTool`, which are only ever recorded for such
+   * calls; unlike `byTool` it excludes orphaned starts, streaming re-logs, editors whose
+   * format carries no completion events, and verdict-less completions (older Copilot CLI
+   * schemas). `latencyByTool` is a *different* population — any matched completion with
+   * usable timestamps, verdict or not — so its `count` may differ from this in either
+   * direction; never divide one by the other. Absent when no format contributed
+   * verdicts. MCP calls are counted under {@link McpToolUsage.completedByServer} instead.
+   */
+  completedByTool?: { [toolName: string]: number };
+  /**
+   * Calls whose session log explicitly flagged them as failed (Copilot CLI/JetBrains
+   * `tool.execution_complete.success === false`, Claude Code `tool_result.is_error`).
+   * A subset of `completedByTool`; absent when no failure was recorded.
+   */
+  failuresByTool?: { [toolName: string]: number };
+  /**
+   * Observed execution duration per tool, from the start→complete timestamp delta.
+   * This includes permission-prompt and queueing time, not just tool runtime. Sampled
+   * from every matched completion with usable timestamps, including verdict-less ones,
+   * so `count` is its own population (see {@link completedByTool}). Absent when the
+   * format carries no per-call timestamps.
+   */
+  latencyByTool?: { [toolName: string]: LatencyHistogram };
 }
 
 export interface ModeUsage {
@@ -493,6 +570,37 @@ export interface ModeUsage {
   cliApp?: number; // Subset of CLI interactions: Copilot CLI sessions started via the Copilot desktop app (client_name: github/autopilot), broken out from `cli`
   claudeDesktop?: number; // Claude Code sessions launched from the standalone Claude Desktop app (entrypoint: 'claude-desktop'), broken out of `cli` so terminal usage isn't inflated by desktop-app usage
   claudeVsCode?: number; // Claude Code sessions running inside an IDE, e.g. the VS Code extension (entrypoint: 'claude-vscode' or any non-CLI/non-desktop value), broken out of `cli` for the same reason
+}
+
+/**
+ * How much autonomy the user granted per interaction, independent of the chat mode (ask/edit/agent).
+ * Sources: Copilot CLI `agentMode` on user.message, VS Code Copilot Chat `inputState.permissionLevel`,
+ * Claude Code `permissionMode` on human user entries.
+ */
+export interface AutonomyUsage {
+  autonomous: number; // Copilot "autopilot" / Claude Code "auto"
+  supervised: number; // Copilot "interactive" / "default", Claude Code "default" / "acceptEdits"
+  plan: number; // Plan mode
+  other: number; // Recognised-but-unclassified values (e.g. Claude "bypassPermissions")
+}
+
+/** Where a custom agent definition lives: `.github/agents`, `.claude/agents`, the user profile, or elsewhere/unknown. */
+export type AgentSource = 'github' | 'claude' | 'user' | 'other';
+
+/** Requests handled under one custom agent, keyed by the name exactly as the session log shows it. */
+export interface AgentUsageEntry {
+  sessions: number;
+  requests: number;
+  source: AgentSource;
+}
+
+/**
+ * Custom agents the user selected (agent picker, @agent, /agent), not subagents the model
+ * delegated to. Sources: VS Code Copilot Chat `modeInfo` / `inputState.mode`, Copilot CLI
+ * `subagent.selected`.
+ */
+export interface AgentUsage {
+  byAgent: Record<string, AgentUsageEntry>;
 }
 
 export interface ContextReferenceUsage {
@@ -523,6 +631,12 @@ export interface McpToolUsage {
   total: number;
   byServer: { [serverName: string]: number };
   byTool: { [toolName: string]: number };
+  /** MCP calls with a recorded outcome per server; see {@link ToolCallUsage.completedByTool}. */
+  completedByServer?: { [serverName: string]: number };
+  /** Failed MCP calls per server; same source and caveats as {@link ToolCallUsage.failuresByTool}. */
+  failuresByServer?: { [serverName: string]: number };
+  /** Observed MCP call duration per server; same source and caveats as {@link ToolCallUsage.latencyByTool}. */
+  latencyByServer?: { [serverName: string]: LatencyHistogram };
 }
 
 /**
@@ -716,12 +830,17 @@ export interface RepeatedTaskCluster {
   sessions: RepeatedTaskSessionRef[];
   /** Tokens shared by every prompt in the cluster (display hint). */
   sharedKeywords: string[];
+  /**
+   * Up to a few other distinct prompts from the cluster, truncated like the
+   * representative prompt. Optional: payloads cached by older builds lack it.
+   */
+  examplePrompts?: string[];
 }
 
 /** Repeated-task candidates across all scanned sessions. */
 export interface RepeatedTaskReport {
   minClusterSize: number;
-  /** Sessions that carried a usable first user prompt. */
+  /** Sessions whose first user prompt survived normalization and was clustered (see normalizePromptTokens). */
   sessionsScanned: number;
   clusters: RepeatedTaskCluster[];
 }
@@ -838,6 +957,20 @@ export interface TodaySessionSummary {
   subAgentCalls?: number;
 }
 
+/**
+ * How many of the Claude Desktop sessions Desktop itself lists are backed by a transcript on this
+ * disk. The shortfall is expected, not data loss: Claude Code prunes old transcripts on its own
+ * retention schedule, and cloud-run sessions never write one to this machine at all.
+ */
+export interface ClaudeDesktopCoverage {
+  /** Claude Desktop session records found on this machine. */
+  knownSessions: number;
+  /** Records whose transcript is readable here, so they can be measured. */
+  withTranscript: number;
+  /** Records with no local transcript — listed by Desktop, invisible to a local scanner. */
+  missingTranscript: number;
+}
+
 export interface UsageAnalysisStats {
 today: UsageAnalysisPeriod;
 last30Days: UsageAnalysisPeriod;
@@ -845,6 +978,12 @@ last30Days: UsageAnalysisPeriod;
 month: UsageAnalysisPeriod;
 /** Previous calendar month (full month). */
 lastMonth: UsageAnalysisPeriod;
+/**
+ * Per-tool, per-editor call counts for the last 30 days (tool name -> editor display name -> calls).
+ * Covers general tools, MCP tools and MCP server names; used to tell maintainers which editor an
+ * unknown tool was seen in when reporting it.
+ */
+toolCallsByEditor?: { [toolName: string]: { [editorSource: string]: number } };
 locale?: string;
 lastUpdated: Date;
 customizationMatrix?: WorkspaceCustomizationMatrix;
@@ -877,6 +1016,14 @@ correctionReport?: CorrectionReport;
  * cluster reached the minimum size.
  */
 repeatedTasks?: RepeatedTaskReport;
+/** Optional Copilot memory-files hygiene analysis (VS Code only; absent in CLI/VS/JetBrains). */
+memoryFilesAnalysis?: MemoryFilesAnalysis | null;
+/**
+ * Optional Claude Desktop local-transcript coverage, used to explain why Claude Desktop's own
+ * session list is longer than what a local-disk scanner can report. Absent when no Claude
+ * Desktop session records exist on this machine.
+ */
+claudeDesktopCoverage?: ClaudeDesktopCoverage;
 }
 
 /** One day's worth of multi-agent/delegation signal, used to render a trend sparkline. */
@@ -898,6 +1045,11 @@ export interface WorkspaceCustomizationRow {
   sessionCount: number;
   interactionCount: number;
   typeStatuses: { [typeId: string]: CustomizationTypeStatus };
+  /**
+   * Folders merged into this row by workspace grouping (worktrees, clones, case/remote
+   * variants — see src/workspaceGrouping.ts). Present only when more than one folder merged.
+   */
+  memberPaths?: string[];
 }
 
 export interface WorkspaceCustomizationMatrix {
@@ -905,6 +1057,12 @@ export interface WorkspaceCustomizationMatrix {
   workspaces: WorkspaceCustomizationRow[];
   totalWorkspaces: number;
   workspacesWithIssues: number;
+  /**
+   * Display names that still look like worktree / clone artefacts after grouping
+   * (detectArtefactWorkspaceNames). A non-empty list means a naming pattern the grouping
+   * does not know yet.
+   */
+  ungroupedWorkspaceNames?: string[];
 }
 
 // ── Dark Factory readiness ────────────────────────────────────────────────
@@ -1060,6 +1218,10 @@ export interface UsageAnalysisPeriod {
   sessions: number;
   toolCalls: ToolCallUsage;
   modeUsage: ModeUsage;
+  /** Aggregated per-interaction autonomy level across the period's sessions. */
+  autonomyUsage?: AutonomyUsage;
+  /** Aggregated custom-agent usage across the period's sessions. Absent when none used one. */
+  agentUsage?: AgentUsage;
   contextReferences: ContextReferenceUsage;
   mcpTools: McpToolUsage;
   /** Aggregated agent-skill invocation counts across the period's sessions. See {@link SkillCallUsage}. */
@@ -1141,6 +1303,14 @@ export interface ContextWindowStats {
 
 /** Fraction of a session's context window that counts as "almost full". */
 export const CONTEXT_NEAR_LIMIT_RATIO = 0.8;
+
+/**
+ * A key-based translation function, injected into pure modules (insightsEngine.ts) that
+ * render localized text without importing the bundles. Hosts build one with
+ * `createLocalization(bundles).createTranslator()` from `src/localization.ts` (bound to the
+ * shipped bundles in `vscode-extension/src/l10nCore.ts` and `cli/src/l10n.ts`), or pass `l10n.ts`'s `t()`.
+ */
+export type Translate = (key: string, ...args: Array<string | number | boolean>) => string;
 
 /**
  * How often a period's sessions ran out of context window, counted per
@@ -1460,4 +1630,349 @@ export interface ToolCurationAnalysis {
   estimatedPromptBloat: { totalTokens: number; byServer: Record<string, number> };
   /** Prioritised list of recommendations. */
   recommendations: ToolCurationRecommendation[];
+}
+
+// ---------------------------------------------------------------------------
+// Copilot Memory Files
+// ---------------------------------------------------------------------------
+
+/** A single Copilot agent memory Markdown file discovered on disk. */
+export interface MemoryFileEntry {
+  /** Absolute path to the memory `.md` file. */
+  path: string;
+  /** Scope this file belongs to — see docs/features/COPILOT-MEMORY-FILES-INSIGHT.md. */
+  scope: 'user' | 'repo' | 'session';
+  /** The `workspaceStorage/<hash>` this file was discovered under. Undefined for `scope === 'user'`. */
+  workspaceHash?: string;
+  /** Resolved friendly workspace folder path, when recorded in `workspace.json`/`meta.json`. */
+  workspaceName?: string;
+  /** Decoded chat-session UUID when `scope === 'session'` (the folder name is `base64(sessionId)`). */
+  sessionId?: string;
+  /** File size in bytes. */
+  sizeBytes: number;
+  /** Last-modified time, in milliseconds since epoch. */
+  mtimeMs: number;
+  /** File name without extension, used as a display title (content is never read beyond this). */
+  title: string;
+}
+
+/** Per-workspace rollup of discovered memory files, used by `MemoryFilesAnalysis.byWorkspace`. */
+export interface MemoryFilesWorkspaceSummary {
+  workspaceHash?: string;
+  workspaceName?: string;
+  repoCount: number;
+  sessionCount: number;
+  /** User (global)-scope files folded into this bucket — only ever non-zero for the `__user__` row. */
+  userCount: number;
+  totalBytes: number;
+  newestMtimeMs: number | null;
+  oldestMtimeMs: number | null;
+  largestFile?: MemoryFileEntry;
+  /** Files older than the analysis's `staleDays` threshold. */
+  staleFiles: MemoryFileEntry[];
+}
+
+/** Full result of a Copilot memory-files hygiene analysis run. */
+export interface MemoryFilesAnalysis {
+  /** Look-back threshold (days) used to flag a file as stale. */
+  staleDays: number;
+  /** Size threshold (bytes) used to flag a file as unusually large. */
+  largeFileBytes: number;
+  /** Every discovered memory file (metadata only — content is never included). */
+  files: MemoryFileEntry[];
+  /** Rollup grouped by workspace (and one entry for the `user` global scope). */
+  byWorkspace: MemoryFilesWorkspaceSummary[];
+  totalFiles: number;
+  totalBytes: number;
+  staleFileCount: number;
+  largeFileCount: number;
+}
+
+/**
+ * Compact per-workspace rollup for {@link MemoryFilesAnalysisView} — the counts/rollup scalars
+ * the Usage Analysis webview table renders, without the per-file `staleFiles`/`largestFile`
+ * entries (absolute paths, session IDs) `MemoryFilesWorkspaceSummary` carries for the CLI/host.
+ */
+export interface MemoryFilesWorkspaceViewSummary {
+  workspaceHash?: string;
+  workspaceName?: string;
+  repoCount: number;
+  sessionCount: number;
+  /** User (global)-scope files folded into this bucket — only ever non-zero for the `__user__` row. */
+  userCount: number;
+  totalBytes: number;
+  newestMtimeMs: number | null;
+  /** `MemoryFilesWorkspaceSummary.staleFiles.length` — the webview table only ever shows the count. */
+  staleFileCount: number;
+}
+
+/**
+ * Compact projection of {@link MemoryFilesAnalysis} sent to the Usage Analysis webview: counts
+ * and rollup scalars only. Omits the full `files` list and each workspace's `staleFiles`/
+ * `largestFile`/`oldestMtimeMs` — metadata (absolute paths, session IDs, per-file objects) the
+ * webview UI never reads, but which inflates the IPC/HTML payload for a large memory store.
+ * Produced by `toMemoryFilesAnalysisView()` in the VS Code extension host.
+ */
+export interface MemoryFilesAnalysisView {
+  staleDays: number;
+  largeFileBytes: number;
+  byWorkspace: MemoryFilesWorkspaceViewSummary[];
+  totalFiles: number;
+  totalBytes: number;
+  staleFileCount: number;
+  largeFileCount: number;
+}
+
+/**
+ * One memory from a repository's **server-side** Copilot memory store, as returned by
+ * `GET /agents/swe/internal/memory/v0/{owner}/{repo}/recent`. See
+ * `src/copilotServerMemories.ts` for the route contract.
+ *
+ * Distinct from {@link MemoryFileEntry}, which describes a *local* memory file's metadata
+ * on this machine. This is the remote, per-repository store shared by everyone working on
+ * the repository, and it carries content rather than metadata.
+ *
+ * Only `id`, `subject`, `fact` and `citations` are required — the rest of the payload comes
+ * from an undocumented preview API and has already been observed to differ from what the
+ * Copilot CLI writes (the CLI sends a `source.integrationId` that reads back absent), so
+ * everything else is optional and additional fields are tolerated.
+ */
+export interface ServerMemory {
+  id: string;
+  /** Free-text 1-2 word topic, e.g. `graphify setup`. Not drawn from a fixed vocabulary. */
+  subject: string;
+  /** The learned fact itself; the agent is instructed to keep it under 200 characters. */
+  fact: string;
+  /** Where the fact came from: `path/file.ts:12-30` entries, or a `User input: ...` string. */
+  citations: string[];
+  /** Why the agent thought this was worth remembering. */
+  reason?: string;
+  /** Observed as `"repository"`; the API generation suggests other scopes may follow. */
+  scope?: string;
+  source?: {
+    /** Tool-call id of the interaction that stored the memory. */
+    interactionId?: string;
+    /** Which agent stored it, e.g. `copilot-code-review`. */
+    agent?: string;
+    /** Model that stored it, e.g. `gpt-5.6-luna`. */
+    baseModel?: string;
+  };
+  billingOrganizationId?: number;
+  billingEnterpriseId?: number;
+}
+
+/**
+ * A group of server memories on one subject that no member cites an instruction file for —
+ * i.e. a fact the agent learned from code alone, and therefore a candidate for promotion
+ * into `AGENTS.md` / `.github/copilot-instructions.md`.
+ */
+export interface ServerMemoryPromotionGroup {
+  /** Normalized (lowercased, punctuation-collapsed) subject used for grouping. */
+  subject: string;
+  /** The first member's original subject text, for display. */
+  displaySubject: string;
+  /**
+   * How many memories restate this subject. Greater than one means the agent re-learned
+   * the same thing across separate runs, which is the strongest signal it belongs in a
+   * checked-in instruction file.
+   */
+  repeatCount: number;
+  /** The longest fact in the group — the fullest wording, used as the suggested text. */
+  representativeFact: string;
+  /** Every distinct citation across the group, sorted. */
+  citations: string[];
+  /**
+   * The subset of {@link citations} whose file is an existing regular file in the checkout —
+   * the evidence that made the group promotable — with the representative member's own first.
+   * Listed first wherever citations are capped.
+   */
+  liveCitations?: string[];
+  memoryIds: string[];
+}
+
+/** A server memory citing one or more files that no longer exist in the working tree. */
+export interface ServerMemoryStaleCitation {
+  id: string;
+  subject: string;
+  fact: string;
+  missingPaths: string[];
+  /** True when *every* checkable citation is missing — nothing in the tree backs this memory. */
+  fullyStale: boolean;
+}
+
+/**
+ * A server memory that already cites an instruction or documentation file — "already
+ * documented". Note the instruction-path pattern also matches `docs/` and
+ * `.github/skills|agents/`, so this covers documentation, not only instruction files.
+ */
+export interface ServerMemoryDocumentedEntry {
+  id: string;
+  subject: string;
+  fact: string;
+  /** The repo-relative instruction/doc file paths this memory cites, de-duplicated. */
+  instructionFiles: string[];
+  /**
+   * The subset of {@link instructionFiles} that is not an existing regular file in the checkout.
+   * When every cited file is missing, the fact is *not* actually written down any more, so the
+   * stored memory may be its only remaining copy.
+   */
+  missingInstructionFiles?: string[];
+}
+
+/**
+ * Which checked-in file a promotion should be written into. Rule (v1, intentionally simple):
+ * an existing root `AGENTS.md`, else an existing `.github/copilot-instructions.md`, else a
+ * new root `AGENTS.md`. See `selectPromotionTarget()`.
+ */
+export interface ServerMemoryPromotionTarget {
+  /** Repo-relative path. */
+  path: 'AGENTS.md' | '.github/copilot-instructions.md';
+  /** False when the file does not exist yet and the prompt asks for it to be created. */
+  exists: boolean;
+}
+
+/**
+ * Full analysis of one repository's server-side memory store, produced by
+ * `analyzeServerMemories()`. Consumed by the CLI report and the VS Code extension host;
+ * the webview gets the smaller {@link ServerMemoriesAnalysisView} instead.
+ */
+export interface ServerMemoriesAnalysis {
+  /** `owner/name` the store was read for. */
+  repo: string;
+  /**
+   * Local checkout citations and {@link promotionTarget} were resolved against, when the host
+   * analyzed the repository it has checked out (set by the CLI; the extension keeps its own).
+   */
+  repoRoot?: string;
+  /** `undefined` means the enablement check itself failed, not that memory is off. */
+  enabled: boolean | undefined;
+  /** Why the read produced nothing, when it produced nothing. */
+  error?: string;
+  /**
+   * The read filled its requested limit, so these numbers describe a prefix of the store
+   * rather than all of it. The routes carry no pagination cursor, so there is no way to
+   * fetch the remainder — the honest move is to say the figures are partial.
+   */
+  truncated: boolean;
+  totalMemories: number;
+  distinctSubjects: number;
+  /**
+   * Memory *records* citing an instruction/doc file. {@link documentedCount} counts distinct ids
+   * (one "already documented" row per id); this counts records, in the same unit as
+   * {@link totalMemories}, {@link unverifiableCount} and {@link fullyStaleCount}.
+   */
+  documentedRecordCount?: number;
+  /** Memories citing an instruction/doc file — already written down somewhere agents read. */
+  documentedCount: number;
+  /** The memories behind {@link documentedCount}, in store order. */
+  documentedMemories: ServerMemoryDocumentedEntry[];
+  /**
+   * Where promotions should be written; see {@link ServerMemoryPromotionTarget}. Absent when
+   * it could not be safely determined: the repository is not checked out here, or the file
+   * the rule would pick is occupied by something unsafe to edit (e.g. an escaping symlink).
+   */
+  promotionTarget?: ServerMemoryPromotionTarget;
+  /**
+   * The candidate the target rule would have picked but rejected as unsafe (e.g. an escaping
+   * symlink at `AGENTS.md`). Set only when {@link promotionTarget} is absent for that reason.
+   */
+  promotionTargetBlockedPath?: string;
+  /** Total memories sitting inside a promotion group. */
+  promotionCandidateCount: number;
+  /** Promotion groups with more than one member, i.e. facts re-learned at least twice. */
+  repeatedGroupCount: number;
+  /** Ranked by `repeatCount` descending; the API returns no timestamps to rank by instead. */
+  promotionGroups: ServerMemoryPromotionGroup[];
+  /**
+   * Memories with no citation naming a verifiable file in the repository — typically
+   * `User input: ...`, i.e. something a person told the agent rather than something it
+   * derived from code. Excluded from {@link promotionGroups}: the promotion pitch is that
+   * the agent keeps re-deriving a fact from code, which is not true of these, and an
+   * unverifiable claim does not belong in a file every agent reads on every run.
+   */
+  unverifiableCount: number;
+  staleCitations: ServerMemoryStaleCitation[];
+  fullyStaleCount: number;
+  /** Memory counts keyed by storing agent. */
+  byAgent: Record<string, number>;
+  /** Memory counts keyed by storing model. */
+  byModel: Record<string, number>;
+}
+
+/** One promotion group as the webview renders it — see {@link ServerMemoriesAnalysisView}. */
+export interface ServerMemoryPromotionGroupView {
+  displaySubject: string;
+  repeatCount: number;
+  representativeFact: string;
+  citationCount: number;
+  /**
+   * The group's normalized subject key. The promote button sends this, and the host rebuilds the
+   * prompt and re-probes the target file at click time.
+   */
+  subject?: string;
+  /**
+   * Fingerprint of what this row displays (subject, fact, citations). The button sends it with
+   * the subject, and the host refuses to draft if the current analysis's group no longer
+   * matches — so a background refresh cannot swap the content behind a visible row.
+   */
+  fingerprint?: string;
+  /**
+   * Copilot Chat prompt asking the agent to verify this fact and move it into the promotion
+   * target, built by the shared `buildPromotionPrompt()`. Drafted, never auto-submitted.
+   */
+  prompt?: string;
+}
+
+/** One instruction/doc file a documented memory cites, as the webview renders it. */
+export interface ServerMemoryDocumentedFileView {
+  /**
+   * Repo-relative path, for display and as the "Open file" button's payload. The host resolves
+   * and re-validates it at click time; the webview never receives an absolute path.
+   */
+  path: string;
+  /** A regular file inside the checkout when the payload was built: the row gets "Open file". */
+  openable?: boolean;
+  /** No longer an existing regular file in the checkout, so it does not document anything. */
+  missing?: boolean;
+}
+
+/** One "already documented" memory as the webview renders it. */
+export interface ServerMemoryDocumentedEntryView {
+  subject: string;
+  fact: string;
+  files: ServerMemoryDocumentedFileView[];
+}
+
+/**
+ * Compact projection of {@link ServerMemoriesAnalysis} sent to the Usage Analysis webview.
+ *
+ * Unlike {@link MemoryFilesAnalysisView} this keeps fact text, because for server memories the
+ * fact is the finding — a promotion suggestion the user cannot read is not a suggestion. What
+ * it drops is bulk: only the top few promotion groups travel, and the per-memory stale-citation
+ * list stays on the host side.
+ */
+export interface ServerMemoriesAnalysisView {
+  repo: string;
+  enabled: boolean | undefined;
+  error?: string;
+  /** See {@link ServerMemoriesAnalysis.truncated}; the counts below are a prefix when true. */
+  truncated: boolean;
+  totalMemories: number;
+  distinctSubjects: number;
+  documentedCount: number;
+  promotionCandidateCount: number;
+  repeatedGroupCount: number;
+  fullyStaleCount: number;
+  topPromotionGroups: ServerMemoryPromotionGroupView[];
+  /**
+   * Local checkout the repository was resolved from. The store itself is per GitHub
+   * repository, not per workspace, so the UI names both to make the scope unambiguous.
+   */
+  repoRoot?: string;
+  /** Number of open workspace folders; above one, only the first GitHub-backed folder is shown. */
+  workspaceFolderCount?: number;
+  /** See {@link ServerMemoriesAnalysis.promotionTarget}. */
+  promotionTarget?: ServerMemoryPromotionTarget;
+  /** The first few already-documented memories; {@link documentedCount} is the full count. */
+  documentedMemories?: ServerMemoryDocumentedEntryView[];
 }

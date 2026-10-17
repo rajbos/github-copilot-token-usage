@@ -99,7 +99,7 @@ Two functions need updating in `src/workspaceHelpers.ts`:
 
 Also update **`getEditorNameFromRoot()`** — add a check for the new editor's identifier before the generic `code` match. This function is used when reconstructing editor names from cached data.
 
-> **Lesson learned (Eclipse):** `getEditorNameFromRoot()` also checks `isCopilotCliRoot()` very early, which matches *any* path containing the substring `copilot`. If your new editor's own marker path also contains `copilot` (e.g. Eclipse's plugin id `com.microsoft.copilot.eclipse.core`), it gets misclassified as `Copilot CLI` unless your check is placed **before** `isCopilotCliRoot()` — not just before the generic `/code/` check. Apply the same ordering rule to the `/.copilot/` substring checks in `getEditorTypeFromPath()` / `detectEditorSource()`. In practice: search for every substring your new editor's path could accidentally match (`copilot`, `code`, `cursor`, ...) and place your guard before *all* of them, not just the one you expect.
+Detection helpers check several substrings (`copilot`, `code`, `cursor`, ...) in a fixed order — first match wins, including in `getEditorNameFromRoot()`'s early `isCopilotCliRoot()` check (which matches any path containing `copilot`, e.g. a plugin id like `com.microsoft.copilot.eclipse.core`). Search for every substring your new editor's path could accidentally contain and place your guard before all of them, not just the one you expect — apply the same ordering rule to the `/.copilot/` checks in `getEditorTypeFromPath()` / `detectEditorSource()`.
 
 ### Step 4 — Implement the Ecosystem Adapter
 
@@ -113,7 +113,7 @@ See `src/ecosystemAdapter.ts` for the full interface contracts and doc comments.
 
 `enrichDetailsWithEditorInfo()` and `getSessionFileDetailsFromCache()` in `extension.ts` already call `eco.getEditorRoot(sessionFile)` and `getEcosystemDisplayName(eco, sessionFile)` generically for every adapter found via `handles()` — **no manual per-editor guard is needed there anymore** as long as the adapter is registered (Step 5).
 
-> **Critical lesson learned (Eclipse, this session):** Creating only the data-access class (Step 2) and the path-detection guards (Step 3) is **not enough** for anything to appear in the UI. Without an adapter registered in the shared registry (Step 5), `SessionDiscovery` never runs for that editor — the session list, log viewer, charts, usage analysis, and diagnostics panel all stay empty even though `handles()`/`isSessionFile()` would correctly recognise the files if discovery ever reached them. Do not report the integration as done, or hand off to the user, until Step 5 is complete and verified end-to-end (e.g. via `cli diagnostics`).
+Creating the data-access class (Step 2) and the path-detection guards (Step 3) is not sufficient for anything to appear in the UI — the adapter must also be registered in the shared registry (Step 5) before `SessionDiscovery` runs for that editor; until then the session list, log viewer, charts, usage analysis, and diagnostics panel all stay empty even though `handles()`/`isSessionFile()` would correctly recognise the files. Don't report the integration done, or hand off to the user, until Step 5 is verified end-to-end (e.g. via `cli diagnostics`).
 
 ### Step 5 — Register the Adapter in the Shared Registry
 
@@ -124,7 +124,7 @@ All per-editor wiring for **both** the VS Code extension and the CLI happens in 
 3. Instantiate it in `createDataAccessInstances()`.
 4. Push `new <Editor>Adapter(deps.<editor>)` into the array returned by `buildAdapterRegistry()`. **Order matters** — first match wins in `handles()`. Place adapters whose paths could collide with broader/generic checks (anything living under a path containing `copilot`, `code`, `cursor`, etc.) early enough to win, and add a one-line comment explaining why if the ordering isn't obvious.
 
-Once registered, session discovery, caching, token/interaction counting, stats aggregation, the log viewer, and usage analysis all pick up the new editor automatically. Verify with `node cli/dist/cli.js diagnostics` (after `npm run build` in `cli/`) — a working integration shows the editor's candidate path as `yes` (exists) and a non-zero file/session/token count.
+Once registered, session discovery, caching, token/interaction counting, stats aggregation, the log viewer, and usage analysis all pick up the new editor automatically. Verify with `node cli/dist/cli.js diagnostics` (after `pnpm run build` in `cli/`) — a working integration shows the editor's candidate path as `yes` (exists) and a non-zero file/session/token count.
 
 ### Step 6 — Add the Editor Icon
 
@@ -143,7 +143,7 @@ For editors that produce **many candidate paths** (one per project/workspace), c
 3. Bump the count in `assert.equal(allAdapters.length, N)`.
 4. Add an `assert.equal(<editor>Adapter.id, '<expected-id>')` assertion alongside the other editors.
 
-Run `npm run compile-tests` then the specific test file (see the devcontainer terminal guidance in the repo-wide instructions) rather than the whole suite.
+Run `pnpm run compile-tests` then the specific test file (see the devcontainer terminal guidance in the repo-wide instructions) rather than the whole suite.
 
 ### Step 8 — (Optional) Add an Editor-Specific Data-Availability Note
 
@@ -180,8 +180,8 @@ For broader session-level caveats (multiple bullet points), use the `editorNote:
 - [ ] `test/unit/ecosystemAdapters.test.ts` — adapter added to `allAdapters`, count bumped, `id` assertion added
 - [ ] (Optional) `webview/diagnostics/main.ts` + `styles.css` — dedicated badge class/colour, only if the generic fallback isn't distinctive enough
 - [ ] (Optional) `webview/logviewer/main.ts` — `ESTIMATED_TOKENS_NOTES` entry if the editor doesn't persist actual token counts
-- [ ] `npm --prefix vscode-extension run validate` passes with **0 errors and 0 warnings** (not just 0 errors — check for complexity/lint warnings on new code)
-- [ ] CLI build (`cd cli && npm run build`) succeeds, since it shares the same adapter registry
+- [ ] `pnpm --prefix vscode-extension run validate` passes with **0 errors and 0 warnings** (not just 0 errors — check for complexity/lint warnings on new code)
+- [ ] CLI build (`cd cli && pnpm run build`) succeeds, since it shares the same adapter registry
 - [ ] `node cli/dist/cli.js diagnostics` shows the new editor's candidate path as `yes` (exists) with non-zero file/session/token counts — this is the fastest end-to-end confidence check
 - [ ] Sessions appear in the session list with the correct editor name and icon
 - [ ] Token counts are non-zero and plausible

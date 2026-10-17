@@ -18,6 +18,17 @@ jobs:
   # The job MUST be called `copilot-setup-steps` or it will not be picked up by Copilot.
   copilot-setup-steps:
     runs-on: ubuntu-latest
+    # Bind this job to the repo's "copilot" Actions Environment so the
+    # `vars.COPILOT_STORAGE_ACCOUNT` etc. checks below and the
+    # `secrets.COPILOT_STORAGE_KEY` used further down actually resolve.
+    # Environment-scoped vars/secrets are only visible to a job that declares
+    # `environment:` - without this the job could only see plain
+    # repository-level Actions vars/secrets (there are none here), so every
+    # `if: vars.COPILOT_STORAGE_ACCOUNT != ''` guard evaluated to empty and
+    # the Azure download steps always skipped, regardless of what was
+    # configured in the environment or in the separate Copilot "Agents"
+    # secrets/variables store (which is never visible to Actions jobs).
+    environment: copilot
 
     # Set the permissions to the lowest permissions possible needed for your steps.
     # Copilot will be given its own token for its operations.
@@ -33,12 +44,22 @@ jobs:
     # If you do not check out your code, Copilot will do this for you.
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Never write the token to .git/config in the first place, rather than
+          # writing it and deleting it later. Removing it in the graphify step
+          # was conditional twice over - that step is continue-on-error AND now
+          # gated on setup-python succeeding, so a failed interpreter setup
+          # skipped the removal entirely and the credential survived the whole
+          # job. Nothing here needs authenticated git: neither package has a
+          # git-URL dependency, the Azure steps use `az`, and the agent-sessions
+          # fetch reads GITHUB_TOKEN from the environment.
+          persist-credentials: false
 
       # Copilot code review runs these setup steps against the PR head checkout,
       # which can be an old branch that predates the root .nvmrc file. Resolve the
@@ -54,17 +75,231 @@ jobs:
             echo "version=24" >> "$GITHUB_OUTPUT"
           fi
 
+      # Same stale-branch problem for the lockfiles: code review reads this file
+      # from the default branch but checks out the PR head, and a branch cut
+      # before the npm -> pnpm migration (#1216) only has package-lock.json.
+      # setup-node fails hard ("Some specified paths were not resolved") when
+      # cache-dependency-path matches nothing, so only enable the pnpm cache
+      # when the lockfiles it hashes are actually in this checkout.
+      - name: Detect pnpm lockfiles
+        id: lockfiles
+        run: |
+          if [ -f vscode-extension/pnpm-lock.yaml ] && [ -f cli/pnpm-lock.yaml ]; then
+            echo "pnpm=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::pnpm lockfiles not found in this checkout (branch predates the pnpm migration?) - skipping the pnpm dependency cache"
+            echo "pnpm=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: '11.2.2'
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ steps.node-version.outputs.version }}
-          cache: "npm"
-          cache-dependency-path: "**/package-lock.json"
+          cache: ${{ steps.lockfiles.outputs.pnpm == 'true' && 'pnpm' || '' }}
+          # The lockfiles of the packages this job installs, not a `**` glob.
+          # setup-node only fails when none of them resolve; the detect step
+          # above checked the first two exist, so the hash is never empty.
+          cache-dependency-path: |
+            vscode-extension/pnpm-lock.yaml
+            cli/pnpm-lock.yaml
+            .github/skills/azure-storage-loader/pnpm-lock.yaml
 
+      # Install with whichever lockfile the checkout has, so a pre-pnpm branch
+      # under code review still gets its dependencies (via `npm ci`) instead of
+      # failing `pnpm install --frozen-lockfile` on a missing pnpm-lock.yaml.
       - name: Install JavaScript dependencies
         run: |
-          cd vscode-extension && npm ci --ignore-scripts
-          cd ../cli && npm ci --ignore-scripts
+          install_deps() {
+            if [ -f "$1/pnpm-lock.yaml" ]; then
+              (cd "$1" && pnpm install --frozen-lockfile --ignore-scripts)
+            elif [ -f "$1/package-lock.json" ]; then
+              echo "::warning::$1 has no pnpm-lock.yaml - installing from package-lock.json with npm ci"
+              (cd "$1" && npm ci --ignore-scripts --no-audit --no-fund)
+            else
+              echo "::warning::$1 has no lockfile - skipping its dependency install"
+            fi
+          }
+          install_deps vscode-extension
+          install_deps cli
+
+      # The webview harnesses (`npm run check:interaction`, `npm run visual:diff`,
+      # the visual-view-diff skill) render the real webview bundles in headless
+      # Chromium. Playwright is deliberately not a dependency of the extension,
+      # so without this the agent cannot click a control or screenshot a panel
+      # and every UI change ships unverified. Same pinned install and browser
+      # cache as the `ui-checks` job in ci.yml; lib/browser.js in the skill
+      # resolves this location explicitly.
+      #
+      # Placed before the Azure hydration below for the same reason graphify
+      # is: a browser download and its npm tree are third-party code, and here
+      # they run while ./session-logs and ./usage-data do not yet exist.
+      # continue-on-error keeps a Playwright CDN outage from costing the rest of
+      # the setup; the agent then simply lacks the headless checks for that run.
+      - name: Install the pinned Playwright for the webview harnesses
+        id: playwright-install
+        continue-on-error: true
+        working-directory: .github/workflows/dependencies/playwright
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        if: steps.playwright-install.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('.github/workflows/dependencies/playwright/package-lock.json') }}
+
+      # Always the full, idempotent install - not `install-deps` alone on a
+      # cache hit. Every step here is continue-on-error, so a download that
+      # died halfway would still let the cache save a partial
+      # ~/.cache/ms-playwright, and every later run would then "hit" that
+      # broken cache and skip the browser for good. `playwright install` is a
+      # no-op for a browser that is already present, so the hit is still fast.
+      - name: Install Playwright Chromium
+        if: steps.playwright-install.outcome == 'success'
+        continue-on-error: true
+        working-directory: .github/workflows/dependencies/playwright
+        run: npx --no-install playwright install --with-deps chromium
+
+      # Build a queryable code knowledge graph (graphify) so the agent can ask
+      # structural questions - what calls X, what a change to Y reaches - instead
+      # of fanning grep/read out across ~600 source files. `--code-only` is local
+      # AST parsing: no LLM backend, no API key, no login. ~20s on this repo.
+      #
+      # Deliberately placed BEFORE the Azure session-log / usage-data hydration
+      # and the agent-sessions fetch below. --only-binary stops a source
+      # distribution running setup.py but does NOT stop an installed wheel
+      # reading whatever is already on disk, so running graphify while
+      # ./session-logs and ./usage-data do not yet exist means there is nothing
+      # sensitive for a compromised graphify dependency to find - which the
+      # checkout-credential drop below cannot achieve on its own.
+      #
+      # Scope note: this covers GRAPHIFY's dependency tree, not the job as a
+      # whole. The azure-storage-loader's own `npm ci` and the `node` calls that
+      # follow it, plus scripts/fetch-agent-sessions.js, all run third-party
+      # code AFTER the hydration. Treat this as one path contained, not a
+      # supply-chain boundary for the job - anything added later needs its own
+      # containment rather than inheriting this one.
+      #
+      # Every step is continue-on-error, which is what makes this ordering safe:
+      # a step that exits non-zero would otherwise fail the job and cost the
+      # hydration below. Failures still go red on the step so they stay visible
+      # instead of passing silently. (`Fetch Copilot agent sessions` relies on
+      # the same mechanism mid-job.)
+      - name: Set up Python for graphify
+        id: graphify-python
+        continue-on-error: true
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          # Pinned, not '3.x': the interpreter minor decides which wheels resolve,
+          # so floating it would silently change what gets installed.
+          python-version: '3.12'
+
+      - name: "Install graphify (PyPI distribution: graphifyy)"
+        id: graphify-install
+        # Without this, `continue-on-error` on the setup-python step would let
+        # pip run against whatever interpreter happens to be on PATH - so the
+        # pinned 3.12 and the wheel set it resolves would silently not be the
+        # ones described above.
+        if: steps.graphify-python.outcome == 'success'
+        continue-on-error: true
+        run: |
+          # Second line of defence. `persist-credentials: false` on the
+          # checkout above means the token is never written to .git/config, so
+          # these two commands should find nothing - but they stay because they
+          # cost nothing and they FAIL CLOSED: if a future change re-enables
+          # credential persistence, this aborts before any third-party code
+          # rather than silently handing a wheel the token.
+          #
+          # Safe to drop this early: no later step uses authenticated git. The
+          # Azure steps authenticate with `az`, and `Fetch Copilot agent
+          # sessions` reads GITHUB_TOKEN from the environment rather than from
+          # the git config this removes.
+          # `--unset-all` exits 5 when the key is simply absent, which is a
+          # success for our purposes - hence `|| true`. But `|| true` would
+          # equally swallow a real failure, leaving the token in .git/config
+          # while pip and the extract below still ran. So the removal is
+          # *verified* rather than attempted, and the step aborts before any
+          # third-party code if the credential is still there.
+          git config --local --unset-all 'http.https://github.com/.extraheader' || true
+          # Status, not a bare `if`: `--get-all` exits 1 for "key not found"
+          # but other non-zero codes mean it could not read the config at all.
+          # As an `if` condition every one of those reads as "absent", which is
+          # the fail-open this check exists to prevent. Only 1 is acceptable.
+          set +e
+          git config --local --get-all 'http.https://github.com/.extraheader' >/dev/null 2>&1
+          cred_rc=$?
+          set -e
+          if [ "$cred_rc" -eq 0 ]; then
+            echo "::error::The checkout credential is still present in .git/config - refusing to run third-party code."
+            exit 1
+          elif [ "$cred_rc" -ne 1 ]; then
+            echo "::error::Could not confirm the checkout credential was removed (git config exited $cred_rc) - refusing to run third-party code."
+            exit 1
+          fi
+
+          # --only-binary :all: refuses source distributions, so no dependency
+          # gets to execute setup.py in this runner - the pip counterpart of the
+          # `npm ci --ignore-scripts` above. --require-hashes makes pip reject
+          # any wheel whose sha256 is not in the requirements file, so a
+          # re-published or substituted release cannot slip in under the same
+          # version number (Scorecard Pinned-Dependencies). The file is the
+          # pip-compile lock of graphify.in for this interpreter; see
+          # graphify.in for how to regenerate it. check-pip-requirements.yml
+          # runs this exact install, without continue-on-error, on every PR
+          # that touches it, so a stale hash fails that PR instead of here.
+          pip install --require-hashes --only-binary :all:             -r .github/requirements/graphify.txt
+
+          # setup-python only puts its bin dir on PATH for later workflow steps,
+          # not for the shell Copilot gets once setup finishes. Symlink into
+          # /usr/local/bin so the agent can just run `graphify`.
+          sudo ln -sf "$(command -v graphify)" /usr/local/bin/graphify
+          graphify --version
+
+      - name: Warn that graphify is unavailable
+        # continue-on-error leaves the job green when the steps above fail, and
+        # a red step inside a green job is easy to miss - that is how a stale
+        # hash pin went unnoticed for over a week. Surface it as a warning
+        # annotation on the run instead. Still non-blocking: this step passes.
+        if: steps.graphify-python.outcome == 'failure' || steps.graphify-install.outcome == 'failure'
+        run: |
+          msg="graphify could not be installed (setup-python: ${{ steps.graphify-python.outcome }}, install: ${{ steps.graphify-install.outcome }}) - no .graphify-agent/graph.json this run; the agent falls back to plain file search. A hash mismatch means .github/requirements/graphify.txt needs regenerating (see graphify.in)."
+          echo "::warning title=graphify unavailable::$msg"
+          echo "> [!WARNING]" >> "$GITHUB_STEP_SUMMARY"
+          echo "> $msg" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build code knowledge graph
+        # Only run if the install step got as far as succeeding. Without this,
+        # `continue-on-error` on the step above would let the extract run even
+        # when the credential removal aborted it - which is exactly the state
+        # the abort exists to prevent.
+        if: steps.graphify-install.outcome == 'success'
+        continue-on-error: true
+        env:
+          # Write every artifact to .graphify-agent/ (gitignored) instead of the
+          # default graphify-out/, so a stale local graphify-out/ cache is never
+          # mistaken for this graph.
+          GRAPHIFY_OUT: .graphify-agent
+        run: |
+          # `run` executes under `bash -e`, so capture the status instead of
+          # letting a failed extract skip the reporting below.
+          set +e
+          graphify extract . --code-only --no-viz
+          rc=$?
+          set -e
+
+          if [ "$rc" -ne 0 ] || [ ! -f .graphify-agent/graph.json ]; then
+            echo "::warning::graphify built no graph (exit $rc) - the agent falls back to plain file search"
+            exit 1
+          fi
+
+          echo "Code graph ready: .graphify-agent/graph.json ($(du -h .graphify-agent/graph.json | cut -f1))"
+
 
       # Download session log files from Azure Blob Storage (optional)
       # This step only runs if Azure Storage credentials are configured in the `copilot` environment
@@ -74,72 +309,153 @@ jobs:
           AZURE_STORAGE_ACCOUNT: ${{ vars.COPILOT_STORAGE_ACCOUNT }}
           AZURE_STORAGE_CONTAINER: ${{ vars.COPILOT_STORAGE_CONTAINER || 'copilot-session-logs' }}
           AZURE_DATASET_ID: ${{ vars.COPILOT_DATASET_ID || 'default' }}
+          # `az storage` reads AZURE_STORAGE_KEY from the environment under
+          # `--auth-mode key`, so the key never appears on a command line.
+          AZURE_STORAGE_KEY: ${{ secrets.COPILOT_STORAGE_KEY }}
         run: |
           echo "📦 Downloading session logs from Azure Blob Storage..."
           
           # Create directory for session logs
           mkdir -p ./session-logs
           
-          # Calculate date range (last 7 days)
+          # Calculate date range: the last 7 UTC calendar dates including today
+          # (today and the 6 before it - an inclusive range starting 7 days ago
+          # would cover 8 dates)
           # Use GNU date if available, otherwise BSD date (macOS)
           if date --version >/dev/null 2>&1; then
             # GNU date (Linux)
             END_DATE=$(date -u +%Y-%m-%d)
-            START_DATE=$(date -u -d '7 days ago' +%Y-%m-%d)
+            START_DATE=$(date -u -d '6 days ago' +%Y-%m-%d)
           else
             # BSD date (macOS)
             END_DATE=$(date -u +%Y-%m-%d)
-            START_DATE=$(date -u -v-7d +%Y-%m-%d)
+            START_DATE=$(date -u -v-6d +%Y-%m-%d)
           fi
           
           echo "Date range: $START_DATE to $END_DATE"
           
           # Check if Azure CLI is available
           if ! command -v az &> /dev/null; then
-            echo "⚠️ Azure CLI not installed, skipping session log download"
+            echo "::warning::Azure CLI not installed - skipping session log download, ./session-logs will be empty"
             exit 0
           fi
-          
-          # Check if authenticated (will be true if using Entra ID via azure/login action)
-          if ! az account show &> /dev/null; then
-            echo "⚠️ Not authenticated with Azure, skipping session log download"
-            echo "💡 To enable: configure Azure authentication in the copilot environment"
+
+          # Authenticate with the storage account key (the same secret the Table
+          # Storage step uses), falling back to an Entra ID login only if an
+          # earlier step ran azure/login - nothing in this job does today.
+          # Skips are workflow warnings, not plain echoes: a quiet skip here let
+          # every agent run go green with zero session logs for months.
+          if [ -n "$AZURE_STORAGE_KEY" ]; then
+            AUTH_MODE=key
+          elif az account show &> /dev/null; then
+            AUTH_MODE=login
+          else
+            echo "::warning::No COPILOT_STORAGE_KEY secret and no Azure login - skipping session log download, ./session-logs will be empty"
             exit 0
           fi
-          
-          # Download blobs from the dataset path
-          echo "Downloading from container: $AZURE_STORAGE_CONTAINER, dataset: $AZURE_DATASET_ID"
-          
-          # Download all blobs matching the dataset path pattern
-          # This downloads: {dataset}/{machine-id}/{date}/session-*.json.gz
-          az storage blob download-batch \
+          echo "Using --auth-mode $AUTH_MODE"
+
+          echo "Listing blobs in container: $AZURE_STORAGE_CONTAINER, dataset: $AZURE_DATASET_ID"
+
+          # Blob layout: {dataset}/{machine-id}/{date}/{session}.{json,jsonl}[.gz]
+          # (newer uploads are .jsonl; `.gz` is omitted when the uploader's
+          # blobCompressFiles setting is off, so both forms are accepted).
+          # List once (with metadata, for the editor-type manifest) so only the
+          # date folders inside the window are downloaded, not the whole history.
+          if ! az storage blob list \
             --account-name "$AZURE_STORAGE_ACCOUNT" \
-            --source "$AZURE_STORAGE_CONTAINER" \
-            --destination ./session-logs \
-            --pattern "${AZURE_DATASET_ID}/*/*/*.json.gz" \
-            --auth-mode login \
-            --no-progress || {
-              echo "⚠️ Failed to download session logs, continuing without them"
-              exit 0
-            }
-          
-          # Count downloaded files
-          FILE_COUNT=$(find ./session-logs -name "*.json.gz" | wc -l)
-          echo "✅ Downloaded $FILE_COUNT session log files"
-          
-          # Decompress all files
-          if [ "$FILE_COUNT" -gt 0 ]; then
-            echo "📂 Decompressing session logs..."
-            find ./session-logs -name "*.gz" -exec gunzip {} \;
-            echo "✅ Session logs ready in ./session-logs"
+            --container-name "$AZURE_STORAGE_CONTAINER" \
+            --prefix "${AZURE_DATASET_ID}/" \
+            --include m \
+            --num-results '*' \
+            --auth-mode "$AUTH_MODE" \
+            --only-show-errors \
+            --output json > "$RUNNER_TEMP/session-blobs.json"; then
+            echo "::warning::Failed to list session log blobs in $AZURE_STORAGE_ACCOUNT/$AZURE_STORAGE_CONTAINER - continuing without them"
+            exit 0
           fi
+
+          # Writes the dates that have blobs in the window, and the editor-type
+          # manifest: download-batch does not preserve blob metadata, so map each
+          # decompressed local path to the editor that uploaded it.
+          DATES=$(START_DATE="$START_DATE" END_DATE="$END_DATE" node -e "
+            const fs = require('fs');
+            const blobs = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/session-blobs.json', 'utf8'));
+            const { START_DATE, END_DATE } = process.env;
+            const selected = blobs.filter(b => {
+              const parts = b.name.split('/');
+              return parts.length === 4 && /\.jsonl?(\.gz)?$/.test(b.name) && parts[2] >= START_DATE && parts[2] <= END_DATE;
+            });
+            const manifest = {};
+            for (const b of selected) {
+              if (b.metadata?.editorType) manifest[b.name.replace(/\.gz$/, '')] = b.metadata.editorType;
+            }
+            fs.writeFileSync('./session-logs/.editor-types.json', JSON.stringify(manifest, null, 2));
+            console.error('Found ' + blobs.length + ' blobs for dataset, ' + selected.length + ' in date range, ' + Object.keys(manifest).length + ' with editorType');
+            console.log([...new Set(selected.map(b => b.name.split('/')[2]))].sort().join(' '));
+          ") || {
+            echo "::warning::Failed to parse the session log blob listing - continuing without session logs"
+            exit 0
+          }
+
+          for DAY in $DATES; do
+            az storage blob download-batch \
+              --account-name "$AZURE_STORAGE_ACCOUNT" \
+              --source "$AZURE_STORAGE_CONTAINER" \
+              --destination ./session-logs \
+              --pattern "${AZURE_DATASET_ID}/*/${DAY}/*.json*" \
+              --auth-mode "$AUTH_MODE" \
+              --no-progress --only-show-errors > /dev/null || \
+              echo "::warning::Failed to download session logs for $DAY, continuing"
+          done
+
+          # Count downloaded files, compressed or not
+          FILE_COUNT=$(find ./session-logs -type f ! -name ".editor-types.json" | wc -l)
+          echo "✅ Downloaded $FILE_COUNT session log files"
+          if [ "$FILE_COUNT" -eq 0 ]; then
+            echo "::warning::No session logs downloaded for dataset '$AZURE_DATASET_ID' between $START_DATE and $END_DATE - check COPILOT_DATASET_ID and the download warnings above"
+          fi
+
+          # Decompress the gzipped files. `find -exec ... \;` exits 0 even when
+          # gunzip fails, so check what is left: a .gz still on disk afterwards
+          # failed to decompress. Remove it rather than hand an agent a corrupt
+          # archive; its manifest entry is pruned below.
+          GZ_COUNT=$(find ./session-logs -name "*.gz" | wc -l)
+          if [ "$GZ_COUNT" -gt 0 ]; then
+            echo "📂 Decompressing $GZ_COUNT gzipped session logs..."
+            find ./session-logs -name "*.gz" -exec gunzip {} \; 2>&1 || true
+            FAILED_GZ=$(find ./session-logs -name "*.gz" | wc -l)
+            if [ "$FAILED_GZ" -gt 0 ]; then
+              echo "::warning::$FAILED_GZ of $GZ_COUNT session logs failed to decompress and were removed"
+              find ./session-logs -name "*.gz" -delete
+            fi
+          fi
+          READY_COUNT=$(find ./session-logs -type f ! -name ".editor-types.json" | wc -l)
+          echo "✅ $READY_COUNT session logs ready in ./session-logs"
+
+          # The manifest was built from the listing, before downloading. Drop
+          # entries whose (decompressed) file is not on disk (a failed day, a
+          # partial batch, a file gunzip rejected) so it only describes files
+          # an agent can actually open.
+          node -e "
+            const fs = require('fs');
+            const file = './session-logs/.editor-types.json';
+            const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+            const kept = Object.fromEntries(Object.entries(manifest).filter(([p]) => fs.existsSync('./session-logs/' + p)));
+            fs.writeFileSync(file, JSON.stringify(kept, null, 2));
+            const dropped = Object.keys(manifest).length - Object.keys(kept).length;
+            if (dropped > 0) console.log('::warning::Dropped ' + dropped + ' editor-type manifest entries for files that were not downloaded');
+          " || echo "::warning::Failed to reconcile the editor-type manifest with the downloaded files"
 
       - name: Display session log summary
         if: ${{ vars.COPILOT_STORAGE_ACCOUNT != '' }}
         run: |
           if [ -d ./session-logs ]; then
             echo "📊 Session log summary:"
-            echo "Total files: $(find ./session-logs -name "*.json" | wc -l)"
+            echo "Total files: $(find ./session-logs -type f ! -name ".editor-types.json" | wc -l)"
+            if [ -f ./session-logs/.editor-types.json ]; then
+              echo "Editor types: $(node -e "const m=require('./session-logs/.editor-types.json'); const counts={}; for(const v of Object.values(m)) counts[v]=(counts[v]||0)+1; console.log(Object.entries(counts).map(([k,v])=>k+': '+v).join(', '))")"
+            fi
             echo "Directory structure:"
             tree -L 3 ./session-logs || ls -R ./session-logs
           else
@@ -152,7 +468,13 @@ jobs:
         if: ${{ vars.COPILOT_STORAGE_ACCOUNT != '' }}
         run: |
           cd .github/skills/azure-storage-loader
-          npm ci --ignore-scripts --production
+          # A pre-pnpm branch under code review only has package-lock.json here.
+          if [ -f pnpm-lock.yaml ]; then
+            pnpm install --frozen-lockfile --ignore-scripts --production
+          else
+            echo "::warning::azure-storage-loader has no pnpm-lock.yaml - installing from package-lock.json with npm ci"
+            npm ci --ignore-scripts --no-audit --no-fund --omit=dev
+          fi
 
       - name: Download aggregated usage data from Azure Table Storage
         if: ${{ vars.COPILOT_STORAGE_ACCOUNT != '' }}
@@ -169,7 +491,9 @@ jobs:
 
           # Calculate date range
           END_DATE=$(date -u +%Y-%m-%d)
-          START_DATE=$(date -u -d "${AZURE_TABLE_DATA_DAYS} days ago" +%Y-%m-%d)
+          # N calendar dates including today, so start N-1 days back (starting N
+          # days back would fetch N+1 dates).
+          START_DATE=$(date -u -d "$((AZURE_TABLE_DATA_DAYS - 1)) days ago" +%Y-%m-%d)
           echo "Date range: $START_DATE to $END_DATE"
 
           # Build command arguments
@@ -178,13 +502,13 @@ jobs:
           ARGS+=(--datasetId "$AZURE_DATASET_ID")
           ARGS+=(--startDate "$START_DATE")
           ARGS+=(--endDate "$END_DATE")
+          # --output keeps the per-row dataset (user, machine and workspace
+          # identifiers) out of the Actions log; only counts go to stderr.
           ARGS+=(--output ./usage-data/usage-agg-daily.json)
 
-          # Use shared key if available, otherwise rely on Entra ID (DefaultAzureCredential)
-          if [ -n "$AZURE_STORAGE_KEY" ]; then
-            ARGS+=(--sharedKey "$AZURE_STORAGE_KEY")
-          fi
-
+          # The loader reads the shared key from AZURE_STORAGE_KEY (set in env
+          # above) so it never appears on the command line. When it is empty the
+          # loader falls back to Entra ID (DefaultAzureCredential).
           node .github/skills/azure-storage-loader/load-table-data.js "${ARGS[@]}" || {
             echo "⚠️ Failed to download aggregated usage data, continuing without it"
             exit 0

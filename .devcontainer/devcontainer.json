@@ -34,6 +34,6 @@
   "containerEnv": {
     "NODE_OPTIONS": "--max-old-space-size=4096"
   },
-  "postCreateCommand": "sudo chown node:node vscode-extension/node_modules cli/node_modules && cd vscode-extension && npm ci && cd ../cli && npm ci",
+  "postCreateCommand": "sudo chown node:node vscode-extension/node_modules cli/node_modules && cd vscode-extension && pnpm install --frozen-lockfile && cd ../cli && pnpm install --frozen-lockfile",
   "remoteUser": "node"
 }

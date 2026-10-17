@@ -11,11 +11,40 @@ import { computeBackendSharingPolicy } from './sharingProfile';
 import { showBackendError, showBackendSuccess } from './integration';
 import type { DisplayNameStore } from './displayNames';
 import { writeClipboardText } from '../utils/clipboard';
-import type { BackendFacadeInterface } from './types';
-import type { BackendSettings } from './settings';
+import type { BackendFacadeInterface, SyncResult } from './types';
+import { resolveSyncTargets, type BackendSettings, type SyncTargets } from './settings';
 import { ErrorMessages, SuccessMessages, ConfirmationMessages } from './ui/messages';
 import { MANUAL_SYNC_COOLDOWN_MS } from './constants';
 import { RateLimiter } from '../utils/rateLimiter';
+import { t } from '../l10n';
+import { applySettingsAtomically } from './settingsBatch';
+
+/** Names the targets a manual sync writes to, for its progress, success and error text. */
+function describeSyncTargets(targets: SyncTargets): string {
+	if (targets.azure && targets.sharingServer) { return t('backend.syncNow.target.both'); }
+	return targets.azure ? t('backend.syncNow.target.azure') : t('backend.syncNow.target.teamServer');
+}
+
+/** Which targets ended in each outcome; a field is undefined when no target did. */
+interface PartitionedSyncResult {
+	synced?: SyncTargets;
+	skipped?: SyncTargets;
+	failed?: SyncTargets;
+}
+
+/**
+ * Splits a sync pass's per-target result by outcome so Sync Now can report each target honestly:
+ * a partial result is never collapsed into "synced to both". A facade that reports no result is
+ * treated as having synced every attempted target.
+ */
+function partitionSyncResult(result: SyncResult | void, attempted: SyncTargets): PartitionedSyncResult {
+	if (!result) { return { synced: attempted }; }
+	const pick = (outcome: 'synced' | 'skipped' | 'failed'): SyncTargets | undefined => {
+		const targets = { azure: result.azure === outcome, sharingServer: result.sharingServer === outcome };
+		return targets.azure || targets.sharingServer ? targets : undefined;
+	};
+	return { synced: pick('synced'), skipped: pick('skipped'), failed: pick('failed') };
+}
 
 async function withBackendErrorHandling(label: string, fn: () => Promise<void>): Promise<void> {
 	try {
@@ -90,32 +119,48 @@ export class BackendCommandHandler {
 		this.syncRateLimiter.recordExecution();
 
 		const settings = this.facade.getSettings() as BackendSettings;
-		if (!settings.enabled) {
+		// Azure Storage and the Team Server are independent targets; either toggle enables sync.
+		if (!settings.enabled && !settings.sharingServerEnabled) {
 			vscode.window.showWarningMessage(
 				'Backend sync is disabled. Enable it in settings or run "Configure Backend" first.'
 			);
 			return;
 		}
 
-		if (!this.facade.isConfigured(settings)) {
-			vscode.window.showWarningMessage(
-				'Backend is not fully configured. Run "Configure Backend" to set up Azure resources.'
-			);
+		// Gate on the same resolved targets the sync service uses, so the command can never
+		// report success for a pass that uploads nothing.
+		if (settings.sharingProfile === 'off') {
+			vscode.window.showWarningMessage(t('backend.syncNow.profileOff'));
+			return;
+		}
+		const targets = resolveSyncTargets(settings);
+		if (!targets.azure && !targets.sharingServer) {
+			vscode.window.showWarningMessage(t('backend.syncNow.notConfigured'));
 			return;
 		}
 
-		await withBackendErrorHandling('sync to Azure', async () => {
-			await vscode.window.withProgress(
+		const targetLabel = describeSyncTargets(targets);
+		await withBackendErrorHandling(`sync to ${targetLabel}`, async () => {
+			const result = await vscode.window.withProgress(
 				{
 					location: vscode.ProgressLocation.Notification,
-					title: 'Syncing to backend...',
+					title: t('backend.syncNow.progress', targetLabel),
 					cancellable: false
 				},
-				async () => {
-					await this.facade.syncToBackendStore(true);
-				}
+				async () => this.facade.syncToBackendStore(true)
 			);
-			showBackendSuccess(SuccessMessages.synced());
+			// The sync service logs per-target failures instead of throwing, so report what it
+			// says happened to each target rather than treating "returned" as "uploaded".
+			const { synced, skipped, failed } = partitionSyncResult(result, targets);
+			if (synced) {
+				showBackendSuccess(t('backend.syncNow.synced', describeSyncTargets(synced)));
+			}
+			if (skipped || (!synced && !failed)) {
+				vscode.window.showWarningMessage(t('backend.syncNow.nothingSent', skipped ? describeSyncTargets(skipped) : targetLabel));
+			}
+			if (failed) {
+				throw new Error(t('backend.syncNow.failed', describeSyncTargets(failed)));
+			}
 		});
 	}
 
@@ -206,9 +251,11 @@ export class BackendCommandHandler {
 
 		const consentAt = new Date().toISOString();
 		await withBackendErrorHandling('enable team sharing', async () => {
-			await config.update('backend.sharingProfile', 'teamPseudonymous', vscode.ConfigurationTarget.Global);
-			await config.update('backend.shareWithTeam', true, vscode.ConfigurationTarget.Global);
-			await config.update('backend.shareConsentAt', consentAt, vscode.ConfigurationTarget.Global);
+			await applySettingsAtomically(async () => {
+				await config.update('backend.sharingProfile', 'teamPseudonymous', vscode.ConfigurationTarget.Global);
+				await config.update('backend.shareWithTeam', true, vscode.ConfigurationTarget.Global);
+				await config.update('backend.shareConsentAt', consentAt, vscode.ConfigurationTarget.Global);
+			});
 			vscode.window.showInformationMessage(SuccessMessages.completed('Team sharing enabled'));
 		});
 	}
@@ -229,9 +276,11 @@ export class BackendCommandHandler {
 
 		const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
 		await withBackendErrorHandling('disable team sharing', async () => {
-			await config.update('backend.sharingProfile', 'teamAnonymized', vscode.ConfigurationTarget.Global);
-			await config.update('backend.shareWithTeam', false, vscode.ConfigurationTarget.Global);
-			await config.update('backend.shareWorkspaceMachineNames', false, vscode.ConfigurationTarget.Global);
+			await applySettingsAtomically(async () => {
+				await config.update('backend.sharingProfile', 'teamAnonymized', vscode.ConfigurationTarget.Global);
+				await config.update('backend.shareWithTeam', false, vscode.ConfigurationTarget.Global);
+				await config.update('backend.shareWorkspaceMachineNames', false, vscode.ConfigurationTarget.Global);
+			});
 			vscode.window.showInformationMessage(SuccessMessages.completed('Switched to anonymized sharing'));
 		});
 	}

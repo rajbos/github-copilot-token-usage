@@ -103,9 +103,15 @@ Tracked editors:
 ### 7. Environmental Impact
 **Data Source**: Token usage
 
-- CO₂ emissions estimate (~0.2g CO₂e per 1000 tokens)
-- Tree equivalent (based on annual CO₂ absorption)
-- Water usage estimate (~0.3L per 1000 tokens)
+- Source: Jegham et al., *How Hungry is AI? Benchmarking Energy, Water, and Carbon Footprint of LLM Inference* ([arXiv:2505.09598](https://arxiv.org/abs/2505.09598)), via the derivation in [neuland/tokendashboard-backend](https://github.com/neuland/tokendashboard-backend/blob/main/docs/co2-methodology.md)
+- Reference: Claude 3.7 Sonnet, 10,000 input / 1,500 output tokens = 5.671 Wh per request (paper, Table 4)
+- CO₂: 840 g CO₂e per 1M output-equivalent tokens for Claude Sonnet (paper-derived range 770–857 g at 0.287 kg CO₂e/kWh)
+- Water: ~14.9 L per 1M output-equivalent tokens for Claude Sonnet, from the paper's formula (energy ÷ PUE × 0.18 L/kWh on-site + energy × 5.11 L/kWh off-site, PUE 1.14)
+- Output-equivalent weights (neuland approximations, not from the paper): output = 1.0, uncached input = 0.05, cache write = 0.0625, cache read = 0.0005
+- Other models are scaled from Sonnet by the ratio of their output-token price in `src/modelPricing.json`; models without a price use the Sonnet baseline
+- Tokens without a per-model breakdown use the reference request's input/output mix (2,000 output-equivalent per 11,500 tokens)
+- Tree equivalent (based on annual CO₂ absorption, ~21 kg/year)
+- Implementation and derivation tests: `src/environmentalImpact.ts`, `vscode-extension/test/unit/environmentalImpact.test.ts`
 
 ## Newly Added Metrics (Usage Analysis Dashboard)
 
@@ -161,6 +167,8 @@ Tracks:
 Detected from:
 - Response items with `kind: "mcpServersStarting"` and `didStartServerIds`
 - JSONL events with `type: "mcp.tool.call"` or containing `mcpServer` in data
+- Copilot CLI `tool.execution_start` events tagged with `data.mcpServerName` (counted as MCP
+  usage only, not as regular tool calls)
 
 Tracks:
 - Total MCP invocations

@@ -9,7 +9,7 @@ import { SWITCHABLE_TABS, isSwitchableTab } from '../../src/webview/usage/switch
 // a CSS selector.
 
 test('isSwitchableTab: accepts every tab rendered in the tab bar', () => {
-	for (const tab of ['activity', 'sessions', 'tools', 'health', 'repos', 'agent', 'worktrees', 'insights', 'corrections']) {
+	for (const tab of ['activity', 'sessions', 'tools', 'health', 'repos', 'readiness', 'agent', 'worktrees', 'insights', 'corrections']) {
 		assert.ok(SWITCHABLE_TABS.has(tab), `missing ${tab}`);
 		assert.ok(isSwitchableTab(tab));
 	}

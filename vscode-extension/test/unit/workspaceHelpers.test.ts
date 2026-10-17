@@ -349,6 +349,7 @@ import {
         getEditorTypeFromPath,
         detectEditorSource,
         detectClaudeCodeEditorVariant,
+        resetClaudeCodeEditorVariantCacheForTests,
         refineEditorLabelForInteractionModeSplit,
         SYNCED_INTERACTION_MODE_LABELS
 } from '../../../src/workspaceHelpers';
@@ -468,6 +469,37 @@ test('detectClaudeCodeEditorVariant: defaults to Claude Code when file is missin
                 assert.equal(detectClaudeCodeEditorVariant(file), 'Claude Code');
         } finally {
                 fs.rmSync(dir, { recursive: true, force: true });
+        }
+});
+
+test('detectClaudeCodeEditorVariant: a definitive answer is remembered, so repeated label lookups do not re-read the file', () => {
+        // Every view asks for every file's label; each ask used to open and read 64 KB synchronously on the host.
+        resetClaudeCodeEditorVariantCacheForTests();
+        const dir = fs.mkdtempSync(path.join(process.cwd(), 'claude-variant-'));
+        const file = path.join(dir, 'session.jsonl');
+        fs.writeFileSync(file, JSON.stringify({ type: 'user', entrypoint: 'cli', timestamp: '2026-01-01T00:00:00.000Z' }) + '\n');
+        try {
+                assert.equal(detectClaudeCodeEditorVariant(file), 'Claude Code CLI');
+                fs.rmSync(file); // a re-read would now fall back to the default
+                assert.equal(detectClaudeCodeEditorVariant(file), 'Claude Code CLI', 'served from memory, not from disk');
+        } finally {
+                fs.rmSync(dir, { recursive: true, force: true });
+                resetClaudeCodeEditorVariantCacheForTests();
+        }
+});
+
+test('detectClaudeCodeEditorVariant: a session with no entrypoint yet is not remembered and is detected once it gains one', () => {
+        resetClaudeCodeEditorVariantCacheForTests();
+        const dir = fs.mkdtempSync(path.join(process.cwd(), 'claude-variant-'));
+        const file = path.join(dir, 'session.jsonl');
+        fs.writeFileSync(file, JSON.stringify({ type: 'queue-operation', timestamp: '2026-01-01T00:00:00.000Z' }) + '\n');
+        try {
+                assert.equal(detectClaudeCodeEditorVariant(file), 'Claude Code');
+                fs.writeFileSync(file, JSON.stringify({ type: 'user', entrypoint: 'claude-desktop', timestamp: '2026-01-01T00:00:01.000Z' }) + '\n');
+                assert.equal(detectClaudeCodeEditorVariant(file), 'Claude Desktop', 'the default must not have been cached');
+        } finally {
+                fs.rmSync(dir, { recursive: true, force: true });
+                resetClaudeCodeEditorVariantCacheForTests();
         }
 });
 
@@ -614,6 +646,21 @@ test('detectEditorSource: detects VSCodium', () => {
 
 test('detectEditorSource: detects Visual Studio', () => {
         assert.equal(detectEditorSource('/project/.vs/solution.sln/copilot-chat/hash/sessions/uuid'), 'Visual Studio');
+});
+
+test('detectEditorSource: detects Visual Studio from the VSGitHubCopilot AppData store', () => {
+        // Chats started without a solution open — no .vs folder exists (issue #2137).
+        assert.equal(
+                detectEditorSource('C:/Users/u/AppData/Local/Microsoft/VisualStudio/18.0_0a408795/VSGitHubCopilot/copilot-chat/b6662ded/sessions/80720523'),
+                'Visual Studio'
+        );
+});
+
+test('detectEditorSource: labels SSMS sessions as SSMS, not Visual Studio', () => {
+        assert.equal(
+                detectEditorSource('C:/Users/u/AppData/Local/Microsoft/SSMS/22.0_82a729ff/SSMSGitHubCopilot/copilot-chat/ca1642fb/sessions/7bb52dc2'),
+                'SSMS'
+        );
 });
 
 test('detectEditorSource: detects Claude Desktop Cowork', () => {
@@ -820,6 +867,25 @@ fs.rmSync(tmpDir, { recursive: true, force: true });
 }
 });
 
+test('scanWorkspaceCustomizationFiles: AGENTS.md and root/nested CLAUDE.md count as copilot-compatible instructions', () => {
+const tmpDir = fs.mkdtempSync(path.join(process.cwd(), 'wh-test-'));
+try {
+fs.writeFileSync(path.join(tmpDir, 'AGENTS.md'), '# Agents');
+fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '@AGENTS.md');
+const claudeDir = path.join(tmpDir, '.CLAUDE');
+fs.mkdirSync(claudeDir);
+fs.writeFileSync(path.join(claudeDir, 'claude.md'), '@AGENTS.md');
+const result = scanWorkspaceCustomizationFiles(tmpDir);
+for (const name of ['AGENTS.md', 'CLAUDE.md', '.CLAUDE/claude.md']) {
+const file = result.find(f => f.relativePath.toLowerCase() === name.toLowerCase());
+assert.ok(file, `should find ${name}`);
+assert.equal(file?.category, 'copilot');
+}
+} finally {
+fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+});
+
 test('scanWorkspaceCustomizationFiles: detects .claude/settings.json as non-copilot (not CLAUDE.md)', () => {
 const tmpDir = fs.mkdtempSync(path.join(process.cwd(), 'wh-test-'));
 try {
@@ -1019,6 +1085,37 @@ test('getEditorTypeFromPath: detects Visual Studio', () => {
     assert.equal(getEditorTypeFromPath('/project/.vs/mysolution.sln/copilot-chat/abc123/sessions/uuid'), 'Visual Studio');
 });
 
+test('getEditorTypeFromPath: detects Visual Studio from the VSGitHubCopilot AppData store', () => {
+    assert.equal(
+        getEditorTypeFromPath('C:/Users/u/AppData/Local/Microsoft/VisualStudio/18.0_0a408795/VSGitHubCopilot/copilot-chat/b6662ded/sessions/80720523'),
+        'Visual Studio'
+    );
+});
+
+test('getEditorTypeFromPath: labels SSMS sessions as SSMS, not Visual Studio', () => {
+    assert.equal(
+        getEditorTypeFromPath('C:/Users/u/AppData/Local/Microsoft/SSMS/22.0_82a729ff/SSMSGitHubCopilot/copilot-chat/ca1642fb/sessions/7bb52dc2'),
+        'SSMS'
+    );
+});
+
+test('getEditorTypeFromPath: a copilot-chat path without /sessions/ is not Visual Studio', () => {
+    // The `/sessions/` requirement must hold in every consumer, including the CLI's
+    // getEditorSourceFromPath — a bare copilot-chat folder is not a session file.
+    assert.notEqual(
+        getEditorTypeFromPath('C:/Users/u/AppData/Local/Microsoft/VisualStudio/18.0/VSGitHubCopilot/copilot-chat/b6662ded/index.json'),
+        'Visual Studio'
+    );
+});
+
+test('getEditorTypeFromPath: an unrelated folder named VSGitHubCopilot is not Visual Studio', () => {
+    // Anchored against copilot-chat, so a project that merely has this name cannot match.
+    assert.notEqual(
+        getEditorTypeFromPath('C:/repos/vsgithubcopilot/docs/copilot-chat/notes/sessions/readme.md'),
+        'Visual Studio'
+    );
+});
+
 test('getEditorTypeFromPath: detects Antigravity', () => {
     assert.equal(getEditorTypeFromPath('/home/user/.gemini/antigravity/brain/session-abc.jsonl'), 'Antigravity');
 });
@@ -1098,12 +1195,12 @@ import {
     replaceGlobstars,
     replaceWildcards,
     replaceQuestionMarks,
-    getRepositoryUrl,
     resolveExactWorkspacePath,
     extractRepositoryFromContentReferences,
     resolveWorkspaceFolderFromSessionPath,
     resolveWorkspaceFolderWithFallback,
 } from '../../../src/workspaceHelpers';
+import { getRepositoryUrl } from '../../src/repositoryUrl';
 
 test('escapeRegexSpecials: escapes dot', () => {
     assert.equal(escapeRegexSpecials('.'), '\\.');
@@ -1843,6 +1940,21 @@ test('parseCodeWorkspaceFolders: returns folders from valid .code-workspace with
         assert.equal(result.length, 2);
         assert.ok(result.some(p => path.basename(p) === 'repo1'));
         assert.ok(result.some(p => path.basename(p) === 'repo2'));
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('parseCodeWorkspaceFolders: relative folder entries are relative to the .code-workspace file, not the process cwd', () => {
+    // The common shape: a workspace file next to the repos it lists, with paths like "repo" and ".".
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wh-pcwf-rel-'));
+    try {
+        fs.mkdirSync(path.join(tmpDir, 'repo1'), { recursive: true });
+        fs.mkdirSync(path.join(tmpDir, 'sub', 'repo2'), { recursive: true });
+        const wsFile = path.join(tmpDir, 'team.code-workspace');
+        fs.writeFileSync(wsFile, JSON.stringify({ folders: [{ path: 'repo1' }, { path: './sub/repo2' }, { path: '.' }] }), 'utf8');
+        const real = (p: string) => fs.realpathSync.native(p);
+        assert.deepEqual(parseCodeWorkspaceFolders(wsFile), [real(path.join(tmpDir, 'repo1')), real(path.join(tmpDir, 'sub', 'repo2')), real(tmpDir)]);
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }

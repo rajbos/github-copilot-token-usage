@@ -1,6 +1,7 @@
 const esbuild = require("esbuild");
 const fs = require("fs");
 const path = require("path");
+const { buildLocalizationSidecars } = require("./scripts/webviewLocalizationSidecars");
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
@@ -49,6 +50,26 @@ async function main() {
 		plugins: [esbuildProblemMatcherPlugin],
 	});
 
+	// Session-analysis worker (Node target). Runs all CPU-heavy parsing off the extension host's
+	// event loop; loaded by src/analysis/analysisWorkerPool.ts as dist/analysisWorker.js.
+	// `vscode` is aliased to a throwing stub because a worker thread has no VS Code API.
+	const workerCtx = await esbuild.context({
+		entryPoints: ['src/analysis/analysisWorker.ts'],
+		bundle: true,
+		format: 'cjs',
+		minify: production,
+		sourcemap: !production,
+		sourcesContent: false,
+		platform: 'node',
+		outfile: 'dist/analysisWorker.js',
+		alias: { vscode: path.join(__dirname, 'src', 'analysis', 'vscodeStub.ts') },
+		nodePaths: [path.join(__dirname, 'node_modules')],
+		logLevel: 'silent',
+		banner: { js: 'var __importMetaUrl = require("url").pathToFileURL(__filename).href;' },
+		define: { 'import.meta.url': '__importMetaUrl' },
+		plugins: [esbuildProblemMatcherPlugin],
+	});
+
 	// Webview bundle(s) (Browser target)
 	const webviewCtx = await esbuild.context({
 		entryPoints: {
@@ -76,14 +97,16 @@ async function main() {
 		nodePaths: [path.join(__dirname, 'node_modules')],
 		logLevel: 'silent',
 		plugins: [esbuildProblemMatcherPlugin],
-		loader: { '.css': 'text' },
+		// Tool logos (assets/tool-logos) are inlined so webviews need no extra resources.
+		loader: { '.css': 'text', '.svg': 'dataurl', '.png': 'dataurl' },
 	});
 
 	if (watch) {
-		await Promise.all([extensionCtx.watch(), webviewCtx.watch()]);
+		await Promise.all([extensionCtx.watch(), workerCtx.watch(), webviewCtx.watch()]);
 	} else {
-		await Promise.all([extensionCtx.rebuild(), webviewCtx.rebuild()]);
+		await Promise.all([extensionCtx.rebuild(), workerCtx.rebuild(), webviewCtx.rebuild()]);
 		await extensionCtx.dispose();
+		await workerCtx.dispose();
 		await webviewCtx.dispose();
 	}
 
@@ -98,6 +121,35 @@ async function main() {
 		if (fs.existsSync(jsonSrc)) {
 			fs.copyFileSync(jsonSrc, jsonDst);
 		}
+	}
+
+	// Emit one resolved localization dictionary per shipped locale into
+	// dist/webview/, for the hosts that cannot build it themselves.
+	//
+	// The VS Code extension and the desktop app call buildWebviewLocalization()
+	// directly, but the JetBrains plugin is Kotlin and the Visual Studio
+	// extension is C# — neither can run our TypeScript. They redistribute these
+	// same bundles, and a bundle only localizes itself if the host puts a
+	// `localization` dictionary in the panel payload. Without these files they
+	// had no way to, which is why both shipped English regardless of IDE
+	// language. Each host reads the file matching its own display language and
+	// completes the payload it already builds.
+	//
+	// Written as fully resolved key→text maps rather than the raw nls bundles
+	// so the hosts need no fallback logic: the English file already carries the
+	// English text for any key a locale has not translated.
+	{
+		// Generation lives in scripts/webviewLocalizationSidecars.js so the unit test exercises
+		// this exact code. It reads webviewKeys.json — the same manifest the generated English
+		// fallback is built from — so the sidecars and that fallback cover the same key set.
+		const sidecars = buildLocalizationSidecars();
+		for (const [locale, dictionary] of Object.entries(sidecars)) {
+			fs.writeFileSync(
+				path.join(webviewDistDir, `localization.${locale}.json`),
+				`${JSON.stringify(dictionary, null, 2)}\n`,
+			);
+		}
+		console.log(`[build] wrote ${Object.keys(sidecars).length} webview localization sidecar(s), ${Object.keys(Object.values(sidecars)[0]).length - 1} keys each`);
 	}
 
 	// Copy the codicon font (icon font VS Code itself uses) into dist/webview/codicons/ so

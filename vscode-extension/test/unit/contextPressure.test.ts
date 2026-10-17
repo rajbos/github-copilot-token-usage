@@ -2,9 +2,12 @@ import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import type { SessionFileCache, UsageAnalysisPeriod } from '../../../src/types';
 import type { SessionContextWindow } from '../../src/copilotAppData';
+import type { TodaySessionSummary } from '../../../src/types';
 import {
+	applyDbContextToIndexedSessions,
 	ensureContextPressure,
 	hasContextSignal,
+	indexSessionsByCliUuid,
 	mergeDbContextPressure,
 	mergeSessionContextPressure,
 	sessionCompactionEvents,
@@ -168,4 +171,83 @@ test('ensureContextPressure: reuses the existing aggregate rather than resetting
 	const first = ensureContextPressure(p);
 	first.sessionsConsidered = 7;
 	assert.equal(ensureContextPressure(p).sessionsConsidered, 7);
+});
+
+// ---------------------------------------------------------------------------
+// data.db enrichment of session summaries
+//
+// This is what fills the Recent Sessions "Context" column: a session that never
+// gets stamped shows "—" and can never be flagged near-limit, so a regression
+// here silently empties the column and zeroes the filter the insight links to.
+// ---------------------------------------------------------------------------
+
+/** Mirrors the extension host's Copilot CLI uuid parser closely enough to index on. */
+function extractUuid(filePath: string): string | null {
+	const db = /session-store\.db#([0-9a-f-]{36})$/i.exec(filePath);
+	if (db) { return db[1]; }
+	const jsonl = /session-state[/\\]([0-9a-f-]{36})[/\\]events\.jsonl$/i.exec(filePath);
+	return jsonl ? jsonl[1] : null;
+}
+
+const UUID_A = '11111111-2222-3333-4444-555555555555';
+const UUID_B = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+function summary(filePath: string, overrides: Partial<TodaySessionSummary> = {}): TodaySessionSummary {
+	return { filePath, ...overrides } as TodaySessionSummary;
+}
+
+test('indexSessionsByCliUuid: groups both Copilot CLI path shapes and skips other editors', () => {
+	const jsonl = summary(`/home/u/.copilot/session-state/${UUID_A}/events.jsonl`);
+	const db = summary(`/home/u/.copilot/session-store.db#${UUID_B}`);
+	const other = summary('/home/u/.vscode/chatSessions/abc.json');
+	const index = indexSessionsByCliUuid([[jsonl, db, other]], extractUuid);
+	assert.deepEqual([...index.keys()].sort(), [UUID_A, UUID_B].sort());
+	assert.deepEqual(index.get(UUID_A), [jsonl]);
+	assert.equal(index.size, 2, 'a session with no CLI uuid is not indexed');
+});
+
+test('indexSessionsByCliUuid: one uuid collects every summary object built for it', () => {
+	// Today's list and the Recent Sessions buckets are built separately, so the
+	// same session arrives as two distinct objects that both need stamping.
+	const path = `/home/u/.copilot/session-state/${UUID_A}/events.jsonl`;
+	const fromToday = summary(path);
+	const fromBucket = summary(path);
+	const index = indexSessionsByCliUuid([[fromToday], [fromBucket]], extractUuid);
+	assert.equal(index.get(UUID_A)?.length, 2);
+});
+
+test('indexSessionsByCliUuid: the same object reached twice is indexed once', () => {
+	// The lookback buckets share value references, so last7/last30/currentMonth
+	// routinely hand over the very same object.
+	const shared = summary(`/home/u/.copilot/session-state/${UUID_A}/events.jsonl`);
+	const index = indexSessionsByCliUuid([[shared], [shared], [shared]], extractUuid);
+	assert.equal(index.get(UUID_A)?.length, 1);
+});
+
+test('applyDbContextToIndexedSessions: stamps the window fill onto every summary for a uuid', () => {
+	const path = `/home/u/.copilot/session-state/${UUID_A}/events.jsonl`;
+	const fromToday = summary(path);
+	const fromBucket = summary(path);
+	const index = indexSessionsByCliUuid([[fromToday], [fromBucket]], extractUuid);
+	applyDbContextToIndexedSessions(index, new Map([
+		[UUID_A, dbRow({ uuid: UUID_A, contextWindowLimit: 200_000, contextReachedTokens: 190_000, contextTier: 'default' })],
+		// A row for a session that is not in the loaded window must not throw.
+		[UUID_B, dbRow({ uuid: UUID_B, contextWindowLimit: 128_000, contextReachedTokens: 64_000 })],
+	]));
+	for (const session of [fromToday, fromBucket]) {
+		assert.equal(session.contextWindowLimit, 200_000);
+		assert.equal(session.contextReachedTokens, 190_000);
+		assert.equal(session.contextTier, 'default');
+	}
+});
+
+test('applyDbContextToIndexedSessions: a tier the session already carries is not overwritten', () => {
+	// events.jsonl is the more specific source; data.db only fills the gap.
+	const session = summary(`/home/u/.copilot/session-state/${UUID_A}/events.jsonl`, { contextTier: 'from-events-log' });
+	const index = indexSessionsByCliUuid([[session]], extractUuid);
+	applyDbContextToIndexedSessions(index, new Map([
+		[UUID_A, dbRow({ uuid: UUID_A, contextTier: 'from-data-db', contextWindowLimit: 200_000, contextReachedTokens: 10_000 })],
+	]));
+	assert.equal(session.contextTier, 'from-events-log');
+	assert.equal(session.contextWindowLimit, 200_000, 'the window fill is still filled in');
 });

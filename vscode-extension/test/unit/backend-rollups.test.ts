@@ -236,3 +236,31 @@ test('upsertDailyRollup merges nested objects in JSON metrics', () => {
 	assert.equal(parsed.details.c, 5);
 	assert.equal(parsed.topLevel, 10);
 });
+
+test('upsertDailyRollup: per-tool latency histograms inside toolCallsJson are summed element-wise, not replaced', () => {
+	const map = new Map<string, any>();
+	const key: DailyRollupKey = { day: '2026-10-07', model: 'gpt-4o', workspaceId: 'ws1', machineId: 'm1' };
+	upsertDailyRollup(map, key, {
+		fluencyMetrics: { toolCallsJson: JSON.stringify({
+			byTool: { view: 2 },
+			completedByTool: { view: 2 },
+			failuresByTool: { view: 1 },
+			latencyByTool: { view: { count: 2, sumMs: 60, buckets: [0, 0, 0, 0, 1, 1] } },
+		}) }
+	} as any);
+	upsertDailyRollup(map, key, {
+		fluencyMetrics: { toolCallsJson: JSON.stringify({
+			byTool: { view: 1, edit: 1 },
+			completedByTool: { view: 1, edit: 1 },
+			latencyByTool: { view: { count: 1, sumMs: 5000, buckets: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1] }, edit: { count: 1, sumMs: 8, buckets: [0, 0, 0, 1] } },
+		}) }
+	} as any);
+	const entry = [...map.values()][0];
+	const merged = JSON.parse(entry.value.fluencyMetrics.toolCallsJson);
+	assert.deepEqual(merged.byTool, { view: 3, edit: 1 });
+	assert.deepEqual(merged.completedByTool, { view: 3, edit: 1 });
+	assert.deepEqual(merged.failuresByTool, { view: 1 });
+	// Both sessions' samples survive: 3 samples, summed durations, union of buckets padded to the longer array.
+	assert.deepEqual(merged.latencyByTool.view, { count: 3, sumMs: 5060, buckets: [0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1] });
+	assert.deepEqual(merged.latencyByTool.edit, { count: 1, sumMs: 8, buckets: [0, 0, 0, 1] });
+});

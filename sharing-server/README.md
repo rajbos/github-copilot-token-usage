@@ -21,6 +21,9 @@ the published npm package).
 [Web Browser]  ──OAuth login──►  GET /dashboard
 ```
 
+The dashboard pages are responsive: sign in from a phone browser and the header,
+stat cards, charts and upload breakdown reflow to fit the screen.
+
 **The extension already holds a GitHub OAuth session** (the same one used by Copilot
 and GitHub PR statistics). When you configure a sharing server endpoint URL, the
 extension automatically uses that token for uploads — no API keys, no copy-paste,
@@ -48,7 +51,7 @@ services:
     environment:
       - GITHUB_CLIENT_ID=your_client_id
       - GITHUB_CLIENT_SECRET=your_client_secret
-      - SESSION_SECRET=a_long_random_string_min_32_chars
+      - SESSION_SECRET=${SESSION_SECRET:?Missing SESSION_SECRET}
       - BASE_URL=https://your-server.example.com
       # Optional: restrict uploads to members of a specific GitHub org
       # - ALLOWED_GITHUB_ORG=your-org-name
@@ -60,7 +63,7 @@ volumes:
   sharing_data:
 ```
 
-> **Tip**: Generate `SESSION_SECRET` with `openssl rand -hex 32` in bash, or in PowerShell:
+> **Tip**: Generate `SESSION_SECRET` with `openssl rand -base64 48` in bash, or in PowerShell:
 ``` powershell
 $bytes = New-Object byte[] 32
 [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
@@ -82,8 +85,7 @@ In VS Code settings (JSON):
 
 ```json
 {
-  "aiEngineeringFluency.backend.enabled": true,
-  "aiEngineeringFluency.backend.backend": "sharingServer",
+  "aiEngineeringFluency.backend.sharingServer.enabled": true,
   "aiEngineeringFluency.backend.sharingServer.endpointUrl": "https://your-server.example.com"
 }
 ```
@@ -97,7 +99,7 @@ prompt — it reuses your existing GitHub session.
 
 For code changes, also run the [server validation checks](../docs/VALIDATION.md#sharing-server)
 and satisfy the data separation contract's HTTP/HTML privacy tests.
-The root `.\build.ps1 -Project sharing -Target test` runs the server's `npm test`;
+The root `.\build.ps1 -Project sharing -Target test` runs the server's `pnpm test`;
 run the type/build/headless interaction checks separately as described there.
 
 ```bash
@@ -106,9 +108,9 @@ run the type/build/headless interaction checks separately as described there.
 
 # Or from the sharing-server/ directory:
 cd sharing-server
-npm ci
-npm run build            # development build
-npm run build:production # minified build
+pnpm install --frozen-lockfile
+pnpm run build            # development build
+pnpm run build:production # minified build
 ```
 
 ## Running locally (without Docker)
@@ -117,7 +119,7 @@ npm run build:production # minified build
 
 ```bash
 cd sharing-server
-npm ci
+pnpm install --frozen-lockfile
 ```
 
 ### 2. Create a `.env` file
@@ -133,7 +135,8 @@ Minimum required in `.env`:
 ```env
 GITHUB_CLIENT_ID=your_github_oauth_app_client_id
 GITHUB_CLIENT_SECRET=your_github_oauth_app_client_secret
-SESSION_SECRET=any_long_random_string_at_least_32_chars
+# Generate with: openssl rand -base64 48
+SESSION_SECRET=
 BASE_URL=http://localhost:3000
 PORT=3000
 DB_PATH=./data/sharing.db
@@ -144,17 +147,17 @@ DB_PATH=./data/sharing.db
 ### 3. Build and start
 
 ```bash
-npm run build   # compile TypeScript → dist/server.js
+pnpm run build   # compile TypeScript → dist/server.js
 npm start       # start the server (automatically loads .env via Node --env-file)
 ```
 
 Or for **watch mode** (auto-restarts `dist/server.js` whenever it changes):
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
-> Run `npm run build` in a separate terminal to rebuild after editing `src/`. The `dev`
+> Run `pnpm run build` in a separate terminal to rebuild after editing `src/`. The `dev`
 > script uses `node --watch` which restarts automatically when `dist/server.js` changes.
 
 ### 4. Verify
@@ -175,7 +178,7 @@ stubbed GitHub access, never production data or live GitHub; see the
 |---|---|---|
 | `GITHUB_CLIENT_ID` | ✅ | GitHub OAuth App client ID (for dashboard login) |
 | `GITHUB_CLIENT_SECRET` | ✅ | GitHub OAuth App client secret (for dashboard login) |
-| `SESSION_SECRET` | ✅ | Random secret for signing session cookies (≥32 chars) |
+| `SESSION_SECRET` | ✅ | Random secret for signing session cookies (≥ 32 chars, no leading/trailing whitespace, not a documented example value). **Required unless `NODE_ENV` is explicitly `development` or `test`**: with an unset or any other `NODE_ENV` (including `production`), startup and `createApp()` fail without a strong secret. Generate one with `openssl rand -base64 48`. Only `development`/`test` may use an insecure dev fallback, with a warning |
 | `BASE_URL` | ✅ | Public base URL of the server (no trailing slash) |
 | `PORT` | ❌ | HTTP port (default: `3000`) |
 | `DB_PATH` | ❌ | SQLite database path (default: `/data/sharing.db`) |
@@ -248,6 +251,12 @@ The page includes cohort counts/thresholds, an exact numeric member table and
 expandable exact daily team/own totals. Trend modes compare your own line with
 either team totals or the team average per **daily active uploader**, not all
 registered users or the entire period's active-member count.
+The personal and admin dashboards abbreviate token counts as K, M or B,
+including chart ticks and tooltips; Team Insights keeps exact values in its
+numeric tables and exports.
+The page footer shows the sharing-server package version alongside the
+deployment branch, commit and timestamp, so a deployed instance can be
+compared with the published npm version.
 
 Download the selected period with cookie-authenticated
 `/team/export?days=N&format=csv` or `format=json` (N is 7, 30 or 90).
@@ -312,6 +321,7 @@ import {
 	startServer,
 	registerSchemaExtension,
 	requireBearerAuth,
+	renderNavExtra,
 	getDb,
 } from '@rajbos/ai-engineering-fluency-sharing-server';
 import { Hono } from 'hono';
@@ -337,9 +347,24 @@ routes.post('/upload', requireBearerAuth, async (c) => {
 	return c.json({ ok: true });
 });
 
+// The page the nav link points at. `renderNavExtra` renders the same downstream
+// links here, so your page header stays consistent with the built-in ones.
+const page = new Hono();
+page.get('/mine', (c) =>
+	c.html(`<!doctype html><html><body>
+		<header>
+			<a href="/dashboard">My Dashboard</a>
+			<a href="/team">Team Insights</a>
+			${renderNavExtra(c, '/mine')}
+		</header>
+		<main>…</main>
+	</body></html>`),
+);
+
 const app = createApp({
 	healthExtra: () => ({ edition: 'my-company' }),
-	extend: (a) => a.route('/api/mine', routes),
+	navExtra: () => [{ href: '/mine', label: 'My Insights' }],
+	extend: (a) => a.route('/api/mine', routes).route('/', page),
 });
 
 await startServer(app);
@@ -351,11 +376,13 @@ await startServer(app);
 |---|---|
 | `createApp({ extend })` | Register routes **before** the built-in ones. Because Hono matches in registration order, this also lets you override a built-in path. |
 | `createApp({ healthExtra })` | Merge extra fields into `/health`. |
+| `createApp({ navExtra })` | Add links to the built-in page headers, so a page you mount through `extend` is reachable from the UI instead of by URL only. Scoped to that app. Labels are escaped, and an href that is not same-origin once the URL is parsed is dropped. |
 | `createApp({ mountApi, mountDashboard })` | Opt out of the built-in route groups. |
 | `registerSchemaExtension(name, fn)` | Add tables/indexes/migrations. Call before the first `getDb()`. |
 | `requireBearerAuth` | Authenticate with the same GitHub token as `/api/upload`, so your rows share the same `user_id`. |
 | `getTeamInsights(viewerId, days)`, `parseTeamDays(raw)` | Reuse the safe Team Insights projection and supported-period parsing. Derive `viewerId` only from server-authenticated identity, never request/query input. |
 | `TeamInsights`, `TeamMember`, `UsageCohort` | Public TypeScript types for the identity-free projection. |
+| `renderNavExtra(c, currentPath)`, `NavLink` | Render the same downstream links inside your own page header, so navigation stays consistent across built-in and custom pages. |
 | `startServer(app, opts)` | Backup/restore, DB init with retry, periodic backup, graceful shutdown. |
 
 ### Guidance

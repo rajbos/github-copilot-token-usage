@@ -19,28 +19,28 @@ const RELEASES: WhatsNewRelease[] = [
 	{
 		version: '2.0.0',
 		date: '2026-09-01',
-		headline: 'Two.',
+		headlineKey: 'Two.',
 		features: [
-			{ id: 'f-a', title: 'A', description: 'a', kind: 'tab', surface: { view: 'usage', tab: 'alpha' } },
-			{ id: 'f-b', title: 'B', description: 'b', kind: 'tab', surface: { view: 'usage', tab: 'beta' } },
-			{ id: 'f-c', title: 'C', description: 'c', kind: 'view', surface: { view: 'efficiency' } },
-			{ id: 'f-d', title: 'D', description: 'd', kind: 'section', surface: { view: 'chart' } },
+			{ id: 'f-a', titleKey: 'A', descriptionKey: 'a', kind: 'tab', surface: { view: 'usage', tab: 'alpha' } },
+			{ id: 'f-b', titleKey: 'B', descriptionKey: 'b', kind: 'tab', surface: { view: 'usage', tab: 'beta' } },
+			{ id: 'f-c', titleKey: 'C', descriptionKey: 'c', kind: 'view', surface: { view: 'efficiency' } },
+			{ id: 'f-d', titleKey: 'D', descriptionKey: 'd', kind: 'section', surface: { view: 'chart' } },
 		],
 	},
 	{
 		version: '1.5.0',
 		date: '2026-08-20',
-		headline: 'One and a half.',
+		headlineKey: 'One and a half.',
 		features: [
-			{ id: 'f-e', title: 'E', description: 'e', kind: 'view', surface: { view: 'environmental' } },
+			{ id: 'f-e', titleKey: 'E', descriptionKey: 'e', kind: 'view', surface: { view: 'environmental' } },
 		],
 	},
 	{
 		version: '1.0.0',
 		date: '2024-01-01',
-		headline: 'Ancient history.',
+		headlineKey: 'Ancient history.',
 		features: [
-			{ id: 'f-old', title: 'Old', description: 'old', kind: 'view', surface: { view: 'maturity' } },
+			{ id: 'f-old', titleKey: 'Old', descriptionKey: 'old', kind: 'view', surface: { view: 'maturity' } },
 		],
 	},
 ];

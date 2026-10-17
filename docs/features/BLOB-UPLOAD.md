@@ -80,6 +80,11 @@ Each uploaded blob includes metadata:
 - `datasetId`: Dataset identifier (e.g., "default")
 - `uploadedAt`: ISO timestamp when uploaded
 - `compressed`: "true" if file is gzipped
+- `editorType`: Source editor that created the session (e.g., "VS Code", "Copilot CLI", "JetBrains")
+
+### Editor Type in the Download Workflow
+
+The `copilot-setup-steps.yml` workflow lists the dataset's blobs once with `az storage blob list --include m`, which returns their metadata, and uses that single listing both to pick the date folders to download and to write a manifest at `./session-logs/.editor-types.json` mapping each session file's relative (decompressed) path to its `editorType`. This is needed because `az storage blob download-batch` does not preserve blob metadata. After downloading and decompressing, entries whose file is not on disk (a failed download or decompression) are dropped. The Copilot Coding Agent can use this manifest to classify session files by editor without relying on filename heuristics or content sniffing.
 
 ## Authentication
 
@@ -125,7 +130,11 @@ Session logs uploaded to blob storage can be downloaded and made available to th
 
    The coding agent workflow needs Azure credentials to download blobs.
 
-   **Option A: Federated Identity (Recommended)**
+   **Option A: Storage Shared Key (built in)**
+   Add the secret `COPILOT_STORAGE_KEY` with the storage account key to the `copilot` environment. The provided workflow uses it automatically in both download steps, through two different mechanisms: the blob download sets it as `AZURE_STORAGE_KEY` and runs `az storage` with `--auth-mode key`, and the Table Storage download passes it to the `load-table-data.js` loader as `--sharedKey`. No workflow changes are needed.
+
+   **Option B: Federated Identity**
+   If you would rather not store a key, add an `azure/login` step before the download step. The workflow falls back to `--auth-mode login` when `COPILOT_STORAGE_KEY` is not set and an Azure login is present. This requires `id-token: write` on the job and a federated credential for the `copilot` environment:
    ```yaml
    - name: Azure Login
      uses: azure/login@v2
@@ -135,19 +144,17 @@ Session logs uploaded to blob storage can be downloaded and made available to th
        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
    ```
 
-   **Option B: Service Principal**
-   Add secret `AZURE_CREDENTIALS` with service principal JSON
-
-   **Option C: Storage Shared Key**
-   Add secret `COPILOT_STORAGE_KEY` with storage account key
+   With neither configured, the download step is skipped with a workflow warning and `./session-logs` stays empty.
 
 3. **Review Workflow**
 
    The `.github/workflows/copilot-setup-steps.yml` file is provided as a starting point. It:
    - Checks if storage account is configured
-   - Downloads session logs from the last 7 days
-   - Decompresses gzipped files
+   - Lists the dataset's blobs once and downloads only the date folders from the last 7 days
+   - Accepts `.json` and `.jsonl` session files, gzipped or not (`blobCompressFiles`)
+   - Decompresses gzipped files, removing any that fail to decompress
    - Makes files available in `./session-logs` directory
+   - Emits workflow warnings when it skips, fails, or finds no files
 
 4. **Test the Workflow**
 
@@ -158,7 +165,7 @@ Session logs uploaded to blob storage can be downloaded and made available to th
 
 ### Workflow Configuration
 
-The provided `copilot-setup-steps.yml` includes:
+The download step in the provided `copilot-setup-steps.yml` works like this (abridged; see the workflow file for the full step with its warnings and manifest handling):
 
 ```yaml
 - name: Download Copilot session logs from Azure Blob Storage
@@ -167,16 +174,27 @@ The provided `copilot-setup-steps.yml` includes:
     AZURE_STORAGE_ACCOUNT: ${{ vars.COPILOT_STORAGE_ACCOUNT }}
     AZURE_STORAGE_CONTAINER: ${{ vars.COPILOT_STORAGE_CONTAINER || 'copilot-session-logs' }}
     AZURE_DATASET_ID: ${{ vars.COPILOT_DATASET_ID || 'default' }}
+    # Read by `az storage` under --auth-mode key; never passed on a command line
+    AZURE_STORAGE_KEY: ${{ secrets.COPILOT_STORAGE_KEY }}
   run: |
-    # Download blobs from last 7 days
-    az storage blob download-batch \
-      --account-name "$AZURE_STORAGE_ACCOUNT" \
-      --source "$AZURE_STORAGE_CONTAINER" \
-      --destination ./session-logs \
-      --pattern "${AZURE_DATASET_ID}/*/*/*.json.gz" \
-      --auth-mode login
-    
-    # Decompress files
+    # Shared key if configured, otherwise an existing azure/login session
+    if [ -n "$AZURE_STORAGE_KEY" ]; then AUTH_MODE=key; else AUTH_MODE=login; fi
+
+    # One listing (with metadata) of the whole dataset; "*" returns every page
+    az storage blob list --account-name "$AZURE_STORAGE_ACCOUNT" \
+      --container-name "$AZURE_STORAGE_CONTAINER" --prefix "${AZURE_DATASET_ID}/" \
+      --include m --num-results '*' --auth-mode "$AUTH_MODE" --output json > blobs.json
+
+    # ...select {dataset}/{machine}/{date}/*.json[l][.gz] blobs dated within the
+    # last 7 days, write .editor-types.json, and collect their dates into $DATES...
+
+    for DAY in $DATES; do
+      az storage blob download-batch --account-name "$AZURE_STORAGE_ACCOUNT" \
+        --source "$AZURE_STORAGE_CONTAINER" --destination ./session-logs \
+        --pattern "${AZURE_DATASET_ID}/*/${DAY}/*.json*" --auth-mode "$AUTH_MODE"
+    done
+
+    # Decompress gzipped files (uncompressed uploads are used as-is)
     find ./session-logs -name "*.gz" -exec gunzip {} \;
 ```
 
@@ -281,14 +299,15 @@ If operating in the EU or with EU users:
 
 ### Downloads Fail in Workflow
 
-**Check authentication:**
+**Check authentication:** look for `Using --auth-mode key` (or `login`) in the download step's log. A `No COPILOT_STORAGE_KEY secret and no Azure login` warning means neither credential is configured. Set the `COPILOT_STORAGE_KEY` secret in the `copilot` environment, or add an `azure/login` step before the download:
 ```yaml
-# Add Azure login step before download
 - uses: azure/login@v2
   with:
     client-id: ${{ secrets.AZURE_CLIENT_ID }}
     # ... other auth params
 ```
+
+**Check the dataset ID:** a `No session logs downloaded for dataset ...` warning, or `0 in date range` in the listing line, usually means `COPILOT_DATASET_ID` does not match the first path segment of the uploaded blobs.
 
 **Verify environment variables:**
 - `COPILOT_STORAGE_ACCOUNT` must be set in `copilot` environment

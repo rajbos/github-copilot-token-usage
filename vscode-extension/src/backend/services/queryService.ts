@@ -11,6 +11,7 @@ import { CredentialService } from './credentialService';
 import { DataPlaneService } from './dataPlaneService';
 import { BackendUtility } from './utilityService';
 import { safeStringifyError } from '../../../../src/utils/errors';
+import { calculateEnvironmentalImpact } from '../../../../src/environmentalImpact';
 
 export interface BackendQueryResultLike {
 	stats: SessionStats;
@@ -53,9 +54,6 @@ interface RollupAccumulator {
 export interface QueryServiceDeps {
 	warn: (message: string) => void;
 	calculateEstimatedCost: (modelUsage: ModelUsage) => number;
-	co2Per1kTokens: number;
-	waterUsagePer1kTokens: number;
-	co2AbsorptionPerTreePerYear: number;
 }
 
 /**
@@ -160,15 +158,14 @@ export class QueryService {
 		const { modelsSet, workspacesSet, machinesSet, usersSet, workspaceNamesById, machineNamesById,
 			totalTokens, totalInteractions, modelUsage, workspaceTokens, machineTokens } = acc;
 		const cost = this.deps.calculateEstimatedCost(modelUsage);
-		const co2 = (totalTokens / 1000) * this.deps.co2Per1kTokens;
-		const waterUsage = (totalTokens / 1000) * this.deps.waterUsagePer1kTokens;
+		const environmentalImpact = calculateEnvironmentalImpact(modelUsage, totalTokens);
 		const statsForRange: StatsForPeriod = {
 			tokens: totalTokens, sessions: totalInteractions,
 			avgInteractionsPerSession: totalInteractions > 0 ? 1 : 0,
 			avgTokensPerSession: totalInteractions > 0 ? Math.round(totalTokens / totalInteractions) : 0,
-			modelUsage, editorUsage: {}, co2,
-			treesEquivalent: co2 / this.deps.co2AbsorptionPerTreePerYear,
-			waterUsage, estimatedCost: cost
+			modelUsage, editorUsage: {}, co2: environmentalImpact.co2,
+			treesEquivalent: environmentalImpact.treesEquivalent,
+			waterUsage: environmentalImpact.waterUsage, estimatedCost: cost
 		};
 		return {
 			stats: { today: statsForRange, month: statsForRange, lastUpdated: new Date() },

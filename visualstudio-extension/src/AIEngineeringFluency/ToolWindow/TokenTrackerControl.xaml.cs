@@ -414,6 +414,18 @@ namespace AIEngineeringFluency.ToolWindow
             OpenInBrowser(uri);
         }
 
+        /// <summary>
+        /// Methodology links the environmental view may ask to open, by id. Mirrors
+        /// <c>ENVIRONMENTAL_METHODOLOGY_SOURCES</c> in <c>src/environmentalImpact.ts</c>;
+        /// <c>environmentalImpact.test.ts</c> fails if the two drift apart.
+        /// </summary>
+        private static readonly System.Collections.Generic.IReadOnlyDictionary<string, string> EnvironmentalMethodologySources =
+            new System.Collections.Generic.Dictionary<string, string>
+            {
+                ["paper"] = "https://arxiv.org/abs/2505.09598",
+                ["neuland"] = "https://github.com/neuland/tokendashboard-backend/blob/main/docs/co2-methodology.md",
+            };
+
         /// <summary>Launches <paramref name="url"/> in the default system browser.</summary>
         private static void OpenInBrowser(string url)
         {
@@ -505,6 +517,17 @@ namespace AIEngineeringFluency.ToolWindow
                             var jsSrc = root.TryGetProperty("source",  out var jsSrcProp)  ? jsSrcProp.GetString()  : "";
                             var jsLine = root.TryGetProperty("line",   out var jsLineProp) ? jsLineProp.GetInt32()  : 0;
                             Utilities.OutputLogger.LogError($"WebView JS error in view '{_currentView}': {jsMsg} at {jsSrc}:{jsLine}");
+                            break;
+                        }
+
+                        case "openMethodologySource":
+                        {
+                            // Fixed id -> URL lookup: the webview never supplies the address itself.
+                            var source = root.TryGetProperty("source", out var sourceProp) ? sourceProp.GetString() : null;
+                            if (source != null && EnvironmentalMethodologySources.TryGetValue(source, out var sourceUrl))
+                            {
+                                OpenInBrowser(sourceUrl);
+                            }
                             break;
                         }
 

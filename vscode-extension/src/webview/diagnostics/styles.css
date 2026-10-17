@@ -290,165 +290,6 @@ body {
 	margin-top: 6px;
 }
 
-/* Share Card tab — a screenshot-friendly summary of detected editors */
-.share-card {
-	background: linear-gradient(135deg, var(--bg-tertiary), var(--bg-secondary));
-	border: 1px solid var(--border-color);
-	border-radius: 16px;
-	padding: 24px 28px;
-	max-width: 640px;
-	box-shadow: 0 8px 32px var(--shadow-color);
-}
-
-.share-badge {
-	font-size: 11px;
-	font-weight: 700;
-	letter-spacing: 0.12em;
-	text-transform: uppercase;
-	color: var(--link-color);
-	margin-bottom: 6px;
-}
-
-.share-title {
-	font-size: 22px;
-	font-weight: 700;
-	color: var(--text-primary);
-	margin-bottom: 4px;
-}
-
-.share-subtitle {
-	font-size: 12px;
-	color: var(--text-muted);
-	margin-bottom: 18px;
-}
-
-.share-pills {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	margin-bottom: 18px;
-}
-
-.share-pill {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	padding: 6px 12px;
-	background: var(--bg-tertiary);
-	border: 1px solid var(--border-color);
-	border-radius: 20px;
-	font-size: 13px;
-	color: var(--text-primary);
-}
-
-.share-pill-count {
-	font-weight: 700;
-	color: var(--link-color);
-}
-
-.share-stats {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-	gap: 10px;
-}
-
-.share-stat {
-	background: var(--bg-tertiary);
-	border: 1px solid var(--border-color);
-	border-radius: 8px;
-	padding: 10px;
-	text-align: center;
-}
-
-.share-stat-value {
-	font-size: 18px;
-	font-weight: 700;
-	color: var(--text-primary);
-}
-
-.share-stat-label {
-	font-size: 10px;
-	color: var(--text-muted);
-	text-transform: uppercase;
-	letter-spacing: 0.06em;
-	margin-top: 2px;
-}
-
-/* Share Card social share buttons — mirrors the Fluency Score share-section styling */
-.share-buttons {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-	gap: 10px;
-}
-
-.share-btn {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	gap: 8px;
-	padding: 10px 14px;
-	border-radius: 6px;
-	font-size: 13px;
-	font-weight: 600;
-	cursor: pointer;
-	transition: all 0.2s ease;
-	border: 1px solid;
-	background: var(--button-secondary-bg);
-}
-
-.share-btn-icon {
-	font-size: 16px;
-	flex-shrink: 0;
-}
-
-.share-btn:active {
-	transform: translateY(0);
-}
-
-.share-btn-linkedin {
-	color: #0a66c2;
-	border-color: rgba(10, 102, 194, 0.5);
-}
-
-.share-btn-linkedin:hover {
-	background: rgba(10, 102, 194, 0.12);
-	border-color: #0a66c2;
-	transform: translateY(-2px);
-	box-shadow: 0 4px 12px rgba(10, 102, 194, 0.25);
-}
-
-.share-btn-bluesky {
-	color: #1285fe;
-	border-color: rgba(18, 133, 254, 0.5);
-}
-
-.share-btn-bluesky:hover {
-	background: rgba(18, 133, 254, 0.12);
-	border-color: #1285fe;
-	transform: translateY(-2px);
-	box-shadow: 0 4px 12px rgba(18, 133, 254, 0.25);
-}
-
-.share-btn-mastodon {
-	color: #6364ff;
-	border-color: rgba(99, 100, 255, 0.5);
-}
-
-.share-btn-mastodon:hover {
-	background: rgba(99, 100, 255, 0.12);
-	border-color: #6364ff;
-	transform: translateY(-2px);
-	box-shadow: 0 4px 12px rgba(99, 100, 255, 0.25);
-}
-
-/* Light theme overrides for share button text colors */
-body[data-vscode-theme-kind="vscode-light"] .share-btn-linkedin,
-body[data-vscode-theme-kind="vscode-high-contrast-light"] .share-btn-linkedin { color: #0a66c2; }
-body[data-vscode-theme-kind="vscode-light"] .share-btn-bluesky,
-body[data-vscode-theme-kind="vscode-high-contrast-light"] .share-btn-bluesky { color: #0369a1; }
-body[data-vscode-theme-kind="vscode-light"] .share-btn-mastodon,
-body[data-vscode-theme-kind="vscode-high-contrast-light"] .share-btn-mastodon { color: #4f46e5; }
-
 .otel-delta-positive {
 	color: var(--success-fg);
 }
@@ -506,48 +347,6 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .share-btn-mastodon { 
 .hidden-count {
 	color: var(--vscode-descriptionForeground);
 	font-size: 11px;
-}
-
-.table-container {
-	overflow: auto;
-	max-height: 500px;
-}
-
-.session-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 12px;
-}
-
-.session-table th,
-.session-table td {
-	padding: 8px 10px;
-	text-align: left;
-	border-bottom: 1px solid var(--border-color);
-}
-
-.session-table th {
-	background: var(--bg-tertiary);
-	color: var(--text-primary);
-	font-weight: 600;
-	position: sticky;
-	top: 0;
-}
-
-.session-table th.sortable,
-.session-table th.tool-sortable {
-	cursor: pointer;
-	user-select: none;
-}
-
-.session-table th.sortable:hover,
-.session-table th.tool-sortable:hover {
-	background: var(--list-hover-bg);
-	color: var(--link-color);
-}
-
-.sort-hint {
-	opacity: 0.4;
 }
 
 .tool-family-section {
@@ -660,72 +459,18 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .share-btn-mastodon { 
 }
 
 
-.session-table tr:hover {
-	background: var(--list-hover-bg);
+/* Diagnostics table cells (tables themselves are styled by the shared dataTable.css). */
+.diag-path-cell {
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-size: 12px;
 }
 
-/* Candidate/scanned paths table: force long paths to wrap within the
-   panel instead of growing the table wider than its container. */
-.candidate-paths-table .session-table {
-	table-layout: fixed;
+.candidate-path-missing {
+	opacity: 0.5;
 }
 
-.candidate-paths-table .session-table th:first-child,
-.candidate-paths-table .session-table td:first-child {
-	width: 60px;
-}
-
-.candidate-paths-table .session-table th:nth-child(2),
-.candidate-paths-table .session-table td:nth-child(2) {
-	width: 140px;
-}
-
-.candidate-paths-table .session-table th:last-child,
-.candidate-paths-table .session-table td:last-child {
-	word-break: break-all;
-	overflow-wrap: anywhere;
-	white-space: normal;
-}
-
-.candidate-paths-table .session-table td:nth-child(2) .editor-badge {
-	white-space: normal;
-	word-break: break-word;
-}
-
-/* Main Session Folders table: same treatment as the candidate paths table
-   so long folder paths wrap instead of forcing the table (and page) wider
-   than the panel. */
-.session-folders-table .session-table {
-	table-layout: fixed;
-}
-
-.session-folders-table .session-table th:first-child,
-.session-folders-table .session-table td:first-child {
-	word-break: break-all;
-	overflow-wrap: anywhere;
-	white-space: normal;
-}
-
-.session-folders-table .session-table th:nth-child(2),
-.session-folders-table .session-table td:nth-child(2) {
-	width: 150px;
-}
-
-.session-folders-table .session-table td:nth-child(2) .editor-badge {
-	white-space: normal;
-	word-break: break-word;
-}
-
-.session-folders-table .session-table th:nth-child(3),
-.session-folders-table .session-table td:nth-child(3) {
-	width: 110px;
-}
-
-.session-folders-table .session-table th:last-child,
-.session-folders-table .session-table td:last-child {
-	width: 150px;
-	white-space: normal;
-	overflow-wrap: anywhere;
+.folder-file-empty {
+	opacity: 0.45;
 }
 
 .editor-badge {
@@ -735,6 +480,13 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .share-btn-mastodon { 
 	font-size: 10px;
 	color: var(--list-active-fg);
 	white-space: nowrap;
+}
+
+/* Let editor badges wrap inside the fixed-width Source / Editor columns. */
+.candidate-paths-table .editor-badge,
+.session-folders-table .editor-badge {
+	white-space: normal;
+	word-break: break-word;
 }
 
 /* MS Scout: Microsoft brand blue on dark navy */
@@ -1011,6 +763,20 @@ border: 1px solid #1f6feb;
 	margin-bottom: 6px;
 }
 
+.beta-badge {
+	display: inline-block;
+	margin-left: 8px;
+	padding: 1px 6px;
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	color: var(--vscode-editorWarning-foreground, #cca700);
+	border: 1px solid var(--vscode-editorWarning-foreground, #cca700);
+	border-radius: 3px;
+	vertical-align: middle;
+}
+
 .cache-details {
 	margin-top: 16px;
 }
@@ -1053,6 +819,31 @@ border: 1px solid #1f6feb;
 	display: flex;
 	gap: 8px;
 	align-items: center;
+}
+
+.loading-status {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--link-color);
+	border: 1px solid var(--link-color);
+	border-radius: 12px;
+	padding: 4px 12px;
+	animation: loading-status-pulse 1.6s ease-in-out infinite;
+}
+
+.loading-status:empty {
+	display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.loading-status {
+		animation: none;
+	}
+}
+
+@keyframes loading-status-pulse {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.6; }
 }
 
 .folder-input {

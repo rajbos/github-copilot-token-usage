@@ -21,7 +21,10 @@ import type {
 	ModelPricing,
 	TokenEstimator,
 	LanguageUsage,
+	LatencyHistogram,
 } from './types';
+import { mergeAutonomyUsage, recordAutonomy } from './autonomy';
+import { advanceCliAgentState, createCliAgentState, mergeAgentUsage, readVsCodeModeId, recordVsCodeRequestAgents, type CliAgentState } from './agentUsage';
 import {
 	classifySessionTurns,
 	createEmptyTaskClassificationResult,
@@ -76,6 +79,8 @@ import { detectJetBrainsModeFromContent, type JetBrainsMode } from './jetbrains'
 import type { IEcosystemAdapter } from './ecosystemAdapter';
 import { isAnalyzable } from './ecosystemAdapter';
 import { isUnsafeObjectKey } from './utils/protoGuard';
+import { applyCliShutdownMetrics, createCliShutdownAccumulator, getCliShutdownTotals, type CliShutdownAccumulator, type CliShutdownModelMetricsEntry } from './cliShutdownMetrics';
+import { createLatencyHistogram, mergeLatencyHistogram, recordLatencyMs } from './latencyHistogram';
 
 
 // ---------------------------------------------------------------------------
@@ -108,6 +113,8 @@ value?: { fsPath?: string; path?: string; external?: string };
 /** A request entry in a session file */
 interface SessionRequestRaw {
 requestId?: string;
+/** VS Code per-request mode: carries the selected custom agent's name and file URI. */
+modeInfo?: unknown;
 timestamp?: number;
 timeSpentWaiting?: number;
 agent?: { id?: string };
@@ -445,6 +452,14 @@ interface ResponseItemRaw {
 
 export interface UsageAnalysisDeps {
 	warn: (msg: string) => void;
+	/**
+	 * Called when {@link analyzeSessionUsage} could not analyze the session at all (the read,
+	 * parse or adapter call threw) and is returning an empty analysis in its place. Distinct
+	 * from `warn`, which also carries non-fatal notices (a sub-step that failed, an unexpected
+	 * format) whose analysis is still valid. Lets a caller avoid caching an empty result from a
+	 * transient failure.
+	 */
+	onAnalysisError?: (error: unknown) => void;
 	ecosystems: IEcosystemAdapter[];
 	tokenEstimators: Record<string, TokenEstimator>;
 	modelPricing: { [key: string]: ModelPricing };
@@ -489,6 +504,73 @@ function recordToolOrMcpInvocation(
 		analysis.toolCalls.total++;
 		analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
 	}
+}
+
+/**
+ * Record the outcome of one completed tool call: it is counted as completed, an
+ * explicit failure flag increments the failure count, and an observed
+ * start→complete duration feeds the latency histogram. The only writer of the
+ * `completedBy*`, `failuresBy*` and `latencyBy*` maps, so every session format
+ * that gains a success flag or timestamps funnels through the same bookkeeping.
+ *
+ * `mcpServer` is the server name when the call is known to be an MCP call
+ * (Copilot CLI tags the start event; other formats derive it from the tool-name
+ * prefix). MCP calls are recorded per server under `mcpTools` only, mirroring how
+ * `recordToolOrMcpInvocation` keeps MCP calls out of `toolCalls`; everything else
+ * is recorded per tool under `toolCalls`.
+ *
+ * `success` is tri-state: `true` / `false` are explicit outcomes and count toward
+ * `completedBy*` (and `failuresBy*`); `undefined` means the log recorded a result
+ * but no verdict (older Copilot CLI schemas omit `success`), so the call stays out
+ * of the reliability denominator entirely and only its latency is kept.
+ * Unpaired or timestamp-less calls pass `undefined` for `durationMs`.
+ */
+export function recordToolOutcome(
+	analysis: SessionUsageAnalysis,
+	toolName: string,
+	mcpServer: string | undefined,
+	success: boolean | undefined,
+	durationMs: number | undefined,
+): void {
+	if (!toolName || isUnsafeObjectKey(toolName)) { return; }
+	const server = mcpServer && !isUnsafeObjectKey(mcpServer) ? mcpServer : undefined;
+	const maps = server ? _rtoMcpMaps(analysis.mcpTools) : _rtoToolMaps(analysis.toolCalls);
+	const key = server ?? toolName;
+	if (success !== undefined) {
+		const completed = maps.completed();
+		completed[key] = (completed[key] || 0) + 1;
+	}
+	if (success === false) {
+		const failures = maps.failures();
+		failures[key] = (failures[key] || 0) + 1;
+	}
+	if (durationMs !== undefined && Number.isFinite(durationMs) && durationMs >= 0) {
+		const latency = maps.latency();
+		recordLatencyMs(latency[key] ??= createLatencyHistogram(), durationMs);
+	}
+}
+
+/** Lazy accessors for the three outcome maps, so an absent map stays absent until it has a value. */
+type RtoOutcomeMaps = {
+	completed: () => { [key: string]: number };
+	failures: () => { [key: string]: number };
+	latency: () => { [key: string]: LatencyHistogram };
+};
+
+function _rtoToolMaps(tools: ToolCallUsage): RtoOutcomeMaps {
+	return {
+		completed: () => tools.completedByTool ??= {},
+		failures: () => tools.failuresByTool ??= {},
+		latency: () => tools.latencyByTool ??= {},
+	};
+}
+
+function _rtoMcpMaps(mcp: McpToolUsage): RtoOutcomeMaps {
+	return {
+		completed: () => mcp.completedByServer ??= {},
+		failures: () => mcp.failuresByServer ??= {},
+		latency: () => mcp.latencyByServer ??= {},
+	};
 }
 
 /** Timing metrics extracted from a single request */
@@ -978,6 +1060,7 @@ function processJsonSessionRequests(
 	analysis: SessionUsageAnalysis
 ): void {
 	if (!sessionContent.requests || !Array.isArray(sessionContent.requests)) { return; }
+	recordVsCodeRequestAgents(analysis, sessionContent.requests as SessionRequestRaw[], sessionContent.requests.map(() => sessionContent.mode?.id));
 	const taskTurns: TaskTurnSignal[] = [];
 	for (const requestRaw of sessionContent.requests) {
 		_pjsrProcessRequest(deps, requestRaw as SessionRequestRaw, sessionContent, analysis, taskTurns);
@@ -1305,6 +1388,8 @@ function _muaMergeModeUsage(period: UsageAnalysisPeriod, analysis: SessionUsageA
 	period.modeUsage.cliApp = (period.modeUsage.cliApp ?? 0) + (analysis.modeUsage.cliApp ?? 0);
 	period.modeUsage.claudeDesktop = (period.modeUsage.claudeDesktop ?? 0) + (analysis.modeUsage.claudeDesktop ?? 0);
 	period.modeUsage.claudeVsCode = (period.modeUsage.claudeVsCode ?? 0) + (analysis.modeUsage.claudeVsCode ?? 0);
+	mergeAutonomyUsage(period, analysis.autonomyUsage);
+	mergeAgentUsage(period, analysis.agentUsage);
 }
 
 /**
@@ -1337,6 +1422,7 @@ export function mergeUsageAnalysis(period: UsageAnalysisPeriod, analysis: Sessio
 			period.toolCalls.outputTokensByTool[tool] = (period.toolCalls.outputTokensByTool[tool] || 0) + tokens;
 		}
 	}
+	_muaMergeToolOutcomes(period, analysis);
 	_muaMergeModeUsage(period, analysis);
 	_muaMergeContextRefs(period, analysis);
 	period.mcpTools.total += analysis.mcpTools.total;
@@ -1358,6 +1444,50 @@ export function mergeUsageAnalysis(period: UsageAnalysisPeriod, analysis: Sessio
 	_muaMergeTaskCategories(period, analysis);
 	_muaMergeCorrections(period, analysis);
 	_muaMergeCacheBreakage(period, analysis);
+}
+
+/** Fold per-tool / per-MCP-server failure counts and latency histograms into the period (all optional, all additive). */
+function _muaMergeToolOutcomes(period: UsageAnalysisPeriod, analysis: SessionUsageAnalysis): void {
+	const { toolCalls, mcpTools } = analysis;
+	if (toolCalls.completedByTool) {
+		period.toolCalls.completedByTool = _muaSumCounts(period.toolCalls.completedByTool, toolCalls.completedByTool);
+	}
+	if (mcpTools.completedByServer) {
+		period.mcpTools.completedByServer = _muaSumCounts(period.mcpTools.completedByServer, mcpTools.completedByServer);
+	}
+	if (toolCalls.failuresByTool) {
+		period.toolCalls.failuresByTool = _muaSumCounts(period.toolCalls.failuresByTool, toolCalls.failuresByTool);
+	}
+	if (toolCalls.latencyByTool) {
+		period.toolCalls.latencyByTool = _muaMergeHistograms(period.toolCalls.latencyByTool, toolCalls.latencyByTool);
+	}
+	if (mcpTools.failuresByServer) {
+		period.mcpTools.failuresByServer = _muaSumCounts(period.mcpTools.failuresByServer, mcpTools.failuresByServer);
+	}
+	if (mcpTools.latencyByServer) {
+		period.mcpTools.latencyByServer = _muaMergeHistograms(period.mcpTools.latencyByServer, mcpTools.latencyByServer);
+	}
+}
+
+/** Add a per-key count map into an (optional) period map, creating it on first use. */
+function _muaSumCounts(into: { [key: string]: number } | undefined, from: { [key: string]: number }): { [key: string]: number } {
+	const target = into ?? {};
+	for (const [key, count] of Object.entries(from)) {
+		target[key] = (target[key] || 0) + count;
+	}
+	return target;
+}
+
+/** Merge a per-key latency histogram map into an (optional) period map, creating it on first use. */
+function _muaMergeHistograms(
+	into: { [key: string]: LatencyHistogram } | undefined,
+	from: { [key: string]: LatencyHistogram },
+): { [key: string]: LatencyHistogram } {
+	const target = into ?? {};
+	for (const [key, histogram] of Object.entries(from)) {
+		mergeLatencyHistogram(target[key] ??= createLatencyHistogram(), histogram);
+	}
+	return target;
 }
 
 /** Fold a session's cache-breakage result into the period's aggregated stats. */
@@ -2112,16 +2242,29 @@ export function createEmptySessionUsageAnalysis(): SessionUsageAnalysis {
 
 /** Mutable mode state passed through JSONL event handlers. */
 type AsuModeState = { sessionMode: string };
+/** A tool call seen on tool.execution_start and awaiting its tool.execution_complete. */
+type AsuPendingToolCall = {
+	toolName: string;
+	args: Record<string, string>;
+	effCall?: EfficiencyTurn['toolCalls'][number];
+	/** MCP server name tagged on the start event (`data.mcpServerName` / `data.mcpServer`), if any. */
+	mcpServerName?: string;
+	/** Epoch ms of the start event, or undefined when the event had no parseable timestamp. */
+	startedAt?: number;
+};
+
 /** Mutable CLI tracking state passed through JSONL event handlers. */
 type AsuCliState = {
 	defaultModel: string;
 	defaultEffort: string | null;
 	requestCount: number;
 	effortByRequest: { [effort: string]: number };
-	pendingToolCalls: Map<string, { toolName: string; args: Record<string, string>; effCall?: EfficiencyTurn['toolCalls'][number] }>;
+	pendingToolCalls: Map<string, AsuPendingToolCall>;
 	editedFilePaths: Set<string>;
 	/** Per-user-turn tool-call sequences for model efficiency metrics (issue #1649). */
 	efficiencyTurns: EfficiencyTurn[];
+	/** Which custom agent the user has selected (Copilot CLI `subagent.selected`). */
+	agent: CliAgentState;
 };
 
 /** Append a tool call to the current (or an implicit first) efficiency turn. */
@@ -2152,13 +2295,35 @@ function _asuReconstructAndProcessDeltaState(
 	analysis: SessionUsageAnalysis
 ): void {
 	let sessionState: DeltaSessionState = {};
+	let permissionLevel: string | undefined;
+	// permissionLevel (autopilot vs default) can be toggled mid-session, so remember the value in
+	// force when each request first appeared rather than only the final one.
+	const levelByRequest: (string | undefined)[] = [];
+	// Same for the selected agent (`inputState.mode.id`), used when a request carries no `modeInfo`.
+	let modeId: string | undefined;
+	const modeIdByRequest: (string | undefined)[] = [];
 	for (const line of lines) {
 		try {
 			const delta = JSON.parse(line);
 			sessionState = applyDelta(sessionState, delta) as DeltaSessionState;
+			permissionLevel = _asuReadPermissionLevel(delta) ?? permissionLevel;
+			modeId = readVsCodeModeId(delta) ?? modeId;
+			const requestCount = Array.isArray(sessionState.requests) ? sessionState.requests.length : 0;
+			while (levelByRequest.length < requestCount) { levelByRequest.push(permissionLevel); modeIdByRequest.push(modeId); }
 		} catch { /* skip invalid lines */ }
 	}
 	processDeltaSessionAnalysis(deps, sessionState, lines, analysis);
+	if (Array.isArray(sessionState.requests)) {
+		(sessionState.requests as SessionRequestRaw[]).forEach((req, i) => { if (req?.requestId) { recordAutonomy(analysis, levelByRequest[i]); } });
+		recordVsCodeRequestAgents(analysis, sessionState.requests as SessionRequestRaw[], modeIdByRequest);
+	}
+}
+
+/** Read a VS Code `inputState.permissionLevel` value from a kind-0 (header) or kind-1 (patch) delta event. */
+function _asuReadPermissionLevel(delta: any): string | undefined {
+	if (delta?.kind === 0 && typeof delta.v?.inputState?.permissionLevel === 'string') { return delta.v.inputState.permissionLevel; }
+	if (delta?.kind === 1 && delta.k?.[0] === 'inputState' && delta.k?.[1] === 'permissionLevel' && typeof delta.v === 'string') { return delta.v; }
+	return undefined;
 }
 
 /** Check if a selection range represents an actual selection (not just cursor position). */
@@ -2327,6 +2492,7 @@ function _asuProcessCliEvents(event: any, cliState: AsuCliState, analysis: Sessi
 	if (event.type === 'session.start' && event.data) { _asuHandleSessionStartEvent(event.data as Record<string, unknown>, cliState); }
 	if (event.type === 'session.model_change' && typeof event.data?.newModel === 'string') { cliState.defaultModel = event.data.newModel; }
 	_asuAccumulateAssistantText(event, cliState);
+	advanceCliAgentState(cliState.agent, analysis, event);
 	if (event.type === 'user.message') {
 		cliState.requestCount++;
 		const effort = typeof event.data?.reasoningEffort === 'string' ? event.data.reasoningEffort : cliState.defaultEffort;
@@ -2334,6 +2500,7 @@ function _asuProcessCliEvents(event: any, cliState: AsuCliState, analysis: Sessi
 		cliState.efficiencyTurns.push(_asuCreateEfficiencyTurn(event, cliState));
 		analyzeCliAttachments(event.data?.attachments, analysis.contextReferences);
 		_asuHandleUserMessageMode(jetBrainsMode, analysis);
+		recordAutonomy(analysis, event.data?.agentMode);
 		const skillName = extractInvokedSkillNameFromPlainText(event.data?.content);
 		if (skillName) { addSkillCall(analysis, skillName); }
 	}
@@ -2389,6 +2556,9 @@ function _asuCollectTaskTurnFromEvent(event: any, currentTurn: TaskTurnSignal | 
 
 function _asuHandleToolCallEvent(event: any, analysis: SessionUsageAnalysis, toolNameMap: { [key: string]: string }): void {
 	if (event.type !== 'tool.call' && event.type !== 'tool.result' && event.type !== 'tool.execution_start') { return; }
+	// Events tagged with an MCP server are counted by _asuHandleMcpToolEvent only — never
+	// here as well, otherwise one MCP call would land in both toolCalls and mcpTools.
+	if (_asuEventMcpServerName(event)) { return; }
 	const toolName = event.data?.toolName || event.toolName || 'unknown';
 	recordToolOrMcpInvocation(toolName, analysis, toolNameMap);
 	// Copilot CLI wraps autonomous skill invocations behind a generic "skill" tool call
@@ -2401,12 +2571,28 @@ function _asuHandleToolCallEvent(event: any, analysis: SessionUsageAnalysis, too
 	}
 }
 
-/** Handle mcp.tool.call events and events with data.mcpServer set. */
+/**
+ * MCP server name an event is tagged with, or undefined for a non-MCP event.
+ * Copilot CLI's `tool.execution_start` events for MCP tools carry `data.mcpServerName`
+ * (plus `data.mcpToolName`) rather than `data.mcpServer`, and their `toolName` is
+ * `<server>-<tool>` (e.g. `github-mcp-server-get_file_contents`), which `isMcpTool()`
+ * does not recognise — so the server tag is the only reliable MCP signal there.
+ */
+function _asuEventMcpServerName(event: any): string | undefined {
+	// First non-empty tag wins: a blank `mcpServer` must not mask a valid `mcpServerName`.
+	for (const candidate of [event?.data?.mcpServer, event?.data?.mcpServerName]) {
+		if (typeof candidate === 'string' && candidate.trim()) { return candidate.trim(); }
+	}
+	return undefined;
+}
+
+/** Handle mcp.tool.call events and events with data.mcpServer / data.mcpServerName set. */
  
 function _asuHandleMcpToolEvent(event: any, analysis: SessionUsageAnalysis): void {
-	if (event.type !== 'mcp.tool.call' && !event.data?.mcpServer) { return; }
+	const taggedServer = _asuEventMcpServerName(event);
+	if (event.type !== 'mcp.tool.call' && !taggedServer) { return; }
 	analysis.mcpTools.total++;
-	const serverName = event.data?.mcpServer || 'unknown';
+	const serverName = taggedServer || 'unknown';
 	const mcpToolName = event.data?.toolName || event.toolName || 'unknown';
 	analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
 	const normalizedMcpTool = normalizeMcpToolName(mcpToolName);
@@ -2436,12 +2622,31 @@ function _asuEnsureEditScope(analysis: SessionUsageAnalysis): void {
 }
 
 /** Handle tool.execution_start — stores pending tool call info for all tools (LOC + output token tracking). */
-function _asuHandleToolStart(event: any, cliState: AsuCliState): void {
+function _asuHandleToolStart(event: any, cliState: AsuCliState, toolNameMap: { [key: string]: string }): void {
 	const { toolCallId, toolName, arguments: args } = event.data ?? {};
 	if (toolCallId && toolName) {
 		const effCall = _asuAppendEfficiencyToolCall(cliState, toolName, args);
-		cliState.pendingToolCalls.set(toolCallId, { toolName, args: args ?? {}, effCall });
+		// An untagged start whose name isMcpTool() recognises (JetBrains, older Copilot CLI) was
+		// counted under mcpTools by recordToolOrMcpInvocation; derive the same server here so its
+		// completion is recorded against that server rather than under toolCalls.
+		const mcpServerName = _asuEventMcpServerName(event)
+			?? (isMcpTool(toolName) ? extractMcpServerName(toolName, toolNameMap) : undefined);
+		cliState.pendingToolCalls.set(toolCallId, { toolName, args: args ?? {}, mcpServerName, effCall, startedAt: _asuEventEpochMs(event) });
 	}
+}
+
+/** Parse an event's ISO timestamp to epoch ms, or undefined when absent/invalid. */
+function _asuEventEpochMs(event: any): number | undefined {
+	const ts = typeof event?.timestamp === 'string' ? Date.parse(event.timestamp) : NaN;
+	return Number.isNaN(ts) ? undefined : ts;
+}
+
+/** Observed start→complete duration for a pending call, or undefined when either timestamp is missing. */
+function _asuToolDurationMs(pending: AsuPendingToolCall, completeEvent: any): number | undefined {
+	const completedAt = _asuEventEpochMs(completeEvent);
+	if (pending.startedAt === undefined || completedAt === undefined) { return undefined; }
+	const delta = completedAt - pending.startedAt;
+	return delta >= 0 ? delta : undefined;
 }
 
 /** Extract LOC counts from a completed CLI tool call and update editScope. */
@@ -2462,16 +2667,36 @@ function _asuApplyToolLoc(pending: { toolName: string; args: Record<string, stri
 	analysis.editScope!.languageUsage[ext].linesRemoved += linesRemoved;
 }
 
-/** Extract plain text from a tool result content value (string or content-block array). */
-function _asuExtractToolResultText(content: unknown): string {
+/**
+ * Extract plain text from a tool result content value (string or content-block array).
+ * Shared by the Copilot CLI path and the Claude-family adapters, whose `tool_result`
+ * blocks use the same `string | {type:'text', text}[]` shape.
+ */
+export function extractToolResultText(content: unknown): string {
 	if (typeof content === 'string') { return content; }
 	if (Array.isArray(content)) {
+		// Claude / Copilot CLI blocks carry `text`; JetBrains result blocks carry `value`.
 		return content
-			.filter((b: any) => b?.type === 'text' && typeof b.text === 'string')
-			.map((b: any) => b.text as string)
+			.filter((b: any) => b?.type === 'text' && (typeof b.text === 'string' || typeof b.value === 'string'))
+			.map((b: any) => (typeof b.text === 'string' ? b.text : b.value) as string)
 			.join('');
 	}
 	return '';
+}
+
+/**
+ * Text of a `tool.execution_complete` result across the shapes the CLI family writes:
+ * Copilot CLI's full output lives in `result.detailedContent` (preferred, as the token
+ * estimator does) with `result.content` as the trimmed fallback; JetBrains puts typed
+ * blocks in `result.result[]` with a `value` field. Empty string when none apply.
+ */
+export function extractToolExecutionResultText(result: unknown): string {
+	if (!result || typeof result !== 'object') { return ''; }
+	const r = result as Record<string, unknown>;
+	if (typeof r.detailedContent === 'string' && r.detailedContent) { return r.detailedContent; }
+	const fromContent = extractToolResultText(r.content);
+	if (fromContent) { return fromContent; }
+	return extractToolResultText(r.result);
 }
 
 /** Handle tool.execution_complete — applies LOC tracking for edit/create and counts output tokens for all non-MCP tools. */
@@ -2481,11 +2706,16 @@ function _asuHandleToolComplete(event: any, cliState: AsuCliState, analysis: Ses
 	if (toolCallId) { cliState.pendingToolCalls.delete(toolCallId); }
 	if (!pending) { return; }
 	_asuMarkEffCallError(pending, success);
+	// Only an explicit boolean is an outcome; a missing flag (older schemas) keeps the call out of the
+	// reliability denominator while its latency is still recorded.
+	recordToolOutcome(analysis, pending.toolName, pending.mcpServerName, typeof success === 'boolean' ? success : undefined, _asuToolDurationMs(pending, event));
 	if (success && (pending.toolName === 'edit' || pending.toolName === 'create')) {
 		_asuApplyToolLoc(pending, cliState, analysis);
 	}
-	if (!result?.content || isMcpTool(pending.toolName)) { return; }
-	const resultText = _asuExtractToolResultText(result.content);
+	// Size result text only for calls with an explicit verdict: outputTokensByTool is divided by
+	// completedByTool (cost-vs-speed map), so a verdict-less result must not join the numerator either.
+	if (typeof success !== 'boolean' || pending.mcpServerName || isMcpTool(pending.toolName)) { return; }
+	const resultText = extractToolExecutionResultText(result);
 	if (!resultText) { return; }
 	const tokens = estimateTokensFromText(resultText);
 	if (!analysis.toolCalls.outputTokensByTool) { analysis.toolCalls.outputTokensByTool = {}; }
@@ -2493,13 +2723,13 @@ function _asuHandleToolComplete(event: any, cliState: AsuCliState, analysis: Ses
 }
 
 /** Mark the efficiency tool call of a completed call as failed (correction detection). */
-function _asuMarkEffCallError(pending: { toolName: string; args: Record<string, string>; effCall?: EfficiencyTurn['toolCalls'][number] }, success: unknown): void {
+function _asuMarkEffCallError(pending: AsuPendingToolCall, success: unknown): void {
 	if (success === false && pending.effCall) { pending.effCall.isError = true; }
 }
 
 /** Handle tool.execution_start / tool.execution_complete for CLI LOC tracking. */
-function _asuHandleCliLocEvent(event: any, cliState: AsuCliState, analysis: SessionUsageAnalysis): void {
-	if (event.type === 'tool.execution_start') { _asuHandleToolStart(event, cliState); }
+function _asuHandleCliLocEvent(event: any, cliState: AsuCliState, analysis: SessionUsageAnalysis, toolNameMap: { [key: string]: string }): void {
+	if (event.type === 'tool.execution_start') { _asuHandleToolStart(event, cliState, toolNameMap); }
 	else if (event.type === 'tool.execution_complete') { _asuHandleToolComplete(event, cliState, analysis); }
 }
 /** Finalize editScope file counts from accumulated CLI tool LOC state. */
@@ -2521,7 +2751,7 @@ function _asuProcessJsonlEvent(event: any, analysis: SessionUsageAnalysis, modeS
 	_asuHandleKind2Event(event, analysis, modeState, toolNameMap);
 	_asuProcessCliEvents(event, cliState, analysis, jetBrainsMode);
 	_asuHandleToolAndMcpEvents(event, analysis, toolNameMap);
-	_asuHandleCliLocEvent(event, cliState, analysis);
+	_asuHandleCliLocEvent(event, cliState, analysis, toolNameMap);
 }
 
 /** Store CLI thinking effort data from the accumulated CLI state. */
@@ -2545,7 +2775,7 @@ async function _asuProcessNonDeltaJsonl(
 	const modeState: AsuModeState = { sessionMode: 'ask' };
 	const cliState: AsuCliState = {
 		defaultModel: 'unknown', defaultEffort: null, requestCount: 0, effortByRequest: {},
-		pendingToolCalls: new Map(), editedFilePaths: new Set(), efficiencyTurns: [],
+		pendingToolCalls: new Map(), editedFilePaths: new Set(), efficiencyTurns: [], agent: createCliAgentState(),
 	};
 	const isJetBrains = isJetBrainsSessionPath(sessionFile);
 	const jetBrainsMode: JetBrainsMode | null = isJetBrains ? detectJetBrainsModeFromContent(fileContent) : null;
@@ -2683,6 +2913,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 		}
 	} catch (error) {
 		deps.warn(`Error analyzing session usage from ${sessionFile}: ${error}`);
+		deps.onAnalysisError?.(error);
 	}
 	if (!analysis.taskClassification) { analysis.taskClassification = createEmptyTaskClassificationResult(); }
 
@@ -2751,36 +2982,11 @@ type GmusJsonlState = {
 	defaultModel: string;
 	isDeltaBased: boolean;
 	sessionState: DeltaSessionState;
-	cliShutdownModelUsage: ModelUsage | null;
+	/** Folded session.shutdown modelMetrics; null until the first shutdown with modelMetrics. */
+	cliShutdown: CliShutdownAccumulator | null;
 	cliRealOutputByModel: { [model: string]: number } | null;
 	totalCliToolCalls: number;
 };
-
-type CliShutdownMetricsEntry = { usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number } };
-
-function _gmusApplyMetricEntry(modelName: string, usage: NonNullable<CliShutdownMetricsEntry['usage']>, dest: ModelUsage): void {
-	// Untrusted `modelName` key from a parsed modelMetrics JSON object (JSON.parse
-	// creates own "__proto__" properties, so Object.entries can yield it) — see protoGuard.ts.
-	if (isUnsafeObjectKey(modelName)) { return; }
-	if (!dest[modelName]) { dest[modelName] = { inputTokens: 0, outputTokens: 0, sessions: 0 }; }
-	dest[modelName].inputTokens += typeof usage.inputTokens === 'number' ? usage.inputTokens : 0;
-	dest[modelName].outputTokens += typeof usage.outputTokens === 'number' ? usage.outputTokens : 0;
-	const cacheRead = typeof usage.cacheReadTokens === 'number' ? usage.cacheReadTokens : 0;
-	const cacheWrite = typeof usage.cacheWriteTokens === 'number' ? usage.cacheWriteTokens : 0;
-	if (cacheRead > 0) { dest[modelName].cachedReadTokens = (dest[modelName].cachedReadTokens ?? 0) + cacheRead; }
-	if (cacheWrite > 0) { dest[modelName].cacheCreationTokens = (dest[modelName].cacheCreationTokens ?? 0) + cacheWrite; }
-}
-
-/** Accumulate per-model token data from a session.shutdown modelMetrics block. */
-function _gmusProcessCliShutdownMetrics(
-	modelMetrics: Record<string, CliShutdownMetricsEntry>,
-	cliShutdownModelUsage: ModelUsage
-): void {
-	for (const [modelName, metrics] of Object.entries(modelMetrics)) {
-		if (!metrics?.usage) { continue; }
-		_gmusApplyMetricEntry(modelName, metrics.usage, cliShutdownModelUsage);
-	}
-}
 
 /** Handle an assistant.message event, recording real or estimated output tokens. */
  
@@ -2794,12 +3000,16 @@ function _gmusHandleAssistantMessage(event: any, model: string, state: GmusJsonl
 	}
 }
 
-/** Handle a session.shutdown event, accumulating CLI shutdown model metrics into state. */
+/**
+ * Handle a session.shutdown event, folding its CLI model metrics into state.
+ * Shutdown metrics are cumulative across resume, so the latest snapshot replaces
+ * earlier ones rather than being summed (see cliShutdownMetrics.ts).
+ */
  
 function _gmusHandleShutdownEvent(event: any, state: GmusJsonlState): void {
 	if (!event.data?.modelMetrics) { return; }
-	if (!state.cliShutdownModelUsage) { state.cliShutdownModelUsage = {}; }
-	_gmusProcessCliShutdownMetrics(event.data.modelMetrics as Record<string, CliShutdownMetricsEntry>, state.cliShutdownModelUsage);
+	if (!state.cliShutdown) { state.cliShutdown = createCliShutdownAccumulator(); }
+	applyCliShutdownMetrics(state.cliShutdown, event.data.modelMetrics as Record<string, CliShutdownModelMetricsEntry>);
 }
 
 /** Dispatch a CLI-format JSONL event to the appropriate token accumulation handler. */
@@ -2869,7 +3079,7 @@ function _gmusProcessJsonlLine(event: any, state: GmusJsonlState, modelUsage: Mo
 function _gmusParseJsonlLines(lines: string[], modelUsage: ModelUsage, deps: GmusDeps): GmusJsonlState {
 	const state: GmusJsonlState = {
 		defaultModel: 'unknown', isDeltaBased: false, sessionState: {},
-		cliShutdownModelUsage: null, cliRealOutputByModel: null, totalCliToolCalls: 0
+		cliShutdown: null, cliRealOutputByModel: null, totalCliToolCalls: 0
 	};
 	for (const line of lines) {
 		if (!line.trim()) { continue; }
@@ -2954,7 +3164,7 @@ function _gmusBuildEstimatedCliUsage(state: GmusJsonlState, modelUsage: ModelUsa
 /** Process all JSONL lines and return resolved model usage, or null to use accumulated modelUsage. */
 function _gmusProcessJsonlContent(lines: string[], modelUsage: ModelUsage, deps: GmusDeps): ModelUsage | null {
 	const state = _gmusParseJsonlLines(lines, modelUsage, deps);
-	if (!state.isDeltaBased && state.cliShutdownModelUsage) { return state.cliShutdownModelUsage; }
+	if (!state.isDeltaBased && state.cliShutdown) { return getCliShutdownTotals(state.cliShutdown); }
 	if (!state.isDeltaBased && state.cliRealOutputByModel) { return _gmusBuildEstimatedCliUsage(state, modelUsage); }
 	_gmusProcessDeltaRequests(state, modelUsage, deps);
 	_gmusDeltaFallbackExtraction(lines, state, modelUsage, deps);

@@ -201,14 +201,34 @@
 .attr-bar-fill.neg { background: var(--vscode-charts-green, #4ade80); }
 .attr-bar-value { font-size: 0.88em; font-variant-numeric: tabular-nums; }
 
-.attr-shift-table { width: 100%; border-collapse: collapse; font-size: 0.88em; }
-.attr-shift-table th, .attr-shift-table td {
-	text-align: left;
-	padding: 5px 10px;
-	border-bottom: 1px solid var(--vscode-widget-border, rgba(128,128,128,0.2));
+/* Header sub-label (a period range under a column title), shared by the
+   model-mix and model comparison tables. Headers carrying one may wrap, since
+   the range is long and the shared header style is nowrap. */
+.th-sub {
+	display: block;
+	font-weight: 400;
+	font-size: 0.8em;
+	color: var(--vscode-descriptionForeground);
+	white-space: normal;
 }
-.attr-shift-table th { color: var(--vscode-descriptionForeground); font-weight: 600; }
-.attr-shift-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.data-table thead th.eff-th-wrap { white-space: normal; }
+
+/* Model-mix movement table: capped at a readable width, with a floor so a
+   narrow panel scrolls instead of squeezing the numbers. Column widths come
+   from the table's column definitions. */
+.attr-model-mix-root { max-width: 720px; }
+.data-table.attr-model-mix { min-width: 420px; }
+/* Only the name truncates — the full friendly and canonical ids stay reachable
+   through the cell's title and its screen-reader text. */
+.attr-model-mix .attr-shift-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attr-shift-sr {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+}
 .share-up { color: var(--vscode-charts-blue, #60a5fa); }
 .share-down { color: var(--vscode-descriptionForeground); }
 
@@ -235,9 +255,25 @@
 	border-left: 3px solid var(--vscode-textLink-foreground);
 	font-size: 0.85em;
 	line-height: 1.5;
+	/* Explanation left, action right; the button wraps under the text on narrow panels
+	   instead of squeezing the sentence into a column. */
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
 }
 
-/* ── Tools & Skills tab ── */
+.value-hint-text {
+	flex: 1 1 260px;
+	min-width: 0;
+}
+
+.value-hint vscode-button {
+	flex: 0 0 auto;
+}
+
+/* ── Skills tab ── */
 .skill-section-heading { margin: 20px 0 4px 0; font-size: 1.0em; }
 .skill-impact-grid {
 	display: grid;
@@ -287,6 +323,111 @@
 	font-size: 0.85em;
 	color: var(--vscode-descriptionForeground);
 }
+.model-controls-break {
+	flex-basis: 100%;
+	height: 0;
+	margin: -6px 0;
+}
+
+.model-combo {
+	position: relative;
+}
+
+.model-combo .combo-native {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	opacity: 0;
+	pointer-events: none;
+	overflow: hidden;
+}
+
+.combo-button {
+	cursor: pointer;
+	text-align: left;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.combo-button::after {
+	content: " ▾";
+	opacity: 0.7;
+}
+
+.combo-popup {
+	position: absolute;
+	z-index: 20;
+	top: calc(100% + 2px);
+	left: 0;
+	min-width: 100%;
+	width: max-content;
+	max-width: 420px;
+	background: var(--vscode-dropdown-background);
+	color: var(--vscode-dropdown-foreground);
+	border: 1px solid var(--vscode-focusBorder, rgb(128 128 128 / 0.5));
+	border-radius: 4px;
+	box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
+	padding: 6px;
+}
+
+.combo-popup[hidden],
+.combo-empty[hidden],
+.combo-item[hidden] {
+	display: none;
+}
+
+.combo-search {
+	width: 100%;
+	box-sizing: border-box;
+	margin-bottom: 4px;
+	padding: 3px 6px;
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	border: 1px solid var(--vscode-input-border, rgb(128 128 128 / 0.35));
+	border-radius: 3px;
+}
+
+.combo-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	max-height: 260px;
+	overflow-y: auto;
+}
+
+.combo-item {
+	padding: 3px 6px;
+	cursor: pointer;
+	border-radius: 3px;
+	font-size: 0.9em;
+}
+
+.combo-item.selected {
+	font-weight: 600;
+}
+
+.combo-item.active,
+.combo-item:hover {
+	background: var(--vscode-list-hoverBackground, rgb(128 128 128 / 0.2));
+}
+
+.combo-item.active {
+	background: var(--vscode-list-activeSelectionBackground, rgb(128 128 128 / 0.3));
+	color: var(--vscode-list-activeSelectionForeground, inherit);
+}
+
+.combo-item.disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.combo-empty {
+	padding: 4px 6px;
+	font-size: 0.85em;
+	opacity: 0.7;
+}
+
 .model-select {
 	background: var(--vscode-dropdown-background);
 	color: var(--vscode-dropdown-foreground);
@@ -326,11 +467,6 @@
 .model-verdict.improving { border-left: 4px solid var(--vscode-charts-green, #4ade80); }
 .model-verdict.declining { border-left: 4px solid var(--vscode-charts-blue, #60a5fa); }
 .model-verdict.tie { border-left: 4px solid var(--vscode-descriptionForeground); }
-.model-compare-table th .th-sub {
-	font-weight: 400;
-	font-size: 0.8em;
-	color: var(--vscode-descriptionForeground);
-}
 .model-row-muted { opacity: 0.55; }
 .model-win-chip {
 	display: inline-block;
@@ -406,4 +542,75 @@
 	color: var(--vscode-descriptionForeground);
 	font-size: 0.85em;
 	line-height: 1.45;
+}
+
+/* Scope toolbar — time presets, resolution, drill-down and tab-scoped filters */
+.scope-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: center;
+	margin: 4px 0 10px 0;
+	padding: 10px 12px;
+	border: 1px solid var(--vscode-widget-border, rgba(128,128,128,0.25));
+	border-radius: 6px;
+	background: var(--vscode-editorWidget-background);
+}
+.scope-presets { display: flex; gap: 2px; }
+.scope-preset {
+	background: none;
+	border: 1px solid var(--vscode-widget-border, rgba(128,128,128,0.35));
+	color: var(--vscode-foreground);
+	padding: 4px 10px;
+	font-family: inherit;
+	font-size: 0.85em;
+	cursor: pointer;
+}
+.scope-preset:first-child { border-radius: 4px 0 0 4px; }
+.scope-preset:last-child { border-radius: 0 4px 4px 0; }
+.scope-preset:hover { color: var(--vscode-textLink-foreground); }
+.scope-preset.active {
+	background: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border-color: var(--vscode-button-background);
+}
+.scope-preset:focus-visible,
+.scope-back:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+.scope-field {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 0.85em;
+	color: var(--vscode-descriptionForeground);
+}
+.scope-hint { font-size: 0.8em; color: var(--vscode-descriptionForeground); font-style: italic; }
+.scope-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 0.85em;
+	padding: 3px 8px;
+	border-radius: 12px;
+	background: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+}
+.scope-back {
+	background: none;
+	border: none;
+	color: inherit;
+	font-family: inherit;
+	font-size: 0.95em;
+	cursor: pointer;
+	text-decoration: underline;
+	padding: 0;
+}
+.scope-announce {
+	margin: 0 0 8px 0;
+	font-size: 0.8em;
+	color: var(--vscode-descriptionForeground);
+}
+.scope-caveat {
+	margin: 0 0 8px 0;
+	font-size: 0.82em;
+	color: var(--vscode-descriptionForeground);
 }

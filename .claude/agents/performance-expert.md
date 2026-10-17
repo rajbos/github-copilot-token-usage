@@ -24,8 +24,8 @@ A benchmark is a **regression** when the PR's median time is more than the confi
 threshold percent slower than the base branch:
 
 - **Default threshold: 20%.** This is deliberately tolerant — shared CI runners are noisy, and
-  a tighter bound produces false positives. It is set in one place,
-  `PERF_REGRESSION_THRESHOLD` in `.github/workflows/agent-review.yml`, and is easy to change.
+  a tighter bound produces false positives. Override it with the `PERF_REGRESSION_THRESHOLD`
+  environment variable when running `.github/workflows/scripts/perf_compare.py`.
 - **Noise floor:** benchmarks whose base median is under `PERF_MIN_ABS_MS` (default 1 ms) are
   ignored — at sub-millisecond scale, scheduler jitter dominates and a "200% slower" reading is
   meaningless.
@@ -78,7 +78,10 @@ is a valid outcome, not something to hide.
 
 ## Output contract
 
-You **must not modify any files**. Report findings using exactly this structure:
+You **must not modify any tracked repository files**. The benchmark JSON and the
+`perf_compare.py` report are scratch output: write them to a temporary directory outside the
+working tree (set `OUTPUT_FILE`, `PERF_BASE_FILE` and `PERF_HEAD_FILE` accordingly), never into
+the repo. Report findings using exactly this structure:
 
 ```markdown
 # Performance Review

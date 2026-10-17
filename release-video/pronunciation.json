@@ -1,0 +1,31 @@
+{
+	"$comment": [
+		"Respellings applied to the narration before it reaches the TTS engine,",
+		"and nowhere else — the captions keep the real spelling.",
+		"",
+		"Matching is whole-word and case-insensitive, longest key first, so a",
+		"longer phrase always beats a shorter one it contains.",
+		"",
+		"Add an entry the first time you hear a name said wrong. That is cheaper",
+		"than re-recording and it applies to every future release video.",
+		"Changing a value invalidates only the cached WAVs that contain it."
+	],
+	"replacements": {
+		"CLI": "C L I",
+		"TTFT": "T T F T",
+		"UI": "U I",
+		"JSONL": "J S O N L",
+		"API": "A P I",
+		"VRAM": "V RAM",
+		"MCP": "M C P",
+		"LLM": "L L M",
+		"BYOK": "B Y O K",
+		"JetBrains": "Jet Brains",
+		"OpenTelemetry": "Open Telemetry",
+		"OTel": "O Tel",
+		"repo": "repo",
+		"repos": "repos",
+		"AIU": "A I U",
+		"HydraFusion": "Hydra Fusion"
+	}
+}

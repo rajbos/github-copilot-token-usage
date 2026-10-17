@@ -19,6 +19,12 @@ Every MCP server and skill file contributes a description block to every prompt 
 
 Tool Curation gives you a concrete view of which tools are pulling their weight and which ones can be safely disabled or refined.
 
+## Browsing the tables
+
+MCP Servers, Built-in VS Code Tools and Unused Skills each show ten rows per page. Select a column heading to sort it; selecting the same heading again reverses the order. Sort and page choices remain in effect when the analysis refreshes while the panel stays open.
+
+The MCP server list initially hides servers with usage. Turn off **Hide servers with usage** to include them; this filter is applied before paging, and the count and page range reflect the filtered rows. Its default order keeps zero-usage servers first, then partly used servers, then fully used servers. Built-in tools and unused skills initially sort by estimated overhead, highest first. The built-in tools section remains collapsed until opened.
+
 ## What Is Analyzed
 
 ### Available Tools (discovered on disk)

@@ -32,7 +32,6 @@ import type {
 	CandidatePath,
 } from '../ecosystemAdapter';
 import { parseJetBrainsPartition, type JetBrainsParsedSession, type JetBrainsToolCall, type JetBrainsTurn } from '../jetbrains';
-import { normalizePath } from '../utils/pathUtils';
 import { pathExists } from '../utils/fsAsync';
 import { readTextFileWithSizeGuard } from '../utils/safeFileRead';
 

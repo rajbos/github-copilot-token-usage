@@ -173,7 +173,7 @@ function buildTaskListQuery(page: number, archived: boolean, since?: string): st
  * Exported (like `requestGitHubJsonTransport`) so that distinction can be asserted directly: the
  * injectable fetchers tests use return a `TaskPageResult` already, so they bypass this normalizer.
  */
-export function toTaskPageResult(result: { body?: any; statusCode?: number; error?: string }): TaskPageResult {
+export function toTaskPageResult(result: GitHubJsonResult): TaskPageResult {
 	if (result.error) { return { tasks: [], statusCode: result.statusCode, error: result.error }; }
 	const parsed = result.body;
 	const tasks = Array.isArray(parsed?.tasks) ? parsed.tasks : (Array.isArray(parsed) ? parsed : undefined);
@@ -190,7 +190,7 @@ export function toTaskPageResult(result: { body?: any; statusCode?: number; erro
  * call, for as long as the task's `updated_at` holds still. A task genuinely without cloud sessions
  * comes back as `{ sessions: [] }`.
  */
-export function toTaskDetailResult(result: { body?: any; statusCode?: number; error?: string }): TaskDetailResult {
+export function toTaskDetailResult(result: GitHubJsonResult): TaskDetailResult {
 	if (result.error) { return { statusCode: result.statusCode, error: result.error }; }
 	if (!Array.isArray(result.body?.sessions)) { return { statusCode: result.statusCode, error: 'Unexpected response format' }; }
 	return { sessions: result.body.sessions, statusCode: result.statusCode };
@@ -611,14 +611,21 @@ export interface AgentSessionsCollection extends AgentSessionsResult {
 	listingComplete: boolean;
 }
 
+/** The fields of a listed task this module reads for ordering and cache validation. */
+interface RawAgentTask {
+	id?: string;
+	created_at?: unknown;
+	updated_at?: unknown;
+}
+
 /** Timestamp used to spend the detail budget on the most recently active tasks first. */
-function taskSortAt(task: any): number {
+function taskSortAt(task: RawAgentTask | null | undefined): number {
 	// Fall back to `created_at` whenever `updated_at` is missing *or* unparseable — a task with a
 	// malformed timestamp is uncacheable and so always needs a detail call, which makes losing its
 	// newest-first priority (and being dropped by the budget) the worst possible outcome for it.
-	const updated = Date.parse(task?.updated_at ?? '');
+	const updated = Date.parse(typeof task?.updated_at === 'string' ? task.updated_at : '');
 	if (Number.isFinite(updated)) { return updated; }
-	const created = Date.parse(task?.created_at ?? '');
+	const created = Date.parse(typeof task?.created_at === 'string' ? task.created_at : '');
 	return Number.isFinite(created) ? created : 0;
 }
 
@@ -627,7 +634,7 @@ function taskSortAt(task: any): number {
  * no usable timestamp is **uncacheable**: its detail is fetched every pass rather than reused on a
  * timestamp we cannot verify.
  */
-function taskUpdatedAt(task: any): string {
+function taskUpdatedAt(task: RawAgentTask | null | undefined): string {
 	return parseEntityTimestamp(task?.updated_at) ?? '';
 }
 
@@ -650,7 +657,7 @@ const MAX_TASK_LIST_PAGES = 5;
  * a cached aggregate matching the other would break the exact-timestamp reuse contract. That id is
  * recorded as conflicting and its candidate is made uncacheable.
  */
-function absorbListedTask(task: any, tasks: any[], seen: Map<string, string>, conflicting: Set<string>): void {
+function absorbListedTask(task: RawAgentTask, tasks: any[], seen: Map<string, string>, conflicting: Set<string>): void {
 	if (!task?.id) { return; }
 	const previous = seen.get(task.id);
 	if (previous === undefined) {
@@ -714,7 +721,7 @@ async function listAllTasks(
  * call, so leaving it on the older listing's position would make it lose the newest-first budget
  * to work that is genuinely older.
  */
-function contestCandidate(candidate: AgentTaskCandidate, task: any, contested: boolean): void {
+function contestCandidate(candidate: AgentTaskCandidate, task: RawAgentTask, contested: boolean): void {
 	if (!contested && taskUpdatedAt(task) === candidate.updatedAt) { return; }
 	candidate.updatedAt = '';
 	candidate.sortAt = Math.max(candidate.sortAt, taskSortAt(task));

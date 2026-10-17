@@ -1,6 +1,9 @@
 import './vscode-shim-register';
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 import { createMockExtensionContext } from './vscode-test-helpers';
 import { BlobUploadService, type BlobUploadSettings } from '../../src/backend/services/blobUploadService';
@@ -303,4 +306,133 @@ test('uploadSessionFiles does not update status when all uploads fail', async ()
 	assert.equal(result.success, false);
 	// Status should not be set since no files were uploaded
 	assert.equal(svc.getUploadStatus('m1'), undefined);
+});
+
+// ── editorType metadata ──────────────────────────────────────────────────
+
+test('uploadSessionFiles passes editorType to uploadFile when provided', async () => {
+	const svc = new BlobUploadService(() => {}, () => {}, makeContext());
+
+	(svc as any).getContainerClient = async () => ({});
+	const receivedEditorTypes: (string | undefined)[] = [];
+	(svc as any).uploadFile = async (_cc: any, _path: string, _machineId: string, _datasetId: string, _compress: boolean, editorType?: string) => {
+		receivedEditorTypes.push(editorType);
+	};
+
+	const editorMap = new Map<string, string>();
+	editorMap.set('/fake/vscode.json', 'VS Code');
+	editorMap.set('/fake/cli.jsonl', 'Copilot CLI');
+
+	await svc.uploadSessionFiles(
+		'teststorage',
+		enabledSettings,
+		{ getToken: async () => ({ token: 't', expiresOnTimestamp: 0 }) } as any,
+		['/fake/vscode.json', '/fake/cli.jsonl'],
+		'm1',
+		'ds1',
+		editorMap
+	);
+
+	assert.deepEqual(receivedEditorTypes, ['VS Code', 'Copilot CLI']);
+});
+
+test('uploadSessionFiles passes undefined editorType when map is not provided', async () => {
+	const svc = new BlobUploadService(() => {}, () => {}, makeContext());
+
+	(svc as any).getContainerClient = async () => ({});
+	const receivedEditorTypes: (string | undefined)[] = [];
+	(svc as any).uploadFile = async (_cc: any, _path: string, _machineId: string, _datasetId: string, _compress: boolean, editorType?: string) => {
+		receivedEditorTypes.push(editorType);
+	};
+
+	await svc.uploadSessionFiles(
+		'teststorage',
+		enabledSettings,
+		{ getToken: async () => ({ token: 't', expiresOnTimestamp: 0 }) } as any,
+		['/fake/a.json'],
+		'm1',
+		'ds1'
+	);
+
+	assert.deepEqual(receivedEditorTypes, [undefined]);
+});
+
+// ── uploadFile: Azure metadata integration ──────────────────────────────
+
+/** Helper: create a temp file and return its path + cleanup. */
+function makeTempSessionFile(content: string): { filePath: string; cleanup: () => void } {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blob-test-'));
+	const filePath = path.join(dir, 'session-test.json');
+	fs.writeFileSync(filePath, content, 'utf8');
+	return { filePath, cleanup: () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} } };
+}
+
+test('uploadFile writes editorType to blob metadata when provided', async () => {
+	const tmp = makeTempSessionFile('{"requests":[]}');
+	try {
+		const svc = new BlobUploadService(() => {}, () => {}, makeContext());
+
+		const uploadCalls: any[] = [];
+		const mockContainerClient = {
+			getBlockBlobClient: () => ({
+				upload: async (_data: any, _len: number, options: any) => {
+					uploadCalls.push(options);
+				}
+			})
+		};
+		(svc as any).getContainerClient = async () => mockContainerClient;
+
+		const editorMap = new Map<string, string>();
+		editorMap.set(tmp.filePath, 'VS Code');
+
+		const result = await svc.uploadSessionFiles(
+			'teststorage',
+			{ ...enabledSettings, compressFiles: false },
+			{ getToken: async () => ({ token: 't', expiresOnTimestamp: 0 }) } as any,
+			[tmp.filePath],
+			'm1',
+			'ds1',
+			editorMap
+		);
+
+		assert.equal(result.success, true);
+		assert.equal(uploadCalls.length, 1);
+		assert.equal(uploadCalls[0].metadata.editorType, 'VS Code');
+	} finally {
+		tmp.cleanup();
+	}
+});
+
+test('uploadFile omits editorType from blob metadata when not provided', async () => {
+	const tmp = makeTempSessionFile('{"requests":[]}');
+	try {
+		const svc = new BlobUploadService(() => {}, () => {}, makeContext());
+
+		const uploadCalls: any[] = [];
+		const mockContainerClient = {
+			getBlockBlobClient: () => ({
+				upload: async (_data: any, _len: number, options: any) => {
+					uploadCalls.push(options);
+				}
+			})
+		};
+		(svc as any).getContainerClient = async () => mockContainerClient;
+
+		const result = await svc.uploadSessionFiles(
+			'teststorage',
+			{ ...enabledSettings, compressFiles: false },
+			{ getToken: async () => ({ token: 't', expiresOnTimestamp: 0 }) } as any,
+			[tmp.filePath],
+			'm1',
+			'ds1'
+			// no editorTypeByFile
+		);
+
+		assert.equal(result.success, true);
+		assert.equal(uploadCalls.length, 1);
+		assert.equal(uploadCalls[0].metadata.editorType, undefined);
+		assert.equal(uploadCalls[0].metadata.originalFileName, 'session-test.json');
+	} finally {
+		tmp.cleanup();
+	}
 });

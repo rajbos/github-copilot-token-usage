@@ -70,19 +70,53 @@ function lineOfKey(content, key) {
   return match ? lineAt(content, match.index) : undefined;
 }
 
-/** Extract l10n.t('key' ...) / vscode.l10n.t('key' ...) keys referenced from TS source. */
+/**
+ * Every localization key referenced from source, across every root that uses one.
+ *
+ * Recognizes four call shapes, because the repo has four of them (see
+ * docs/adr/LOCALIZATION-ARCHITECTURE.md):
+ *   - `l10n.t('key')` / `vscode.l10n.t('key')` — the extension host
+ *   - `translate('key')` / `ctx.translate('key')` — pure modules handed a
+ *     `Translate`, e.g. insightsEngine.ts. Matching only `l10n.t(` left this
+ *     scanner blind to all 179 keys the insights catalog added.
+ *   - `localize('key')` / `localizeFormat('key')` — webview bundles
+ *
+ * Keys built by concatenation (`plural()` appending `.one`/`.other`, or a
+ * template literal with a computed suffix) are out of reach by construction —
+ * the same boundary the hardcoded-string ratchet has. Those are covered by the
+ * table-driven tests in vscode-extension/test/unit/l10n.test.ts instead.
+ */
 function findUsedKeysInSource() {
   const found = []; // { key, file, line }
-  const pattern = /\bl10n\.t\(\s*['"]([^'"]+)['"]/g;
-  for (const file of collectFiles(srcDir, ['.ts'])) {
-    if (file.endsWith('.test.ts')) { continue; }
-    const content = fs.readFileSync(file, 'utf8');
-    let match;
-    while ((match = pattern.exec(content)) !== null) {
-      found.push({ key: match[1], file, line: lineAt(content, match.index) });
+  // Each alternative ends at `(` so a bare identifier like `translated` cannot match.
+  const pattern = /(?:\bl10n\.t|(?:^|[^.\w])translate|\.translate|\blocalizeFormat|\blocalize)\(\s*['"]([^'"]+)['"]/g;
+  for (const root of sourceRoots()) {
+    for (const file of collectFiles(root, ['.ts'])) {
+      if (file.endsWith('.test.ts') || file.includes(`${path.sep}node_modules${path.sep}`)) { continue; }
+      const content = fs.readFileSync(file, 'utf8');
+      let match;
+      while ((match = pattern.exec(content)) !== null) {
+        found.push({ key: match[1], file, line: lineAt(content, match.index) });
+      }
     }
   }
   return found;
+}
+
+/**
+ * The source trees that may reference a localization key.
+ *
+ * Was `vscode-extension/src` alone, which meant a key used only from the
+ * shared `src/` folder read as unreferenced and a missing one went undetected.
+ * Roots that do not exist are skipped so this keeps working in partial
+ * checkouts.
+ */
+function sourceRoots() {
+  return [
+    srcDir,
+    path.join(repoRoot, 'src'),
+    path.join(repoRoot, 'desktop', 'src'),
+  ].filter((dir) => fs.existsSync(dir));
 }
 
 /** Extract %key% placeholders referenced from package.json (contribution point strings). */

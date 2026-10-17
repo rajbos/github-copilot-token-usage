@@ -22,18 +22,40 @@ object WebviewResources {
      * snippet produced by `JBCefJSQuery.inject("payload")` — calling it sends
      * the value of the `payload` variable to the Kotlin handler.
      */
-    fun buildHtml(view: String, hostBridgeInjectFunction: String, initialStatsJson: String? = null): String {
-        val shim = loadResource("/webview/vscode-shim.js")
+    fun buildHtml(
+        view: String,
+        hostBridgeInjectFunction: String,
+        initialStatsJson: String? = null,
+        // Injectable so unit tests can supply a fake classpath and locale without the IDE.
+        locale: java.util.Locale = java.util.Locale.getDefault(),
+        loader: (String) -> String? = ::loadResource,
+    ): String {
+        val shim = loader("/webview/vscode-shim.js")
             ?: "/* vscode-shim.js missing from plugin resources */"
-        val bundle = loadResource("/webview/$view.js")
+        val bundle = loader("/webview/$view.js")
             ?: "/* webview bundle $view.js missing from plugin resources */"
         val globalKey = viewToGlobalKey(view)
 
         // Escape JSON for safe inline <script> embedding:
         // "</script>" in a JSON value would prematurely close the tag.
         val safeInitialData = initialStatsJson
-            ?.replace("</", "<\\/")
+            ?.let(::escapeForInlineScript)
             ?: "undefined"
+
+        // The webview bundles localize themselves from `initialData.localization`.
+        // Only the VS Code extension used to supply that, so this plugin — which
+        // redistributes the very same bundles — rendered their built-in English
+        // fallback no matter what language the IDE was running in. The dictionary
+        // is staged next to the bundles by esbuild (see the localization sidecar
+        // block in vscode-extension/esbuild.js); we pick the one matching the IDE
+        // locale and complete the payload rather than rebuilding it in Kotlin.
+        //
+        // Written as a guarded assignment instead of being merged into the JSON so
+        // it is a no-op when there is no initial payload yet, rather than creating
+        // an empty object the bundle would mistake for real data.
+        val resolvedLocalization = resolveWebviewLocalization(locale, loader)
+        val localizationScript = buildLocalizationScript(globalKey, resolvedLocalization?.second)
+        val lang = htmlLang(resolvedLocalization?.first)
 
         // Bridge bootstrap:
         //   * defines window.chrome.webview.postMessage(...) which forwards
@@ -67,7 +89,7 @@ object WebviewResources {
 
         return """
             <!DOCTYPE html>
-            <html lang="en">
+            <html lang="$lang">
             <head>
                 <meta charset="UTF-8">
                 <style>
@@ -171,6 +193,7 @@ object WebviewResources {
                 <script>$bridgeBootstrap</script>
                 <script>$shim</script>
                 <script>window.$globalKey = $safeInitialData;</script>
+                <script>$localizationScript</script>
             </head>
             <body>
                 <div id="loading-overlay">
@@ -288,6 +311,99 @@ object WebviewResources {
         "maturity" -> "__INITIAL_MATURITY__"
         "fluency-level-viewer" -> "__INITIAL_FLUENCY_LEVEL_DATA__"
         else -> "__INITIAL_DETAILS__"
+    }
+
+    /**
+     * The webview string dictionary for the IDE's display language, as raw JSON.
+     *
+     * Tries the exact tag first, then falls back to the shipped Simplified
+     * Chinese bundle for any Simplified locale, then English.
+     *
+     * The exact-tag-then-bare-language lookup this replaced sent `zh-Hans` and
+     * `zh-Hans-CN` to English even though a `zh-cn` sidecar ships, because
+     * neither is a prefix of it (raised in review on #2138). Script is what
+     * decides, not region: `zh-SG` is Simplified and should get the bundle,
+     * while `zh-TW`, `zh-HK` and `zh-MO` are Traditional and must not — serving
+     * Traditional readers Simplified text is worse than serving them English.
+     *
+     * Mirrors `resolveLocaleId()` in vscode-extension/src/l10nCore.ts, which
+     * gets the same answer via `Intl.Locale.maximize()`. The JVM has no
+     * equivalent in `java.util.Locale`, so the rule is spelled out here rather
+     * than pulling ICU onto the classpath for one comparison.
+     *
+     * Returning English on a miss is deliberate: every locale file is complete
+     * (esbuild fills untranslated keys with their English text), so a partially
+     * populated dictionary can never reach a bundle.
+     */
+    internal fun loadWebviewLocalization(
+        ideLocale: java.util.Locale = java.util.Locale.getDefault(),
+        loader: (String) -> String? = ::loadResource,
+    ): String? = resolveWebviewLocalization(ideLocale, loader)?.second
+
+    /**
+     * The sidecar locale id that [loadWebviewLocalization] resolves to, paired with its
+     * JSON, or null when no sidecar ships. The id is what the document's `lang`
+     * attribute must declare: labelling zh-cn text as `en` makes screen readers use
+     * English pronunciation rules.
+     */
+    internal fun resolveWebviewLocalization(
+        ideLocale: java.util.Locale,
+        loader: (String) -> String?,
+    ): Pair<String, String>? {
+        fun load(id: String) = loader("/webview/localization.$id.json")?.let { id to it.trim() }
+        load(ideLocale.toLanguageTag().lowercase())?.let { return it }
+        if (isSimplifiedChinese(ideLocale)) {
+            load("zh-cn")?.let { return it }
+        }
+        return load("en")
+    }
+
+    /** HTML-escaped value for `<html lang>`: the resolved sidecar locale, else English. */
+    internal fun htmlLang(resolvedLocale: String?): String =
+        (resolvedLocale ?: "en")
+            .replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+
+    /**
+     * Makes JSON safe to embed in an inline `<script>`. Every `<` and `>` becomes a
+     * `<`/`>` escape, which JSON and JavaScript both read back as the same
+     * character inside a string. Escaping only a lowercase `</` is not enough: HTML
+     * end-tag matching is case-insensitive (`</SCRIPT>`), and `<!--` can also change
+     * how the parser treats the script. Mirrors the Visual Studio host.
+     */
+    internal fun escapeForInlineScript(json: String): String =
+        json.replace("<", "\\u003c").replace(">", "\\u003e")
+
+    /**
+     * The inline script that attaches [dictionary] to the `window.[globalKey]` payload,
+     * or a comment placeholder when the sidecar was missing (an unlocalized panel
+     * beats a broken one).
+     */
+    internal fun buildLocalizationScript(globalKey: String, dictionary: String?): String =
+        dictionary
+            ?.let {
+                """
+                (function () {
+                    var data = window.$globalKey;
+                    if (data && typeof data === 'object') { data.localization = ${escapeForInlineScript(it)}; }
+                })();
+                """.trimIndent()
+            }
+            ?: "/* webview localization dictionary missing from plugin resources */"
+
+    /**
+     * True for Chinese locales written in Simplified script.
+     *
+     * An explicit `Hans`/`Hant` script wins. With no script, the region decides:
+     * Taiwan, Hong Kong and Macau are Traditional, everything else Simplified —
+     * which is also what `Intl.Locale.maximize()` concludes.
+     */
+    private fun isSimplifiedChinese(locale: java.util.Locale): Boolean {
+        if (!locale.language.equals("zh", ignoreCase = true)) { return false }
+        return when {
+            locale.script.equals("Hans", ignoreCase = true) -> true
+            locale.script.equals("Hant", ignoreCase = true) -> false
+            else -> locale.country.uppercase() !in setOf("TW", "HK", "MO")
+        }
     }
 
     private fun loadResource(path: String): String? =

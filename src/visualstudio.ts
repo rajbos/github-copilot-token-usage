@@ -5,6 +5,11 @@
  * VS stores Copilot Chat sessions as MessagePack-encoded binary files inside each project's .vs folder:
  *   <project>\.vs\<solution>.<ext>\copilot-chat\<hash>\sessions\<uuid>
  *
+ * Chats started without a solution open live in VS's own AppData folder instead:
+ *   %LOCALAPPDATA%\Microsoft\VisualStudio\<version>\VSGitHubCopilot\copilot-chat\<hash>\sessions\<uuid>
+ * Same binary format — they must be matched too, otherwise they fall through to the
+ * generic JSON session reader and every consumer logs a parse failure (issue #2137).
+ *
  * Discovery: VS logs session paths to %LOCALAPPDATA%\Temp\VSGitHubCopilotLogs\*.chat.log
  * with entries: "[PersistedCopilotSessionRepository V] Updating session file '<path>'"
  * A supplemental filesystem scan covers sessions not yet referenced in log files
@@ -39,13 +44,21 @@ export class VisualStudioDataAccess {
 
 /**
  * Returns true if the path looks like a VS Copilot session file.
- * Detection: normalised path contains `/.vs/`, `/copilot-chat/`, and `/sessions/`.
+ * Detection: normalised path contains `/copilot-chat/` and `/sessions/`, under one of
+ * the three known session roots:
+ *   - `/.vs/`                           per-solution (`.vs/<solution>/copilot-chat/…`)
+ *   - `/vsgithubcopilot/copilot-chat/`  VS AppData, solution-less chats
+ *   - `/ssmsgithubcopilot/copilot-chat/` SSMS
+ * The two AppData roots are anchored directly against `copilot-chat` rather than matched
+ * as a loose substring, so an unrelated folder that merely happens to be named
+ * `VSGitHubCopilot` somewhere else in the tree cannot false-positive.
  */
 isVSSessionFile(filePath: string): boolean {
 	const n = normalizePathForComparison(filePath);
-	const isVS = n.includes('/.vs/') && n.includes('/copilot-chat/') && n.includes('/sessions/');
-	const isSsms = n.includes('/ssmsgithubcopilot/') && n.includes('/copilot-chat/') && n.includes('/sessions/');
-	return isVS || isSsms;
+	if (!n.includes('/copilot-chat/') || !n.includes('/sessions/')) { return false; }
+	return n.includes('/.vs/')
+		|| n.includes('/vsgithubcopilot/copilot-chat/')
+		|| n.includes('/ssmsgithubcopilot/copilot-chat/');
 }
 
 /**
@@ -75,11 +88,23 @@ return path.join(localAppData, 'Microsoft', 'SSMS');
 }
 
 /**
+ * Returns the Visual Studio AppData base directory holding solution-less Copilot chats.
+ * Pattern: %LOCALAPPDATA%\Microsoft\VisualStudio\<version>\VSGitHubCopilot\copilot-chat\<hash>\sessions\<uuid>
+ */
+getVsAppDataSessionsDir(): string {
+const localAppData = process.env.LOCALAPPDATA
+|| path.join(os.homedir(), 'AppData', 'Local');
+return path.join(localAppData, 'Microsoft', 'VisualStudio');
+}
+
+/**
  * Discover VS Copilot session files.
  * Primary: parse VS temp chat log files (fast).
  * Supplemental: filesystem scan of common development roots, to catch sessions
  * not yet referenced in logs (e.g. VS running but session not yet persisted to log,
  * or log files cleaned up by system temp cleaner).
+ * VS AppData: dedicated scan of %LOCALAPPDATA%\Microsoft\VisualStudio\ for VSGitHubCopilot
+ * sessions (chats started without a solution open, so no .vs folder exists).
  * SSMS: dedicated scan of %LOCALAPPDATA%\Microsoft\SSMS\ for SSMSGitHubCopilot sessions.
  */
 async discoverSessions(): Promise<string[]> {
@@ -88,6 +113,7 @@ const sessionFiles: string[] = [];
 
 await this._discoverFromLogs(seen, sessionFiles);
 await this._discoverFromFilesystem(seen, sessionFiles);
+await this._discoverFromVsAppData(seen, sessionFiles);
 await this._discoverFromSsmsAppData(seen, sessionFiles);
 
 return sessionFiles;
@@ -245,6 +271,27 @@ solutionDirs = await fs.promises.readdir(vsDir, { withFileTypes: true });
 for (const sol of solutionDirs) {
 if (!sol.isDirectory()) { continue; }
 await this._collectFromHashDirs(path.join(vsDir, sol.name, 'copilot-chat'), seen, results);
+}
+}
+
+/**
+ * Scan %LOCALAPPDATA%\Microsoft\VisualStudio\ for VSGitHubCopilot Copilot Chat sessions.
+ * Pattern: VisualStudio\<version>\VSGitHubCopilot\copilot-chat\<hash>\sessions\<uuid>
+ * These are chats started without a solution open, so they have no `.vs` folder.
+ * Visual Studio only runs on Windows — skip on other platforms.
+ */
+private async _discoverFromVsAppData(seen: Set<string>, results: string[]): Promise<void> {
+if (os.platform() !== 'win32') { return; }
+const vsDir = this.getVsAppDataSessionsDir();
+
+let versionDirs: fs.Dirent[];
+try {
+versionDirs = await fs.promises.readdir(vsDir, { withFileTypes: true });
+} catch { return; }
+
+for (const versionDir of versionDirs) {
+if (!versionDir.isDirectory()) { continue; }
+await this._collectFromHashDirs(path.join(vsDir, versionDir.name, 'VSGitHubCopilot', 'copilot-chat'), seen, results);
 }
 }
 

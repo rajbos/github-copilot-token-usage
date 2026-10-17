@@ -17,6 +17,7 @@ async function main() {
 	let closeDb;
 	try {
 		process.env.LOCAL_DATA_DIR = scratch;
+		process.env.NODE_ENV = 'test';
 		process.env.SESSION_SECRET = 'headless-fixture-session-key-not-a-real-secret';
 		process.env.CHART_JS_PATH = path.join(path.dirname(require.resolve('chart.js')), 'chart.umd.min.js');
 		delete process.env.ADMIN_GITHUB_LOGINS;
@@ -25,7 +26,7 @@ async function main() {
 			stdin: {
 				contents: `
 					export { createApp } from './src/app.ts';
-					export { upsertUser, upsertUpload, closeDb } from './src/db.ts';
+					export { getDb, upsertUser, upsertUpload, closeDb } from './src/db.ts';
 					export { encodeSession, makeClaims, COOKIE_NAME } from './src/session.ts';
 					export { serve } from '@hono/node-server';
 				`,
@@ -112,12 +113,34 @@ async function main() {
 				assert.ok(contents.includes('"You","4","100","0","100"'));
 			}
 		}
+		// A page wider than a phone screen is a layout bug: only tables scroll sideways, inside their card.
+		const assertFitsPhone = async label => {
+			// Charts resize a frame after the viewport does, so wait for the layout to settle before judging it.
+			await page.waitForFunction(() => document.documentElement.scrollWidth <= window.innerWidth, null, { timeout: 5000 }).catch(() => {});
+			const overflow = await page.evaluate(() => {
+				const widest = [...document.querySelectorAll('body *')]
+					.filter(el => !el.closest('.table-scroll') && el.getBoundingClientRect().right > window.innerWidth + 1)
+					.map(el => `${el.tagName.toLowerCase()}.${el.className}`).slice(0, 5);
+				return { scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth, widest };
+			});
+			assert.ok(overflow.scrollWidth <= overflow.innerWidth,
+				`${label} is ${overflow.scrollWidth}px wide on a ${overflow.innerWidth}px screen (${overflow.widest.join(', ')})`);
+		};
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.waitForFunction(() => document.documentElement.scrollWidth <= window.innerWidth);
 		await page.getByRole('link', { name: 'Your detailed dashboard', exact: true }).click();
 		await page.waitForURL('**/dashboard');
+		await assertFitsPhone('/dashboard');
+		await page.locator('details.card > summary').click();
+		assert.equal(await page.locator('.breakdown-table tbody tr').count(), 1);
+		await assertFitsPhone('/dashboard with the detailed breakdown open');
+		await page.setViewportSize({ width: 320, height: 640 });
+		await assertFitsPhone('/dashboard on a small phone');
 		await page.getByRole('link', { name: 'Team Insights', exact: true }).click();
 		await page.waitForURL('**/team');
+		await assertFitsPhone('/team on a small phone');
+		await page.setViewportSize({ width: 390, height: 844 });
+		await assertFitsPhone('/team');
 		await page.getByRole('link', { name: 'Sign out', exact: true }).click();
 		await page.waitForURL('**/dashboard');
 		await page.goto(`${baseUrl}/team`);
@@ -137,7 +160,64 @@ async function main() {
 			assert.equal(await plainPage.locator('#team-daily-numbers tbody tr').count(), days);
 			assertPrivate(await plainPage.content());
 		}
-		console.log('Team interactions passed: period navigation (with/without JS), chart modes, daily table, exports, mobile layout, own dashboard, sign-out, privacy.');
+		const boundary = fixture.upsertUser(78005, 'boundary-user', 'Boundary User', null);
+		fixture.upsertUpload(boundary.id, {
+			day: today, workspaceId: 'boundary-workspace', machineId: 'boundary-machine', model: 'boundary-model',
+			inputTokens: 999_949_999, outputTokens: 0, interactions: 1,
+		});
+		fixture.getDb().prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(boundary.id);
+		await context.addCookies([{
+			name: fixture.COOKIE_NAME, value: fixture.encodeSession(fixture.makeClaims(boundary.id)),
+			url: baseUrl, httpOnly: true, sameSite: 'Lax',
+		}]);
+		await page.goto(`${baseUrl}/dashboard`);
+		const personalChart = await page.evaluate(() => {
+			const chart = Chart.getChart(document.getElementById('trend-chart'));
+			const dataset = chart.data.datasets.find(item => item.label === 'boundary-model');
+			const value = dataset.data.at(-1);
+			return { value, tooltip: chart.options.plugins.tooltip.callbacks.label({ parsed: { y: value }, dataset }) };
+		});
+		assert.deepEqual(personalChart, { value: 999_949_999, tooltip: '  boundary-model: 999.9M tokens' });
+		await page.goto(`${baseUrl}/admin`);
+		const adminChart = await page.evaluate(() => {
+			const chart = Chart.getChart(document.getElementById('admin-trend-chart'));
+			const dataset = chart.data.datasets.find(item => item.label === 'boundary-user');
+			const value = dataset.data.at(-1);
+			return { value, tooltip: chart.options.plugins.tooltip.callbacks.label({ parsed: { y: value }, dataset }) };
+		});
+		assert.deepEqual(adminChart, { value: 999_949_999, tooltip: '  boundary-user: 999.9M tokens' });
+		await page.locator('#admin-mode-tabs [data-admin-mode="average"]').click();
+		assert.equal(await page.evaluate(() => Chart.getChart(document.getElementById('admin-trend-chart')).data.datasets[0].data.at(-1)), (999_949_999 + 1000) / 5);
+		await assertFitsPhone('/admin');
+		await page.goto(`${baseUrl}/dashboard`);
+		await assertFitsPhone('/dashboard as an admin');
+		await page.setViewportSize({ width: 320, height: 640 });
+		await assertFitsPhone('/dashboard as an admin on a small phone');
+		await page.goto(`${baseUrl}/admin`);
+		await assertFitsPhone('/admin on a small phone');
+		// Crossing the breakpoint after load (rotating a phone) must re-tune the charts, not only resize them.
+		const adminTicks = () => page.evaluate(() => Chart.getChart(document.getElementById('admin-trend-chart')).options.scales.x.ticks.maxTicksLimit);
+		assert.equal(await adminTicks(), 6);
+		await page.setViewportSize({ width: 1440, height: 1000 });
+		await page.waitForFunction(() => Chart.getChart(document.getElementById('admin-trend-chart')).options.scales.x.ticks.maxTicksLimit === 20);
+		await page.goto(`${baseUrl}/team`);
+		const teamChart = () => page.evaluate(() => {
+			const { x, y } = Chart.getChart(document.getElementById('team-trend-chart')).options.scales;
+			return { ticks: x.ticks.maxTicksLimit, title: y.title.display };
+		});
+		assert.deepEqual(await teamChart(), { ticks: 12, title: true });
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.waitForFunction(() => Chart.getChart(document.getElementById('team-trend-chart')).options.scales.x.ticks.maxTicksLimit === 6);
+		assert.deepEqual(await teamChart(), { ticks: 6, title: false });
+		await page.goto(`${baseUrl}/dashboard`);
+		await page.waitForFunction(() => Chart.getChart(document.getElementById('trend-chart')).options.scales.x.ticks.maxTicksLimit === 6);
+		await page.setViewportSize({ width: 1440, height: 1000 });
+		await page.waitForFunction(() => {
+			const { x, y } = Chart.getChart(document.getElementById('trend-chart')).options.scales;
+			return x.ticks.maxTicksLimit === 16 && y.title.display === true;
+		});
+		assert.deepEqual(errors, [], 'browser runtime errors');
+		console.log('Team interactions passed: period navigation (with/without JS), chart modes, daily table, exports, phone layout on every page, own dashboard, sign-out, privacy.');
 	} finally {
 		if (browser) await browser.close();
 		if (server) await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));

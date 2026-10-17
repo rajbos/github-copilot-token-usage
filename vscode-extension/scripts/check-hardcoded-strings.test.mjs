@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { looksProse, scanFile, hashLine, isLocalizationCall, isConsoleCall, newIndexesBeyondBaseline, violationLineHash, localizationHintForFile } from './check-hardcoded-strings.mjs';
+import { looksProse, scanFile, scanInsightCatalog, hashLine, isLocalizationCall, isConsoleCall, newIndexesBeyondBaseline, violationLineHash, localizationHintForFile } from './check-hardcoded-strings.mjs';
 
 // ── looksProse ───────────────────────────────────────────────────────────────
 
@@ -872,4 +872,78 @@ test('localizationHintForFile: points webview files at localize(), everything el
 	assert.match(localizationHintForFile('src/webview/usage/main.ts'), /localize\(\)/);
 	assert.match(localizationHintForFile('src/backend/configPanel.ts'), /t\(\)/);
 	assert.match(localizationHintForFile('src/loadingHtml.ts'), /t\(\)/);
+});
+
+// ── scanInsightCatalog (the INSIGHT_CATALOG rule added with issue #2081) ─────
+
+/** Wraps `entries` in a minimal INSIGHT_CATALOG so the scanner's scoping applies. */
+function withCatalog(entries, run) {
+	return withTempFile(`export const INSIGHT_CATALOG: InsightDefinition[] = [\n${entries}\n];\n`, run);
+}
+
+test('scanInsightCatalog: flags a hardcoded title', () => {
+	withCatalog(`	{ id: 'x', titleKey: 'insight.x.title', buildBody: (ctx) => ctx.translate('insight.x.body') },
+	{ id: 'y', title: 'Add copilot-instructions.md to your repos' },`, (filePath) => {
+		const violations = [];
+		scanInsightCatalog(filePath, new Set(), violations);
+		assert.equal(violations.length, 1);
+		assert.equal(violations[0].text, 'Add copilot-instructions.md to your repos');
+		assert.match(violations[0].reason, /not passed through translate/);
+	});
+});
+
+test('scanInsightCatalog: flags prose returned from buildBody, including template chunks', () => {
+	withCatalog("	{ id: 'x', buildBody: (ctx) => `You ran ${n} edit-mode interactions in the last 30 days.` },", (filePath) => {
+		const violations = [];
+		scanInsightCatalog(filePath, new Set(), violations);
+		// Both static chunks of the template are reportable prose.
+		assert.equal(violations.length, 2);
+		assert.equal(violations[0].text, 'You ran');
+		assert.equal(violations[1].text, 'edit-mode interactions in the last 30 days.');
+	});
+});
+
+test('scanInsightCatalog: does not flag localization keys or machine values', () => {
+	withCatalog(`	{
+		id: 'missing-instructions',
+		category: 'customization',
+		severity: 'opportunity',
+		titleKey: 'insight.missingInstructions.title',
+		buildBody: (ctx) => ctx.translate(plural('insight.missingInstructions.body', count), count),
+		actionLabelKey: 'insight.action.viewWorkspaceHealth',
+		actionCommand: 'aiEngineeringFluency.openHealthTab',
+		secondaryActionLabelKey: 'insight.action.askCopilotToFix',
+		secondaryActionCommand: 'aiEngineeringFluency.askCopilotAboutCorrections',
+	},`, (filePath) => {
+		const violations = [];
+		scanInsightCatalog(filePath, new Set(), violations);
+		assert.deepEqual(violations, []);
+	});
+});
+
+test('scanInsightCatalog: does not flag literals used in comparisons', () => {
+	// Session-log data values, not display text — `unusedTools.filter(t => t.source === 'skill')`.
+	withCatalog("	{ id: 'x', appliesTo: (ctx) => ctx.tools.filter(t => t.source === 'skill').length > 0 && ctx.tier !== 'default' },", (filePath) => {
+		const violations = [];
+		scanInsightCatalog(filePath, new Set(), violations);
+		assert.deepEqual(violations, []);
+	});
+});
+
+test('scanInsightCatalog: ignores prose outside INSIGHT_CATALOG', () => {
+	// The rest of insightsEngine.ts is scoring helpers and threshold constants
+	// with their own string data; only the catalog is user-facing.
+	withTempFile(`const SOMETHING_ELSE = 'This is a helper message, not an insight';\n`, (filePath) => {
+		const violations = [];
+		scanInsightCatalog(filePath, new Set(), violations);
+		assert.deepEqual(violations, []);
+	});
+});
+
+test('scanInsightCatalog: an inline i18n-exempt comment suppresses the finding', () => {
+	withCatalog("	{ id: 'x', title: 'Deliberately English' }, // i18n-exempt: fixture", (filePath) => {
+		const violations = [];
+		scanInsightCatalog(filePath, new Set(), violations);
+		assert.deepEqual(violations, []);
+	});
 });

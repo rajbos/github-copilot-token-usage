@@ -19,7 +19,6 @@
     "skipLibCheck": true,
     "paths": {
       "../src/*": ["../src/*"],
-      "vscode": ["../vscode-extension/node_modules/@types/vscode/index.d.ts"],
       "@msgpack/msgpack": ["./node_modules/@msgpack/msgpack/dist.esm/index.d.ts"]
     }
   },

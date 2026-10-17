@@ -389,7 +389,7 @@ function extractModelsFromContent(filePath, raw) {
 // ---------------------------------------------------------------------------
 
 function loadModelPricing(repoRoot) {
-  const p = path.join(repoRoot, 'vscode-extension', 'src', 'modelPricing.json');
+  const p = path.join(repoRoot, 'src', 'modelPricing.json');
   const raw = safeRead(p);
   if (!raw) { throw new Error(`Cannot read modelPricing.json at ${p}`); }
   const parsed = JSON.parse(raw);

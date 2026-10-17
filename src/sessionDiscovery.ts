@@ -15,10 +15,10 @@
  *   - A short-term TTL cache so rapid successive scans don't re-walk the FS.
  *   - Path-based deduplication so adapters that overlap (or future bug-fix
  *     additions) cannot double-count the same physical session file.
- *   - checkCopilotExtension() which uses the VS Code extension API and
- *     therefore stays attached to this discovery class.
+ *   - checkCopilotExtension() which reports Copilot extension status through
+ *     the injected `getExtensionStatus` dependency (supplied by the VS Code
+ *     extension; the CLI has no extension host and leaves it unset).
  */
-import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { IEcosystemAdapter } from './ecosystemAdapter';
@@ -33,7 +33,20 @@ export interface SessionDiscoveryDeps {
 	ecosystems: IEcosystemAdapter[];
 	windsurf?: WindsurfDataAccess;
 	sampleDataDirectoryOverride?: () => string | undefined;
+	/**
+	 * The user-configured `aiEngineeringFluency.sampleDataDirectory`, consulted when
+	 * `sampleDataDirectoryOverride` returns nothing. Supplied by the VS Code extension.
+	 */
+	getConfiguredSampleDataDirectory?: () => string | undefined;
+	/**
+	 * Looks up an installed editor extension by id (e.g. 'GitHub.copilot'). Supplied by the
+	 * VS Code extension; absent outside an extension host.
+	 */
+	getExtensionStatus?: (extensionId: string) => { isActive: boolean } | undefined;
 }
+
+/** What one discovery pass observed; published to the instance only if the pass is still current. */
+interface DiscoveryPassStatus { hadError: boolean }
 
 export class SessionDiscovery {
 	private deps: SessionDiscoveryDeps;
@@ -56,9 +69,21 @@ export class SessionDiscovery {
 	/** Number of session files found in the most recent discovery scan. */
 	get lastDiscoveryFilesCount(): number { return this._lastDiscoveryFilesCount; }
 
+	/**
+	 * The discovery pass currently running, if any. A pass takes 25–95 s on a machine with a large history, and
+	 * the result cache below is only filled when a pass *finishes*, so without this every view opened during
+	 * that time started its own full pass over all adapters — all competing for the same thread.
+	 */
+	private _inFlight: { promise: Promise<string[]>; batches: string[][]; subscribers: Set<(files: string[]) => void> } | undefined;
+	/** Bumped by clearCache() so a pass that was running across it does not repopulate the cache it just cleared. */
+	private _cacheGeneration = 0;
+
 	clearCache(): void {
 		this._sessionFilesCache = null;
 		this._sessionFilesCacheTime = 0;
+		this._cacheGeneration++;
+		// Callers after an explicit clear want a fresh pass; the running one still completes for those already on it.
+		this._inFlight = undefined;
 	}
 
 	/** Async replacement for fs.existsSync — does not block the event loop. */
@@ -123,8 +148,10 @@ export class SessionDiscovery {
 	}
 
 	checkCopilotExtension(): void {
-		const copilotExtension = vscode.extensions.getExtension('GitHub.copilot');
-		const copilotChatExtension = vscode.extensions.getExtension('GitHub.copilot-chat');
+		const getExtensionStatus = this.deps.getExtensionStatus;
+		if (!getExtensionStatus) { return; }
+		const copilotExtension = getExtensionStatus('GitHub.copilot');
+		const copilotChatExtension = getExtensionStatus('GitHub.copilot-chat');
 
 		if (!copilotExtension && !copilotChatExtension) {
 			this.deps.log('⚠️ GitHub Copilot extensions not found');
@@ -153,9 +180,9 @@ export class SessionDiscovery {
 		return this.getCopilotSessionFilesStreaming();
 	}
 
-	private async tryGetSampleDataFiles(now: number): Promise<string[] | undefined> {
+	private async tryGetSampleDataFiles(now: number, generation: number): Promise<string[] | undefined> {
 		const sampleDir = this.deps.sampleDataDirectoryOverride?.()
-			?? vscode.workspace.getConfiguration('aiEngineeringFluency').get<string>('sampleDataDirectory');
+			?? this.deps.getConfiguredSampleDataDirectory?.();
 		if (!sampleDir || sampleDir.trim().length === 0) { return undefined; }
 		const resolvedSampleDir = sampleDir.trim();
 		try {
@@ -167,9 +194,12 @@ export class SessionDiscovery {
 				.filter(f => f.endsWith('.json') || f.endsWith('.jsonl'))
 				.map(f => path.join(resolvedSampleDir, f));
 			this.deps.log(`📸 Sample data mode: using ${sampleFiles.length} file(s) from ${resolvedSampleDir}`);
-			this._sessionFilesCache = sampleFiles;
-			this._sessionFilesCacheTime = now;
-			this._lastDiscoveryFilesCount = sampleFiles.length;
+			// Like the adapter pass: a clearCache() that landed while this read was pending must not be undone by it.
+			if (generation === this._cacheGeneration) {
+				this._sessionFilesCache = sampleFiles;
+				this._sessionFilesCacheTime = now;
+				this._lastDiscoveryFilesCount = sampleFiles.length;
+			}
 			return sampleFiles;
 		} catch (err) {
 			this.deps.warn(`Error reading sample data directory: ${err}`);
@@ -194,7 +224,7 @@ export class SessionDiscovery {
 	}
 
 	/** Collect deduplicated Windsurf session files and add them to allDeduped. */
-	private async collectWindsurfFiles(seen: Set<string>, allDeduped: string[], onBatch?: (files: string[]) => void): Promise<void> {
+	private async collectWindsurfFiles(seen: Set<string>, allDeduped: string[], status: DiscoveryPassStatus, onBatch?: (files: string[]) => void): Promise<void> {
 		if (!this.deps.windsurf) { return; }
 		try {
 			const windsurfFiles = (await this.deps.windsurf.getWindsurfSessions()).map(session => session.file);
@@ -207,7 +237,7 @@ export class SessionDiscovery {
 			if (batch.length > 0) { allDeduped.push(...batch); if (onBatch) { onBatch(batch); } }
 		} catch (error) {
 			this.deps.warn(`Could not discover Windsurf sessions: ${error}`);
-			this._lastDiscoveryHadError = true;
+			status.hadError = true;
 		}
 	}
 
@@ -224,7 +254,7 @@ export class SessionDiscovery {
 	 * quickly. Awaiting each adapter's own promise independently lets fast
 	 * adapters' files start parsing immediately while slow ones keep running.
 	 */
-	private async discoverFromAdapters(onBatch?: (files: string[]) => void): Promise<string[]> {
+	private async discoverFromAdapters(status: DiscoveryPassStatus, onBatch?: (files: string[]) => void): Promise<string[]> {
 		const seen = new Set<string>();
 		const allDeduped: string[] = [];
 		const discoveryStartMs = Date.now();
@@ -240,11 +270,11 @@ export class SessionDiscovery {
 				},
 				error => {
 					this.deps.warn(`Could not discover ${eco.displayName} sessions: ${error}`);
-					this._lastDiscoveryHadError = true;
+					status.hadError = true;
 				}
 			)
 		);
-		await Promise.all([...adapterTasks, this.collectWindsurfFiles(seen, allDeduped, onBatch)]);
+		await Promise.all([...adapterTasks, this.collectWindsurfFiles(seen, allDeduped, status, onBatch)]);
 
 		const dupCount = totalRaw - allDeduped.length;
 		if (dupCount > 0) { this.deps.log(`🧹 Deduplicated ${dupCount} duplicate session path(s)`); }
@@ -265,22 +295,64 @@ export class SessionDiscovery {
 			if (onBatch) { onBatch(this._sessionFilesCache); }
 			return this._sessionFilesCache;
 		}
+		// Join a pass that is already running instead of starting a second one. Registered before any await so
+		// two callers in the same tick cannot both start one.
+		const running = this._inFlight;
+		if (running) {
+			this.deps.log('🔗 Joining the session-file discovery that is already running');
+			if (onBatch) {
+				// What it has found so far, isolated like live batches: a throwing late subscriber must not break
+				// the discovery result of the caller that joined (or stop later batches reaching it).
+				for (const batch of running.batches) {
+					try { onBatch(batch); } catch (error) { this.deps.warn(`A session-file discovery subscriber threw: ${error}`); }
+				}
+				running.subscribers.add(onBatch);
+			}
+			return running.promise;
+		}
+		const run: NonNullable<SessionDiscovery['_inFlight']> = { promise: undefined as unknown as Promise<string[]>, batches: [], subscribers: new Set() };
+		if (onBatch) { run.subscribers.add(onBatch); }
+		const emit = (files: string[]): void => {
+			run.batches.push(files);
+			for (const subscriber of run.subscribers) {
+				try { subscriber(files); } catch (error) { this.deps.warn(`A session-file discovery subscriber threw: ${error}`); }
+			}
+		};
+		const generation = this._cacheGeneration;
+		this._inFlight = run;
+		run.promise = this.runDiscovery(now, emit, generation).finally(() => {
+			if (this._inFlight === run) { this._inFlight = undefined; }
+		});
+		return run.promise;
+	}
+
+	private async runDiscovery(now: number, emit: (files: string[]) => void, generation: number): Promise<string[]> {
 		this._lastDiscoveryHadError = false;
 		this._lastDiscoveryFilesCount = 0;
-		const sampleFiles = await this.tryGetSampleDataFiles(now);
-		if (sampleFiles) { if (onBatch) { onBatch(sampleFiles); } return sampleFiles; }
+		const sampleFiles = await this.tryGetSampleDataFiles(now, generation);
+		if (sampleFiles) { emit(sampleFiles); return sampleFiles; }
 		const allDeduped: string[] = [];
+		// Local to this pass and published only if it is still the current generation: a pass that clearCache()
+		// detached must not leave its failures or its count on the status of the fresh pass that replaced it.
+		const status: DiscoveryPassStatus = { hadError: false };
+		const publish = (count: number): void => {
+			if (generation !== this._cacheGeneration) { return; }
+			this._lastDiscoveryHadError = status.hadError;
+			this._lastDiscoveryFilesCount = count;
+		};
 		try {
-			const files = await this.discoverFromAdapters(onBatch);
+			const files = await this.discoverFromAdapters(status, emit);
 			allDeduped.push(...files);
-			this._sessionFilesCache = allDeduped;
-			this._sessionFilesCacheTime = Date.now();
-			this._lastDiscoveryFilesCount = allDeduped.length;
+			if (generation === this._cacheGeneration) {
+				this._sessionFilesCache = allDeduped;
+				this._sessionFilesCacheTime = Date.now();
+			}
+			publish(allDeduped.length);
 			return allDeduped;
 		} catch (error) {
 			this.deps.error('Error getting session files:', error);
-			this._lastDiscoveryHadError = true;
-			this._lastDiscoveryFilesCount = allDeduped.length;
+			status.hadError = true;
+			publish(allDeduped.length);
 			return allDeduped;
 		}
 	}

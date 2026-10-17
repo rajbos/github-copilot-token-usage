@@ -99,7 +99,8 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 **Use this skill when:**
 - The CI step summary's "Code Duplication Analysis" report grows
 - A PR review notes duplicated / copy-pasted code
-- You want to DRY up the codebase (vscode-extension/src, shared src/, cli/src)
+- You want to DRY up the codebase (vscode-extension/src, shared src/, cli/src, sharing-server/src, desktop/src, release-video/src)
+- The CI `duplication-check` ratchet (`scripts/code-duplication-baseline.json`) can be lowered after a cleanup
 
 **Contents:**
 - Step-by-step workflow: list groups → pick one → baseline tests → extract helper → lint → re-run detector → build → commit → PR
@@ -115,7 +116,7 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 - Adding support for a new editor or AI coding tool
 - After modifying `getEditorSourceFromPath` in `cli/src/analysis.ts`
 - After modifying `getEditorTypeFromPath` in `src/workspaceHelpers.ts`
-- After updating `EDITOR_ICON_MAP` in `formatUtils.ts`
+- After updating `EDITOR_ICON_MAP` in `src/editorIcons.ts`
 - When JetBrains or another CLI-based consumer shows raw editor keys instead of friendly names
 
 **Contents:**
@@ -132,8 +133,9 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 - Routinely health-checking external references as part of a maintenance pass
 
 **Contents:**
-- `check-urls.js` — Node.js script that scans every `*.ts` file under `src/`, extracts unique URLs, and sends HTTP HEAD requests (retrying with GET on 4xx) with a 10-second timeout
-- Summary output marking each URL as ✅ OK, ⚠️ REDIRECT, or ❌ BROKEN; exits with code `1` when any URL is broken
+- `check-urls.js` — Node.js script that scans every `*.ts` file under `src/`, extracts unique URLs, skips (and reports) URLs whose host is localhost or a loopback/link-local/private address (also after DNS resolution), and sends HTTP HEAD requests (retrying with GET only on 403, 405 or 501) with a 10-second timeout
+- `check-urls.test.js` — unit tests (no network): `node --test .github/skills/check-urls/check-urls.test.js`
+- Summary output marking each URL as ✅ OK, ⚠️ REDIRECT, ⚠️ INSECURE (plain `http:`), ⏭️ SKIPPED (internal host), or ❌ BROKEN; exits with code `1` when any URL is broken
 - Guidance for fixing broken tech.hub.ms and code.visualstudio.com links
 
 ### scan-hardcoded-strings
@@ -148,7 +150,7 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 **Contents:**
 - `scan-hardcoded-strings.js` — dependency-free Node script that flags string/template literals in UI-rendering positions (`.textContent`/`.innerText`/`.innerHTML`/`.title`/`.placeholder` assignments, `aria-label`/`title`/`placeholder` HTML attributes, and text inside `<div>`/`<button>`/`<label>`/`<h1>`–`<h6>`/`<p>`/`<span>`/`<td>`/`<th>`/`<option>`/`<summary>`/`<caption>` tags)
 - `scan-hardcoded-strings.test.js` — unit tests for the detection helpers
-- Console and Markdown report output (`hardcoded-strings-report.md` at the repo root); always exits `0` — informational, not a CI gate
+- Console and Markdown report output (git-ignored `hardcoded-strings-report.md` at the repo root); always exits `0` — informational, not a CI gate
 
 ### validate-app-db-schema
 
@@ -231,24 +233,24 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 
 ### sync-host-views
 
-**Purpose**: Keep the Visual Studio and JetBrains webview views (screens) in sync with the VS Code views, while preserving the exact set of views each host ships. New VS Code views are detected and surfaced for a human decision — never auto-added.
+**Purpose**: Keep the Visual Studio, JetBrains and desktop-app webview views (screens) in sync with the VS Code views, while preserving the exact set of views each host ships. New VS Code views are detected and surfaced for a human decision — never auto-added.
 
 **Use this skill when:**
 - After building or updating the VS Code webviews (`vscode-extension/esbuild.js` `entryPoints`)
-- Before a Visual Studio or JetBrains release, to ensure their shipped screens are current
+- Before a Visual Studio, JetBrains or desktop release, to ensure their shipped screens are current
 - When you suspect VS Code added a screen a host is missing
-- After changing the host include lists (`AIEngineeringFluency.csproj`, `jetbrains-plugin/build.gradle.kts`)
+- After changing the host include lists (`AIEngineeringFluency.csproj`, `jetbrains-plugin/build.gradle.kts`, `desktop/esbuild.js` `WEBVIEW_BUNDLES` / `desktop/src/main.ts` `PANEL_MENU`)
 
 **Contents:**
-- `sync-host-views.js` — dependency-free Node.js detector that parses the canonical view set from `esbuild.js` and compares it to the Visual Studio (`csproj`) and JetBrains (`build.gradle.kts`) host include lists. Neither host commits webview bundle content to git — both copy it fresh from `dist/webview` at their own build time — so this only tracks view-LIST drift, not bundle content
-- Classifies each view as tracked / NEW (ask the user) / orphan
+- `sync-host-views.js` — dependency-free Node.js detector that parses the canonical view set from `esbuild.js` and compares it to the Visual Studio (`csproj`), JetBrains (`build.gradle.kts`) and desktop app (`WEBVIEW_BUNDLES` + `PANEL_MENU`) host lists. No host commits webview bundle content to git — each copies it fresh from `dist/webview` at its own build time — so this only tracks view-LIST drift, not bundle content. A desktop view counts as shipped only when it is in both of its lists
+- Classifies each view as tracked / NEW (ask the user) / orphan, plus desktop UNREACHABLE (bundled, not in the menu) / UNBUNDLED (in the menu, not bundled)
 - `--json` for CI
-- Exit codes: `0` in sync · `1` mechanical drift (an ORPHAN) · `2` config error · `3` NEW views (human decision required)
+- Exit codes: `0` in sync · `1` mechanical drift (an ORPHAN, or a desktop UNREACHABLE / UNBUNDLED view) · `2` config error · `3` NEW views (human decision required)
 - Workflow for the ask-before-adding procedure for new screens, including the navigation wiring needed in each host
 
 ### visual-view-diff
 
-**Purpose**: Render the extension's webview panels headlessly, screenshot them, and report which views changed visually against a baseline commit. Produces the images and a Markdown report only — publishing them (a PR comment, a job summary, an artifact) is deliberately a separate concern.
+**Purpose**: Render the extension's webview panels headlessly — each in its initial render and in every tab/mode declared as a `state` — screenshot them, and report which views changed visually against a baseline commit. Produces the images and a Markdown report only — publishing them is deliberately a separate concern; on pull requests the `ui-checks` job in `ci.yml` posts them as a comment with `gh pr comment --attach`.
 
 **Use this skill when:**
 - A change touches `vscode-extension/src/webview/**`, the shared webview CSS, or a `get*Html` method in `extension.ts`
@@ -261,7 +263,7 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 - `diff-screenshots.js` — per-pixel comparison producing diff images plus `report.md` / `report.json`
 - `lib/harness.js` — rebuilds each panel's HTML shell (`#root`, `window.__INITIAL_*__`, JSON config globals, the real bundle) around a committed fixture, with the `--vscode-*` theme tokens VS Code would normally inject
 - `fixtures/` — one JSON payload per view, using fixed timestamps so unchanged code renders byte-identical screenshots
-- Deliberately does **not** launch VS Code or the Extension Development Host, per "Never Launch a Real Editor/IDE Instance" in `.github/copilot-instructions.md` — it renders the real webview bundles instead
+- Deliberately does **not** launch VS Code or the Extension Development Host, per "Never Launch a Real Editor/IDE Instance" in `AGENTS.md` — it renders the real webview bundles instead
 - Requires Playwright + Chromium, found locally or globally rather than added as an extension dependency
 
 ### pr-risk-review
@@ -282,6 +284,20 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 
 **Runs in CI as:** [`.github/workflows/pr-risk-review.yml`](../workflows/pr-risk-review.yml) — gates on the PR author being a known repository contributor, drives this skill through the GitHub Copilot CLI, then applies a `risk: *` label and posts the comment. Advisory; it never blocks a merge.
 
+### pr-review-readiness
+
+**Purpose**: Determine whether GitHub's native automatic Copilot PR review (`copilot-pull-request-reviewer[bot]`) has finished for a PR's current head commit, so an agent doesn't act on stale or incomplete review state.
+
+**Use this skill when:**
+- Driving a PR to green and deciding whether "no new review comments" is a real signal or the review just hasn't posted yet
+- Handling a PR-activity webhook event that might race a fresh push against GitHub's automatic review
+- About to reply to or resolve a review thread and needing to confirm the review content is current, not for a stale commit
+
+**Contents:**
+- The two-check-run-families distinction: GitHub's native `copilot-pull-request-reviewer` check run (the one that gates this skill) vs. this repo's own CI-driven `Review risk` check run, which is unrelated
+- The exact state-machine algorithm using `get_reviews` plus check-run status — preferring the REST `commits/{sha}/check-runs` endpoint (SHA-scoped and able to verify the run's `app` identity) over GitHub's `pull_request_read` action's `get_check_runs` method (PR-scoped, and unable to verify that identity, so it fails closed when the distinction matters); the MCP identifier for that action is also client-specific — Claude Code, VS Code and Copilot CLI each spell it differently — so the skill gives raw REST/`gh api` equivalents throughout that work everywhere, including the `commit_id` cross-check that catches a completed-but-stale check run
+- Guidance to stand down and reschedule rather than poll tightly when a review is still queued or in progress
+
 ### whats-new-catalog
 
 **Purpose**: Keep the What's New release catalog (`vscode-extension/src/whatsNew/catalog.ts`) — the hand-written prose behind the What's New view and the one-a-day new-feature notifications — in step with what the extension actually ships.
@@ -298,6 +314,16 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 - Prints the surface inventory (every view and tab, ticked where the catalog names it), marks features that fall beyond the per-release announcement cap, and lists the CHANGELOG's `Unreleased` feature bullets — the raw material for a new entry
 - Exit codes: `0` consistent · `1` mechanical drift · `2` config error · `3` no entry for the current version (needs written prose)
 - The editorial guidance for writing an entry: user-facing prose rather than changelog shorthand, ordering by importance because the cap truncates, and never reusing a feature `id` (they are persisted per user to remember what has been announced)
+
+### create-issue
+
+**Purpose**: Describe how issues are created in this repo — guidance only, no scripts.
+
+**Use this skill when:**
+- Asked to create, file or write up an issue (feature, bug, tech debt)
+
+**Contents:**
+- Steps: clarify what/where with the user, investigate the codebase, define the places and approach to change, list tests to update, check for cross-surface gaps (e.g. data added to a VS Code view but not available in the shared modules/npm package), then file with `gh issue create`
 
 ## Using Agent Skills
 

@@ -52,6 +52,9 @@ jetbrains-plugin/.gradle/
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
 
+# Generated report from the scan-hardcoded-strings skill (never committed)
+hardcoded-strings-report.md
+
 # Terraform (local runs only — CI uses ephemeral runners and a remote backend,
 # but local bootstrap runs like sharing-server/infra/bootstrap leave these
 # behind; state files can contain plaintext secrets, never commit them)
@@ -62,17 +65,25 @@ jetbrains-plugin/.gradle/
 crash.log
 crash.*.log
 
-# Graphify output. manifest.json + cache/ ARE committed so a fresh clone or cloud
-# agent can run `graphify --update` from a warm cache instead of a full rescan.
-# Everything else (graph.json/html, GRAPH_REPORT.md, cost.json) is regenerable, and
-# .graphify_python/.graphify_root are absolute machine-specific paths — never commit those.
-graphify-out/*
-!graphify-out/manifest.json
-!graphify-out/cache/
-!graphify-out/cache/**
+# Graphify default output dir. Nothing in it is committed: CI builds the agent graph
+# into .graphify-agent/ (below), so a local graphify-out/ is only ever a personal cache.
+graphify-out/
 
 # Stray/misplaced graphify cache (wrong working directory on a past run)
 src/graphify-out/
+
+# Graphify graph built by copilot-setup-steps for the Copilot coding agent
+# (GRAPHIFY_OUT=.graphify-agent). Kept out of the default graphify-out/ so agents
+# do not mistake a stale local cache for the CI graph.
+.graphify-agent/
+
+# AI Engineering Fluency canvas (copilot-app/) writes its snapshot and refresh lock to
+# $COPILOT_HOME/extensions/ai-fluency/artifacts/, never into the repo. This is
+# the backstop so a copy run from a checkout can never commit personal usage data.
+copilot-app/**/artifacts/
+copilot-app/**/snapshot.json
+copilot-app/**/refresh.lock
+copilot-app/**/refresh.lock.*
 
 # Visual view-diff output (screenshots, diff images and reports produced by
 # .github/skills/visual-view-diff). Regenerable from any checkout — the fixtures
@@ -83,14 +94,30 @@ visual-output/
 # comment). Regenerated on every run by collect-changeset.js — never committed.
 pr-risk/
 
-# Generated cloud-agent session cache from copilot-setup-steps; contains only
-# ephemeral fetched timestamps/counts and is recreated on demand.
-usage-data/agent-sessions.json
+# Data hydrated into the workspace by copilot-setup-steps (session-logs/ from
+# Azure Blob, usage-data/ incl. agent-sessions.json and its cache files). Generated
+# output, recreated on demand — never committed.
+session-logs/
+usage-data/
 
-# Scratch directories the unit tests create next to the extension when a fixture
-# is not cleaned up (isolated temp dirs named after the suite that made them).
-# They are pure test debris and must never be committed.
-vscode-extension/ctt-*/
+# Throwaway fixture directories created by the vscode-extension unit suite.
+# The tests create these under os.tmpdir(), or under .test-fixtures/ where the
+# subject refuses to read out of the temp directory, and clean them up (see
+# vscode-extension/test/unit/tmpFixtureDirs.ts). These patterns are the backstop
+# for a run that crashed or was interrupted before cleanup, so a stray one can
+# never be swept into a commit by `git add -A`.
+vscode-extension/.test-fixtures/
+vscode-extension/claude-test-*/
+vscode-extension/sync-test-*/
+vscode-extension/cowork-test-*/
+vscode-extension/cliapp-split-*/
+vscode-extension/contract-fixture-*/
+vscode-extension/ctt-cache-*/
+vscode-extension/ctt-dev-cleanup-*/
+vscode-extension/ctt-lock-test-*/
+vscode-extension/ctt-rollups-*/
+vscode-extension/ctt-snapshot-*/
+vscode-extension/ctt-snapshot-test-*/
 vscode-extension/pi-test-*/
 vscode-extension/pi-discover-*/
-vscode-extension/contract-fixture-*/
+vscode-extension/ctt-otel-test-*/

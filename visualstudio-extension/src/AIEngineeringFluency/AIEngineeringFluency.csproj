@@ -178,6 +178,14 @@
       <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\toolNames.json" />
       <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\automaticTools.json" />
       <!--
+        Resolved webview string dictionaries, one per shipped locale. The bundles only
+        localize themselves if the host puts one in the panel payload, and this extension
+        is C# so it cannot build one from package.nls*.json itself. Without these, the
+        reused bundles render their built-in English fallback whatever language VS is in.
+      -->
+      <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\localization.en.json" />
+      <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\localization.zh-cn.json" />
+      <!--
         The Scoring Guide (fluency-level-viewer) reads its rubric straight from the shared
         source JSON; unlike the four above it is not needed by the VS Code webviews at
         runtime, so esbuild does not stage it in dist/webview/ and we copy it from src/.
@@ -293,6 +301,14 @@
     See the "Why BeforeTargets=GetVsixSourceItems" comment on AddCliBundleToVsix for why
     BeforeTargets="Build" alone is not enough for VSIX packaging either.
 
+    DependsOnTargets="CopyWebviewBundles" is load-bearing. CI evidence (visualstudio-build.yml,
+    run 38092730105): with webview\ empty, the solution build wrote AIEngineeringFluency.vsix
+    (CreateVsixContainer, via PrepareForRun) BEFORE CopyWebviewBundles ran (BeforeTargets="Build"
+    logged "Copied webview bundles" ~45s AFTER the VSIX was written), so GetVsixSourceItems saw
+    an empty webview\ and the VSIX shipped none of the 14 webview files with a green build.
+    Depending on the copy guarantees the files exist first; MSBuild runs a target once, so the
+    later BeforeTargets="Build" run is a no-op.
+
     Status: the committed webview\*.js/*.json fallback has been removed (see
     docs/adr/VS-WEBVIEW-BUNDLE-SOURCING.md) — this target is now the ONLY source of webview
     content in the VSIX. webview\ is populated solely by CopyWebviewBundles from a fresh
@@ -300,7 +316,7 @@
     missing. THE ACTUAL VSIX-PACKAGING BEHAVIOR OF THIS TARGET HAS NOT BEEN VERIFIED ON A
     REAL MSBUILD/WINDOWS BUILD — see the release gate in the ADR before shipping.
   -->
-  <Target Name="AddWebviewBundlesToVsix" BeforeTargets="GetVsixSourceItems">
+  <Target Name="AddWebviewBundlesToVsix" BeforeTargets="GetVsixSourceItems" DependsOnTargets="CopyWebviewBundles">
     <!-- Force files.json to regenerate so webview entries are included (see AddCliBundleToVsix above for why). -->
     <Delete Files="$(FileManifest)"
             Condition="Exists('$(MSBuildProjectDirectory)\webview\details.js') AND Exists('$(FileManifest)')" />
@@ -347,6 +363,14 @@
       </VSIXSourceItem>
       <VSIXSourceItem Include="$(MSBuildProjectDirectory)\webview\automaticTools.json"
                       Condition="Exists('$(MSBuildProjectDirectory)\webview\automaticTools.json')">
+        <VSIXSubPath>webview\</VSIXSubPath>
+      </VSIXSourceItem>
+      <VSIXSourceItem Include="$(MSBuildProjectDirectory)\webview\localization.en.json"
+                      Condition="Exists('$(MSBuildProjectDirectory)\webview\localization.en.json')">
+        <VSIXSubPath>webview\</VSIXSubPath>
+      </VSIXSourceItem>
+      <VSIXSourceItem Include="$(MSBuildProjectDirectory)\webview\localization.zh-cn.json"
+                      Condition="Exists('$(MSBuildProjectDirectory)\webview\localization.zh-cn.json')">
         <VSIXSubPath>webview\</VSIXSubPath>
       </VSIXSourceItem>
       <VSIXSourceItem Include="$(MSBuildProjectDirectory)\webview\fluencyLevelData.json"

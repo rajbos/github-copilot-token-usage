@@ -6,8 +6,8 @@ the base branch, one for the PR), computes the per-benchmark percentage change i
 median time, and flags any benchmark that is more than the configured threshold
 slower. The flag is deterministic — we do not ask a model to interpret timings.
 
-The output follows the same findings contract as the other review agents so the
-synthesize job can parse it.
+The output follows the same findings contract as the review agents under
+`.github/agents/`, so the performance-expert agent can report it as-is.
 
 Environment variables:
   PERF_BASE_FILE             Base-branch results JSON (default: perf-base.json).

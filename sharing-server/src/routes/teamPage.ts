@@ -82,11 +82,14 @@ ${stat('Your usage cohort', self.cohort ?? 'No activity')}
   .team-page td, .team-page th { font-variant-numeric: tabular-nums; }
   .team-page caption { text-align: left; padding: 8px 0; color: var(--team-muted); }
   .team-page a:not(.tab):not(.btn) { color: var(--team-accent); }
-  .header { flex-wrap: wrap; }
   .team-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-  @media (max-width: 480px) {
-    .team-page .tabs { flex-wrap: wrap; }
-    .team-page .tab { padding: 5px 10px; }
+  @media (max-width: 720px) {
+    .team-value { font-size: 1.05rem !important; }
+    .team-actions .btn { flex: 1 1 0; padding: 8px 12px; }
+    .team-page .card-header > a { display: inline-flex; align-items: center; min-height: 40px; }
+  }
+  @media (max-width: 350px) {
+    .team-value { font-size: 0.92rem !important; }
   }
 </style>
 <main class="content team-page">
@@ -141,7 +144,7 @@ ${stat('Your usage cohort', self.cohort ?? 'No activity')}
     <p id="team-chart-unavailable" class="team-muted" hidden>The chart is unavailable. All values remain available in Daily raw numbers below.</p>
     <details id="team-daily-numbers">
       <summary>Daily raw numbers</summary>
-      <div class="table-scroll"><table>
+      <div class="table-scroll"><table class="sticky-first">
         <caption>Exact team totals and your own tokens by UTC day</caption>
         <thead><tr><th scope="col">Day (UTC)</th><th scope="col">Input tokens</th><th scope="col">Output tokens</th><th scope="col">Total tokens</th><th scope="col">Interactions</th><th scope="col">Active uploaders</th><th scope="col">Your tokens</th></tr></thead>
         <tbody>${data.daily.map(day => `<tr><th scope="row">${day.day}</th><td>${exact(day.inputTokens)}</td><td>${exact(day.outputTokens)}</td><td>${exact(day.totalTokens)}</td><td>${exact(day.interactions)}</td><td>${day.activeUsers}</td><td>${exact(day.ownTokens)}</td></tr>`).join('')}</tbody>
@@ -158,7 +161,7 @@ ${stat('Your usage cohort', self.cohort ?? 'No activity')}
     </div>
     <p class="team-muted">Sorted by total tokens, highest first. Peer labels only identify rows in this result; they cannot be used to open another person's data.
       CSV contains this table; JSON also includes the team overview, comparisons, cohorts, and daily team/own totals.</p>
-    ${data.members.length ? `<div class="table-scroll"><table id="team-member-table">
+    ${data.members.length ? `<div class="table-scroll"><table id="team-member-table" class="sticky-first">
       <caption>Full token counts, not rounded K / M / B abbreviations. Derived averages are shown to two decimals and shares to one.</caption>
       <thead><tr><th scope="col">Member</th><th scope="col">Rank</th><th scope="col">Input tokens</th><th scope="col">Output tokens</th><th scope="col">Total tokens</th><th scope="col">Interactions</th><th scope="col">Days active</th><th scope="col">Tokens / active day</th><th scope="col">Team share</th><th scope="col">Cohort</th></tr></thead>
       <tbody>${rows}</tbody>
@@ -180,6 +183,8 @@ ${stat('Your usage cohort', self.cohort ?? 'No activity')}
   var own = style.getPropertyValue('--team-own').trim();
   var muted = style.getPropertyValue('--team-muted').trim();
   var grid = style.getPropertyValue('--team-grid').trim();
+  var narrowQuery = window.matchMedia('(max-width: 720px)');
+  var narrow = narrowQuery.matches;
   var chart = new Chart(document.getElementById('team-trend-chart'), {
     type: 'line',
     data: {
@@ -192,14 +197,21 @@ ${stat('Your usage cohort', self.cohort ?? 'No activity')}
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       scales: {
-        x: { ticks: { color: muted, maxTicksLimit: 12 }, grid: { color: grid } },
-        y: { beginAtZero: true, ticks: { color: muted }, grid: { color: grid }, title: { display: true, text: 'Tokens', color: muted } }
+        x: { ticks: { color: muted, maxTicksLimit: narrow ? 6 : 12 }, grid: { color: grid } },
+        y: { beginAtZero: true, ticks: { color: muted }, grid: { color: grid }, title: { display: !narrow, text: 'Tokens', color: muted } }
       },
       plugins: {
         legend: { position: 'bottom', labels: { color: muted } },
         tooltip: { callbacks: { label: function(context) { return context.dataset.label + ': ' + context.parsed.y.toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' tokens'; } } }
       }
     }
+  });
+  // Re-evaluated when the width crosses the breakpoint, e.g. on rotating the phone.
+  narrowQuery.addEventListener('change', function(e) {
+    narrow = e.matches;
+    chart.options.scales.x.ticks.maxTicksLimit = narrow ? 6 : 12;
+    chart.options.scales.y.title.display = !narrow;
+    chart.update();
   });
   buttons.forEach(function(button) {
     button.addEventListener('click', function() {

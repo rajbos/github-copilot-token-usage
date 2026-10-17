@@ -71,6 +71,12 @@ export class OpenCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosyste
 		};
 	}
 
+	async getLastActivity(sessionFile: string): Promise<Date | null> {
+		const session = await this.readOpenCodeSessionData(sessionFile);
+		const ms = session?.time?.updated ?? session?.time?.created;
+		return typeof ms === 'number' ? new Date(ms) : null;
+	}
+
 	private async readOpenCodeSessionData(sessionFile: string): Promise<any> {
 		const sessionId = this.openCode.getOpenCodeSessionId(sessionFile);
 		if (this.openCode.isOpenCodeDbSession(sessionFile) && sessionId) {

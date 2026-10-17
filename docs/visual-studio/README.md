@@ -50,7 +50,15 @@ Visual Studio Copilot Chat stores session files in:
 <solution folder>\.vs\<solution name>.<ext>\copilot-chat\<hash>\sessions\<uuid>
 ```
 
-The extension automatically discovers all sessions under the `.vs` folder for each open solution.
+Chats started without a solution open have no `.vs` folder to live in, so Visual Studio
+keeps them in its own AppData folder instead:
+
+```
+%LOCALAPPDATA%\Microsoft\VisualStudio\<version>\VSGitHubCopilot\copilot-chat\<hash>\sessions\<uuid>
+```
+
+Both use the same MessagePack format. The extension automatically discovers sessions under
+the `.vs` folder for each open solution and under the `VSGitHubCopilot` AppData folder.
 
 ---
 

@@ -32,6 +32,14 @@
  * deliberate trade the contract checker makes, because the alternative is three
  * standing false positives on the chart view and a check nobody trusts.
  *
+ * Two things the click pass cannot reach: a `<select>`, which is changed rather
+ * than clicked, and a control that only exists after some other control was
+ * used. A view can therefore declare `scenarios` in views.config.json — scripted
+ * click/select steps replayed on a fresh page, each step asserting that the view
+ * still renders what the scenario says it must. That is how the Models tab's
+ * mode/window/model pickers are covered: every offered combination has to keep
+ * producing a comparison, not an empty side.
+ *
  * Controls are clicked in one pass over a single page, so a click that opens a
  * dialog can hide later controls. Those are reported as `skipped`, never as
  * failures — use `--isolate` to reload the page between clicks when a view's
@@ -39,7 +47,10 @@
  *
  * Usage:
  *   node scripts/interaction-smoke.js [--view details,chart] [--isolate]
- *                                     [--json] [--out <file>]
+ *                                     [--json] [--out <file>] [--concurrency <n>]
+ *
+ * `--concurrency` is how many views are exercised at once (default 4). The
+ * report is always in registry order.
  */
 
 const fs = require('fs');
@@ -50,9 +61,15 @@ const SKILL_DIR = path.join(__dirname, '..', '.github', 'skills', 'visual-view-d
 const REPO_ROOT = path.resolve(__dirname, '..');
 const DIST_DIR = path.join(REPO_ROOT, 'vscode-extension', 'dist', 'webview');
 
-const { buildPageHtml, loadFixture } = require(path.join(SKILL_DIR, 'lib', 'harness.js'));
-const { loadChromium } = require(path.join(SKILL_DIR, 'lib', 'browser.js'));
+const { buildPageHtml, loadFixture, resolveInside } = require(path.join(SKILL_DIR, 'lib', 'harness.js'));
+const { blockNetwork, loadChromium } = require(path.join(SKILL_DIR, 'lib', 'browser.js'));
 const { parseArgs, readConfig, selectViews } = require(path.join(SKILL_DIR, 'lib', 'config.js'));
+// The step vocabulary (`click`, `select`, `post`) is shared with the visual
+// diff's `states`, so a scenario and a screenshot state read alike. The
+// `select` picking stays inline here because this runner also has to tell a
+// legitimate no-op (nothing else to select) from a change.
+const { PICK_OPTION, applyStep, describeStep } = require(path.join(SKILL_DIR, 'lib', 'steps.js'));
+const { parseConcurrency, runPool } = require(path.join(SKILL_DIR, 'lib', 'pool.js'));
 
 const { collectHandledCommandsFromAst, widenHandledFromText, collectTsFiles } = require('./validate-webview-contract.js');
 
@@ -74,6 +91,11 @@ const INTERACTIVE_SELECTOR = [
   'a[href^="command:"]',
   'input[type="checkbox"]',
   'input[type="radio"]',
+  // A <select> is never "clicked" into a new value by Playwright's click — the
+  // native picker is not part of the page — so it needs the change-event path
+  // below. Without it, every dropdown in the extension (chart filters, the
+  // Efficiency scope toolbar) ships silently unvalidated.
+  'select',
 ].join(', ');
 
 /** Reads the extension-side handled-command set once, for the unhandled check. */
@@ -89,17 +111,32 @@ function loadHandledCommands() {
  * and returns a short description of each, so the driver can click by index
  * even after the DOM around it has shifted.
  */
-const TAG_CONTROLS = (selector) => {
-  const isVisible = (el) => {
+/**
+ * Installed on every page before its scripts run, so the control crawl and a
+ * scenario's `expect` agree on what "showing" means. An element that is in the
+ * DOM but `display:none`, `visibility:hidden`, or zero-sized is not showing —
+ * checking presence alone would let a scenario pass on a view that had gone
+ * blank.
+ */
+const INSTALL_VISIBILITY_HELPER = () => {
+  window.__SMOKE_IS_VISIBLE__ = (el) => {
     const rect = el.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) {
       return false;
     }
     const style = window.getComputedStyle(el);
-    return style.visibility !== 'hidden' && style.display !== 'none' && style.pointerEvents !== 'none';
+    return style.visibility !== 'hidden' && style.display !== 'none';
   };
+};
+
+const TAG_CONTROLS = (selector) => {
+  // Clickability is visibility plus pointer events: a control behind
+  // `pointer-events: none` is visible but cannot be clicked.
+  const isVisible = (el) =>
+    window.__SMOKE_IS_VISIBLE__(el) && window.getComputedStyle(el).pointerEvents !== 'none';
 
   const controls = [];
+  const seen = new Map();
   let index = 0;
   for (const el of Array.from(document.querySelectorAll(selector))) {
     if (el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true') {
@@ -108,8 +145,44 @@ const TAG_CONTROLS = (selector) => {
     if (!isVisible(el)) {
       continue;
     }
+    // For a <select>, find a value other than the current one so the driver can
+    // change it; a select with one usable option has nothing to exercise. This
+    // runs *before* the id is assigned, so a skipped select never leaves a
+    // stale `data-smoke-id` for the next control's index to collide with.
+    let selectValue = null;
+    if (el instanceof HTMLSelectElement) {
+      const option = Array.from(el.options).find((o) => !o.disabled && o.value !== el.value);
+      if (!option) {
+        continue;
+      }
+      selectValue = option.value;
+    }
     el.setAttribute('data-smoke-id', String(index));
     const label = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+    // Identity, not position: a control that re-renders its view can add or
+    // remove controls around this one, and matching the fresh enumeration by
+    // array index would then silently exercise a different control.
+    //
+    // Built from stable attributes first. A <select>'s textContent is the
+    // concatenation of all its option labels, so it changes whenever a rerender
+    // prunes or refills the options — including it would make the control
+    // unfindable on the next pass and silently skip it, the exact failure this
+    // identity exists to prevent. Text is therefore only a last resort, and
+    // never for a <select>.
+    const tag = el.tagName.toLowerCase();
+    const stable =
+      el.id ||
+      el.getAttribute('name') ||
+      el.getAttribute('aria-label') ||
+      el.getAttribute('data-tab') ||
+      el.getAttribute('data-action') ||
+      el.getAttribute('data-command') ||
+      el.getAttribute('data-range') ||
+      '';
+    const identity = [tag, stable, stable || tag === 'select' ? '' : label].join('|');
+    const occurrence = seen.get(identity) || 0;
+    seen.set(identity, occurrence + 1);
+    const key = `${identity}#${occurrence}`;
     // A segmented control's current option, a checked radio: re-clicking it is
     // meant to be inert, so a no-op there is not evidence of broken wiring.
     const alreadySelected =
@@ -120,11 +193,13 @@ const TAG_CONTROLS = (selector) => {
       (el instanceof HTMLInputElement && el.type === 'radio' && el.checked);
     controls.push({
       index,
-      tag: el.tagName.toLowerCase(),
+      tag,
       id: el.id || null,
       classes: el.className && typeof el.className === 'string' ? el.className.slice(0, 80) : null,
       label: label || null,
       alreadySelected,
+      selectValue,
+      key,
     });
     index++;
   }
@@ -191,6 +266,8 @@ async function openPage(browser, pageFile, view, defaults) {
   // A control that opens a real URL or a dialog must not hang or navigate the
   // harness away from the page under test.
   page.on('dialog', (dialog) => void dialog.dismiss().catch(() => {}));
+  await blockNetwork(page);
+  await page.addInitScript(INSTALL_VISIBILITY_HELPER);
   await page.goto(require('url').pathToFileURL(pageFile).href, { waitUntil: 'load' });
   await page.waitForTimeout(view.settleMs || defaults.settleMs || 1200);
   return page;
@@ -229,12 +306,20 @@ async function clickControl(page, control) {
 
   const locator = page.locator(`[data-smoke-id="${control.index}"]`);
   try {
-    await locator.click({ timeout: 1500, force: false, noWaitAfter: true });
+    if (control.tag === 'select') {
+      // selectOption fires input+change the way a user picking an option does;
+      // a plain click only opens the native picker, which the page never sees.
+      await locator.selectOption(control.selectValue, { timeout: 1500 });
+    } else {
+      await locator.click({ timeout: 1500, force: false, noWaitAfter: true });
+    }
   } catch (error) {
-    return { status: 'skipped', reason: `not clickable in this pass: ${String(error.message).split('\n')[0]}` };
+    return { status: 'skipped', reason: `not ${control.tag === 'select' ? 'selectable' : 'clickable'} in this pass: ${String(error.message).split('\n')[0]}` };
   }
 
-  await page.waitForTimeout(120);
+  // A select change usually triggers a full re-render; give it the same settle
+  // window a click gets before reading the signature back.
+  await page.waitForTimeout(control.tag === 'select' ? 250 : 120);
 
   const [posted, errors, after] = await Promise.all([
     page.evaluate(() => window.__HARNESS_POSTED_MESSAGES__.slice()),
@@ -254,8 +339,142 @@ async function clickControl(page, control) {
   return { status: 'dead', posted, domChanged: false, quiet };
 }
 
+/** Checks a step's optional `expect` (showing) and `expectHidden` (not showing); returns a reason or null. */
+async function checkStepVisibility(page, step) {
+  const isShowing = (selector) => page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    return Boolean(el && window.__SMOKE_IS_VISIBLE__(el));
+  }, selector);
+  if (step.expect && !(await isShowing(step.expect))) {
+    return `'${step.expect}' is not showing after this step`;
+  }
+  if (step.expectHidden && (await isShowing(step.expectHidden))) {
+    return `'${step.expectHidden}' is still showing after this step`;
+  }
+  return null;
+}
+
+/** Replays one declared scenario on a fresh page and reports what each step did. */
+async function runScenario(page, view, scenario, handledCommands) {
+  const steps = [];
+  const findings = [];
+  const fail = (control, detail) => findings.push({ view: view.id, kind: 'scenario-step-failed', control, detail });
+
+  for (const step of scenario.steps) {
+    const label = `${scenario.name}: ${describeStep(step)}`;
+    // A select with nothing else to offer changes nothing, but the step still
+    // has to clear the shared checks below — a broken single-option state is
+    // exactly what `expect` is there to catch.
+    let noop = false;
+    await waitForQuietDom(page);
+    const before = await page.evaluate(DOM_SIGNATURE);
+    await page.evaluate(() => {
+      window.__HARNESS_POSTED_MESSAGES__.length = 0;
+      window.__HARNESS_ERRORS__.length = 0;
+    });
+
+    if (step.click || step.post || step.type || step.press) {
+      const reason = await applyStep(page, step);
+      if (reason) {
+        fail(label, reason);
+        break;
+      }
+    } else {
+      const pick = await page.evaluate(PICK_OPTION, [step.select, step.value ?? null]);
+      if (pick.missing) {
+        fail(label, 'the scenario expects this control to be on screen, and it is not');
+        break;
+      }
+      if (pick.unavailable) {
+        fail(label, `option '${step.value}' is not offered by ${step.select}`);
+        break;
+      }
+      if (pick.noop) {
+        noop = true;
+      } else {
+        try {
+          await page.selectOption(step.select, pick.value, { timeout: 2000 });
+        } catch (error) {
+          fail(label, `could not change: ${String(error.message).split('\n')[0]}`);
+          break;
+        }
+      }
+    }
+
+    await page.waitForTimeout(120);
+    await waitForQuietDom(page);
+    const [errors, after, posted] = await Promise.all([
+      page.evaluate(() => window.__HARNESS_ERRORS__.slice()),
+      page.evaluate(DOM_SIGNATURE),
+      page.evaluate(() => window.__HARNESS_POSTED_MESSAGES__.slice()),
+    ]);
+    if (errors.length > 0) {
+      findings.push({ view: view.id, kind: 'scenario-step-threw', control: label, detail: errors.join(' | ').slice(0, 400) });
+      break;
+    }
+    // `expectPosted` is what the step must have sent to the host. A click on a button whose
+    // listener is gone changes no DOM and posts nothing, which the DOM signature alone would
+    // record as a harmless no-op; this is the assertion that catches it. The command must also
+    // have a host-side handler, the same rule the one-pass crawl applies.
+    if (step.expectPosted) {
+      const commands = posted.map((message) => (message && typeof message === 'object' ? message.command : undefined));
+      if (!commands.includes(step.expectPosted)) {
+        findings.push({
+          view: view.id,
+          kind: 'scenario-expected-post-missing',
+          control: label,
+          detail: `expected a '${step.expectPosted}' message, got ${commands.length ? commands.map(String).join(', ') : 'none'}`,
+        });
+        break;
+      }
+      if (handledCommands && !handledCommands.has(step.expectPosted)) {
+        findings.push({ view: view.id, kind: 'scenario-post-unhandled', control: label, detail: `'${step.expectPosted}' has no handler in the extension host` });
+        break;
+      }
+    }
+    // `expect` is what the view must still be showing after the step — the point
+    // of the scenario, not a bonus assertion: a picker that silently drops to an
+    // empty state is exactly the failure worth catching.
+    if (scenario.expect) {
+      const showing = await page.evaluate((sel) => {
+        const el = document.querySelector(sel);
+        return Boolean(el && window.__SMOKE_IS_VISIBLE__(el));
+      }, scenario.expect);
+      if (!showing) {
+        findings.push({
+          view: view.id,
+          kind: 'scenario-expectation-failed',
+          control: label,
+          detail: `'${scenario.expect}' is not showing after this step`,
+        });
+        break;
+      }
+    }
+    // A step's own `expect` / `expectHidden` assert what that step switched to,
+    // for toggles whose result does not hold after every other step.
+    const stepFinding = await checkStepVisibility(page, step);
+    if (stepFinding) {
+      findings.push({ view: view.id, kind: 'scenario-expectation-failed', control: label, detail: stepFinding });
+      break;
+    }
+    steps.push({ step: label, status: noop ? 'noop-single-option' : before === after ? 'no-dom-change' : 'ok' });
+  }
+
+  return { name: scenario.name, steps, findings };
+}
+
 async function smokeView({ browser, view, defaults, handledCommands, isolate }) {
-  const bundlePath = path.join(DIST_DIR, `${view.bundle}.js`);
+  // Registry paths are contained the same way render-views.js contains them:
+  // no absolute paths, `../` or symlinks out of the dist or fixtures directory,
+  // and no link between the repo root and either of those directories.
+  let bundlePath;
+  let fixturePath;
+  try {
+    bundlePath = resolveInside(DIST_DIR, `${view.bundle}.js`, 'bundle', REPO_ROOT);
+    fixturePath = resolveInside(path.join(SKILL_DIR, 'fixtures'), view.fixture, 'fixture', REPO_ROOT);
+  } catch (error) {
+    return { view: view.id, status: 'error', error: String(error && error.message || error), controls: [], findings: [] };
+  }
   if (!fs.existsSync(bundlePath)) {
     return {
       view: view.id,
@@ -265,7 +484,6 @@ async function smokeView({ browser, view, defaults, handledCommands, isolate }) 
       findings: [],
     };
   }
-  const fixturePath = path.join(SKILL_DIR, 'fixtures', view.fixture);
   if (!fs.existsSync(fixturePath)) {
     return { view: view.id, status: 'error', error: `Missing fixture ${view.fixture}`, controls: [], findings: [] };
   }
@@ -279,11 +497,26 @@ async function smokeView({ browser, view, defaults, handledCommands, isolate }) 
   const results = [];
   const findings = [];
 
-  for (const control of controls) {
+  // Re-tag before each interaction rather than trusting the first enumeration.
+  // A control that re-renders its view (a tab button, a filter `<select>`)
+  // replaces every tagged node, and the stale `data-smoke-id`s then make every
+  // later control report `skipped` — untested, while the run still exits 0.
+  // Re-tagging keeps the pass honest without `--isolate`'s page reload.
+  for (const original of controls) {
     if (isolate && results.length > 0) {
       await page.close();
       page = await openPage(browser, pageFile, view, defaults);
-      await page.evaluate(TAG_CONTROLS, INTERACTIVE_SELECTOR);
+    }
+    const current = await page.evaluate(TAG_CONTROLS, INTERACTIVE_SELECTOR);
+    // Find *this* control again by identity. Matching by array position would
+    // drift the moment an earlier interaction added or removed a control — e.g.
+    // switching the Efficiency resolution to Daily removes the drill picker, so
+    // every later control would shift up one and be exercised in place of the
+    // one actually intended.
+    const control = current.find((c) => c.key === original.key);
+    if (!control) {
+      results.push({ ...original, status: 'skipped', reason: 'no longer present after an earlier interaction' });
+      continue;
     }
 
     const outcome = await clickControl(page, control);
@@ -301,13 +534,15 @@ async function smokeView({ browser, view, defaults, handledCommands, isolate }) 
         view: view.id,
         kind: 'dead-control',
         control: where,
-        detail: 'clicking it posts no message to the host and changes nothing on screen',
+        detail: control.tag === 'select'
+          ? 'changing its value posts no message to the host and changes nothing on screen'
+          : 'clicking it posts no message to the host and changes nothing on screen',
       });
     }
     if (outcome.status === 'error') {
       findings.push({
         view: view.id,
-        kind: 'click-threw',
+        kind: control.tag === 'select' ? 'change-threw' : 'click-threw',
         control: where,
         detail: outcome.errors.join(' | ').slice(0, 400),
       });
@@ -326,6 +561,18 @@ async function smokeView({ browser, view, defaults, handledCommands, isolate }) 
   }
 
   await page.close();
+
+  // Scenarios get their own page each, so a scripted flow never inherits the
+  // state the click pass left behind.
+  const scenarios = [];
+  for (const scenario of view.scenarios || []) {
+    const scenarioPage = await openPage(browser, pageFile, view, defaults);
+    const outcome = await runScenario(scenarioPage, view, scenario, handledCommands);
+    await scenarioPage.close();
+    scenarios.push({ name: outcome.name, steps: outcome.steps });
+    findings.push(...outcome.findings);
+  }
+
   fs.rmSync(tmpDir, { recursive: true, force: true });
 
   return {
@@ -333,6 +580,7 @@ async function smokeView({ browser, view, defaults, handledCommands, isolate }) 
     status: 'ok',
     renderErrors,
     controls: results,
+    scenarios,
     findings,
   };
 }
@@ -351,19 +599,19 @@ async function main() {
   const chromium = loadChromium();
   const browser = await chromium.launch({ headless: true });
 
-  const reports = [];
+  // Views run side by side, each on its own pages; the clicks and scenarios
+  // *within* a view stay sequential because they share that view's page.
+  let reports;
   try {
-    for (const view of views) {
-      reports.push(
-        await smokeView({
-          browser,
-          view,
-          defaults: config.defaults,
-          handledCommands,
-          isolate: Boolean(args.isolate),
-        })
-      );
-    }
+    reports = await runPool(views, parseConcurrency(args.concurrency), (view) =>
+      smokeView({
+        browser,
+        view,
+        defaults: config.defaults,
+        handledCommands,
+        isolate: Boolean(args.isolate),
+      })
+    );
   } finally {
     await browser.close();
   }
@@ -397,6 +645,9 @@ async function main() {
       .join(', ');
     const mark = report.findings.length === 0 ? '✅' : '❌';
     console.log(`   ${report.view.padEnd(22)} ${mark} ${report.controls.length} control(s): ${summary || 'none found'}`);
+    for (const scenario of report.scenarios || []) {
+      console.log(`   ${' '.repeat(22)}    ▸ ${scenario.name}: ${scenario.steps.length} step(s) replayed`);
+    }
     if (report.renderErrors && report.renderErrors.length > 0) {
       console.log(`   ${' '.repeat(22)}    ⚠️  render error: ${report.renderErrors[0].split('\n')[0]}`);
     }
@@ -416,7 +667,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log('\n✅ Every control does something when clicked.\n');
+  console.log('\n✅ Every control does something when clicked or changed.\n');
   process.exit(0);
 }
 

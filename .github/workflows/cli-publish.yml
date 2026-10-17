@@ -26,7 +26,7 @@ on:
     paths:
       - '.github/workflows/cli-publish.yml'
       - 'cli/package.json'
-      - 'cli/package-lock.json'
+      - 'cli/pnpm-lock.yaml'
 
 permissions:
   contents: read
@@ -44,27 +44,35 @@ jobs:
         working-directory: cli
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: '11.2.2'
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: '.nvmrc'
           registry-url: 'https://registry.npmjs.org'
+          cache: 'pnpm'
+          cache-dependency-path: |
+            vscode-extension/pnpm-lock.yaml
+            cli/pnpm-lock.yaml
 
       - name: Install extension dependencies
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
         working-directory: vscode-extension
 
       - name: Install CLI dependencies
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build production bundle
-        run: npm run build:production
+        run: pnpm run build:production
 
       - name: Validate CLI works
         run: node dist/cli.js --help
@@ -89,7 +97,7 @@ jobs:
 
       - name: Bump version (workflow_dispatch only)
         if: steps.trigger_type.outputs.is_tag != 'true'
-        run: npm version ${{ inputs.version_bump }} --no-git-tag-version
+        run: pnpm version ${{ inputs.version_bump }} --no-git-tag-version
 
       - name: Verify version matches tag (tag trigger only)
         if: steps.trigger_type.outputs.is_tag == 'true'
@@ -115,7 +123,7 @@ jobs:
           PACKAGE_NAME=$(node -p 'require("./package.json").name')
           VERSION="${{ steps.version.outputs.version }}"
           echo "Checking npm registry for ${PACKAGE_NAME}@${VERSION}..."
-          if npm view "${PACKAGE_NAME}@${VERSION}" version 2>&1; then
+          if pnpm view "${PACKAGE_NAME}@${VERSION}" version 2>&1; then
             echo "Version ${VERSION} is already published to npm. Skipping publish."
             echo "already_published=true" >> "$GITHUB_OUTPUT"
           else
@@ -125,11 +133,11 @@ jobs:
 
       - name: Publish to npm
         if: ${{ !inputs.dry_run && steps.check_published.outputs.already_published != 'true' }}
-        run: npm publish --provenance --access public
+        run: pnpm publish --provenance --access public
 
       - name: Dry run publish
         if: ${{ inputs.dry_run }}
-        run: npm publish --provenance --access public --dry-run
+        run: pnpm publish --provenance --access public --dry-run
 
       - name: Commit version bump and create PR
         if: ${{ !inputs.dry_run && steps.check_published.outputs.already_published != 'true' && steps.trigger_type.outputs.is_tag != 'true' }}
@@ -138,7 +146,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b cli/bump-version-v${{ steps.version.outputs.version }}
-          git add cli/package.json cli/package-lock.json
+          git add cli/package.json cli/pnpm-lock.yaml
           git commit -m "chore(cli): bump version to v${{ steps.version.outputs.version }}"
           git push origin cli/bump-version-v${{ steps.version.outputs.version }}
           gh pr create \
@@ -149,19 +157,44 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate release notes
+      # The notes are the "## [<version>]" section of cli/CHANGELOG.md, written in
+      # the release-prep PR (scripts/release-changelog.js promote). The tag is
+      # already pushed and the package already on npm here, so a missing section
+      # warns and falls back to GitHub's generated PR list instead of failing.
+      - name: Read release notes from CHANGELOG.md
         if: ${{ !inputs.dry_run && steps.check_published.outputs.already_published != 'true' && steps.trigger_type.outputs.is_tag == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          TAG_NAME="cli/v${{ steps.version.outputs.version }}"
-          echo "Generating release notes for $TAG_NAME..."
-          if gh api repos/${{ github.repository }}/releases/generate-notes \
-            -f tag_name="${TAG_NAME}" \
-            --jq '.body' > /tmp/release_notes.md 2>/dev/null && [ -s /tmp/release_notes.md ]; then
-            echo "✅ Generated release notes from merged PRs"
+          TAG_NAME="cli/v${VERSION}"
+          if gh api "repos/${{ github.repository }}/releases/generate-notes" \
+            -f tag_name="${TAG_NAME}" --jq '.body' > /tmp/generated_notes.md 2>/dev/null \
+            && [ -s /tmp/generated_notes.md ]; then
+            HAVE_GENERATED=true
           else
-            echo "CLI v${{ steps.version.outputs.version }}" > /tmp/release_notes.md
+            HAVE_GENERATED=false
+          fi
+
+          if node scripts/release-changelog.js extract cli/CHANGELOG.md "$VERSION" --out /tmp/release_notes.md; then
+            echo "✅ Release notes from cli/CHANGELOG.md"
+            if [ "$HAVE_GENERATED" = "true" ]; then
+              {
+                echo ""
+                echo "<details><summary>All merged pull requests</summary>"
+                echo ""
+                cat /tmp/generated_notes.md
+                echo ""
+                echo "</details>"
+              } >> /tmp/release_notes.md
+            fi
+          else
+            echo "::warning::cli/CHANGELOG.md has no [${VERSION}] section; using GitHub's generated notes. Write it in the release-prep PR."
+            if [ "$HAVE_GENERATED" = "true" ]; then
+              cp /tmp/generated_notes.md /tmp/release_notes.md
+            else
+              echo "CLI v${VERSION}" > /tmp/release_notes.md
+            fi
           fi
         working-directory: .
 

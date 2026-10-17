@@ -1,0 +1,18 @@
+<Project>
+  <!--
+    Imported by every project under this folder, including the non-SDK-style
+    VSIX project (via Microsoft.Common.props).
+
+    NuGet restore writes a packages.lock.json next to each project and the
+    committed lock files record the exact resolved package graph, including
+    content hashes. CI restores in locked mode (nuget restore -LockedMode,
+    dotnet restore with the locked-mode switch), which fails instead of
+    silently resolving something different when a PackageReference drifts
+    from the lock file (Scorecard Pinned-Dependencies). To change a package version, edit the
+    csproj and run a plain restore locally to refresh the lock file, then commit
+    both.
+  -->
+  <PropertyGroup>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+</Project>

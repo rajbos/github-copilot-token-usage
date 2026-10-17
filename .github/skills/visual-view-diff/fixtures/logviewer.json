@@ -45,7 +45,8 @@
       "mcpTools": [],
       "inputTokensEstimate": 2220,
       "outputTokensEstimate": 820,
-      "thinkingTokensEstimate": 320
+      "thinkingTokensEstimate": 320,
+      "estimatedCost": 0.0123
     },
     {
       "turnNumber": 2,
@@ -74,7 +75,8 @@
       "mcpTools": [],
       "inputTokensEstimate": 2640,
       "outputTokensEstimate": 1000,
-      "thinkingTokensEstimate": 0
+      "thinkingTokensEstimate": 0,
+      "estimatedCost": 0.0456
     },
     {
       "turnNumber": 3,
@@ -83,7 +85,18 @@
       "userMessage": "Does that change the behaviour for 429s?",
       "assistantResponse": "No — 429s take the same backoff path they already did; the helper only widens which errors qualify.",
       "model": "gpt-4o",
-      "toolCalls": [],
+      "toolCalls": [
+        {
+          "toolName": "runSubagent",
+          "isSubAgent": true,
+          "subAgentModel": "claude-sonnet-4.5",
+          "subAgentTokens": {
+            "input": 4200,
+            "output": 900
+          },
+          "subAgentCost": 0.0262
+        }
+      ],
       "contextReferences": {
         "total": 6,
         "byType": {
@@ -95,7 +108,8 @@
       "mcpTools": [],
       "inputTokensEstimate": 3060,
       "outputTokensEstimate": 1180,
-      "thinkingTokensEstimate": 320
+      "thinkingTokensEstimate": 320,
+      "estimatedCost": 0.0789
     }
   ],
   "usageAnalysis": {

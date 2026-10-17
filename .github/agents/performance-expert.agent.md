@@ -24,8 +24,8 @@ A benchmark is a **regression** when the PR's median time is more than the confi
 threshold percent slower than the base branch:
 
 - **Default threshold: 20%.** This is deliberately tolerant — shared CI runners are noisy, and
-  a tighter bound produces false positives. It is set in one place,
-  `PERF_REGRESSION_THRESHOLD` in `.github/workflows/agent-review.yml`, and is easy to change.
+  a tighter bound produces false positives. Override it with the `PERF_REGRESSION_THRESHOLD`
+  environment variable when running `.github/workflows/scripts/perf_compare.py`.
 - **Noise floor:** benchmarks whose base median is under `PERF_MIN_ABS_MS` (default 1 ms) are
   ignored — at sub-millisecond scale, scheduler jitter dominates and a "200% slower" reading is
   meaningless.
@@ -55,22 +55,17 @@ stays apples-to-apples.
 
 ## How the measurement works (and why it is deterministic)
 
-Timings are **measured, not guessed.** In CI the workflow:
+Timings are **measured, not guessed.** Build the base branch and the PR branch, run the *same*
+benchmark script against both with identical deterministic fixtures, take the **median of
+repeated runs** (with warmup) to damp noise, then compare medians and apply the threshold above.
 
-1. Builds the base branch and the PR branch.
-2. Runs the *same* benchmark script (from the PR) against both builds, with identical
-   deterministic fixtures — so the base checkout never needs to contain the script.
-3. Takes the **median of repeated runs** (with warmup) to damp noise.
-4. Compares medians and applies the threshold above.
+Because runs are timed in separate processes, some run-to-run variance is unavoidable — this is
+not a lab benchmark. The tolerant default threshold, the sub-millisecond floor, the warmup, and
+the median-of-N together keep that variance from producing false flags. Treat a result that only
+just crosses the threshold as a prompt to re-run or profile locally, not as proof of a regression.
 
-Because CI runners are shared and the base and PR are timed in **separate processes in a fixed
-order**, some run-to-run variance is unavoidable — this is not a lab benchmark. The tolerant
-default threshold, the sub-millisecond floor, the warmup, and the median-of-N together keep that
-variance from producing false flags. Treat a result that only just crosses the threshold as a
-prompt to re-run or profile locally, not as proof of a regression.
-
-The flag is produced by `perf_compare.py`, not by a language model — you do not ask an LLM to do
-arithmetic on noisy timings. Your job as the agent is to make that measured result actionable.
+Use `scripts/benchmark/perf-bench.cjs` and `.github/workflows/scripts/perf_compare.py` directly
+via Bash to produce the measured comparison — do not estimate timings by reading the code.
 
 ## Interpreting a regression
 
@@ -83,8 +78,10 @@ is a valid outcome, not something to hide.
 
 ## Output contract
 
-When run in CI the findings file (`findings/performance.md`) is generated from the measured
-results using exactly this structure:
+You **must not modify any tracked repository files**. The benchmark JSON and the
+`perf_compare.py` report are scratch output: write them to a temporary directory outside the
+working tree (set `OUTPUT_FILE`, `PERF_BASE_FILE` and `PERF_HEAD_FILE` accordingly), never into
+the repo. Report findings using exactly this structure:
 
 ```markdown
 # Performance Review

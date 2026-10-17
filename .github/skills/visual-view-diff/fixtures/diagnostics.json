@@ -1,4 +1,20 @@
 {
+  "accountBudgets": [
+    {
+      "accountId": "fixture-account-1",
+      "label": "octo-personal",
+      "status": "ok",
+      "planName": "Copilot Pro",
+      "resetDate": "2026-11-01T00:00:00.000Z",
+      "balance": { "budgetUsd": 39, "budgetAiCredits": 3900, "remainingAiCredits": 1500, "usedAiCredits": 2400, "pctAvailable": 38.5 }
+    },
+    {
+      "accountId": "fixture-account-2",
+      "label": "octo-work",
+      "status": "unavailable",
+      "reason": "no-session"
+    }
+  ],
   "report": "======================================================================\nAI ENGINEERING FLUENCY — DIAGNOSTIC REPORT\n======================================================================\n\nGenerated:            2026-03-14 09:30:00 UTC\nExtension version:    0.0.0-visual-fixture\nVS Code version:      1.134.0\nPlatform:             linux x64\n\n-- Session discovery ------------------------------------------------\nSession folders scanned:   4\nSession files found:       128\nEditors detected:          VS Code, Claude Code, Copilot CLI\n\n-- Token statistics -------------------------------------------------\nTokens (last 30 days):     15,188,800\nSessions (last 30 days):   264\nEstimated cost:            $38.17\n\n-- Cache -------------------------------------------------------------\nCached session entries:    128\nCache size on disk:        4.2 MB\n",
   "sessionFiles": [
     {

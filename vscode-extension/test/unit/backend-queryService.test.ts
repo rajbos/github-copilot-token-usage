@@ -5,14 +5,12 @@ import * as assert from 'node:assert/strict';
 import { QueryService } from '../../src/backend/services/queryService';
 import { BackendUtility } from '../../src/backend/services/utilityService';
 import type { BackendSettings } from '../../src/backend/settings';
+import { calculateEnvironmentalImpact } from '../../../src/environmentalImpact';
 
 function makeDeps() {
 	return {
 		warn: () => {},
 		calculateEstimatedCost: () => 0,
-		co2Per1kTokens: 0.2,
-		waterUsagePer1kTokens: 0.3,
-		co2AbsorptionPerTreePerYear: 21000
 	};
 }
 
@@ -112,6 +110,25 @@ describe('QueryService direct tests', { concurrency: false }, () => {
 		assert.deepEqual(result.availableMachines.sort(), ['m1', 'm2']);
 		assert.equal(result.workspaceTokenTotals.length, 1);
 		assert.equal(result.machineTokenTotals.length, 2);
+	});
+
+	test('queryBackendRollups derives CO2, water and trees from the shared weighted model', async () => {
+		const entities = [
+			{ model: 'gpt-4o', workspaceId: 'w1', machineId: 'm1', userId: 'u1', inputTokens: 10_000, outputTokens: 1_500, interactions: 1 },
+			{ model: 'claude-haiku-4.5', workspaceId: 'w1', machineId: 'm1', userId: 'u1', inputTokens: 4_000, outputTokens: 500, interactions: 1 }
+		];
+		svc = new QueryService(makeDeps(), makeCredService(), makeDataPlaneService(entities), BackendUtility);
+		const result = await svc.queryBackendRollups(makeSettings(), { lookbackDays: 7 }, '2025-01-01', '2025-01-07');
+		const stats = result.stats.today;
+		const expected = calculateEnvironmentalImpact(stats.modelUsage, stats.tokens);
+
+		assert.ok(stats.co2 > 0);
+		assert.equal(stats.co2, expected.co2);
+		assert.equal(stats.waterUsage, expected.waterUsage);
+		assert.equal(stats.treesEquivalent, expected.treesEquivalent);
+		// Not the retired flat 0.2 g / 0.3 L per 1K tokens.
+		assert.notEqual(stats.co2, (stats.tokens / 1000) * 0.2);
+		assert.notEqual(stats.waterUsage, (stats.tokens / 1000) * 0.3);
 	});
 
 	test('queryBackendRollups caches result for same key', async () => {

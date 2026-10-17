@@ -5,7 +5,12 @@
  *   All percent-decoding is done *before* the '..' segment check so that
  *   encoded traversal sequences like %2e%2e or %252e%252e cannot bypass the
  *   guard.  Any URI whose decoded path contains a '..' segment is rejected.
+ *
+ * Pure Node (fs, no VS Code API) so this module can be imported by shared
+ * code that must stay usable outside a VS Code host (e.g. the CLI and
+ * src/copilotMemoryFiles.ts).
  */
+import * as fs from 'fs';
 
 /**
  * Convert a `file://` URI to a native filesystem path.
@@ -68,4 +73,35 @@ export function resolveFileUri(uri: string): string | undefined {
 
 	// POSIX absolute path: /home/user/path — return as-is.
 	return decoded;
+}
+
+/**
+ * Read a workspaceStorage JSON file (e.g. `workspace.json` / `meta.json`) and extract a
+ * candidate folder path from the first matching key. Handles both `file://` URI values
+ * (via `resolveFileUri`) and plain filesystem path strings.
+ *
+ * Pure Node (fs), no VS Code API — safe to call from the CLI or any other non-VS Code host.
+ */
+export function parseWorkspaceStorageJsonFile(jsonPath: string, candidateKeys: string[]): string | undefined {
+	if (typeof jsonPath !== 'string' || !jsonPath || !Array.isArray(candidateKeys)) { return undefined; }
+	try {
+		const raw = fs.readFileSync(jsonPath, 'utf8');
+		const obj = JSON.parse(raw);
+		if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) { return undefined; }
+		for (const key of candidateKeys) {
+			const candidate = obj[key];
+			if (typeof candidate !== 'string') { continue; }
+			// Resolve file:// URIs using the safe resolver (handles Windows, POSIX, UNC, encoded chars).
+			if (candidate.startsWith('file://')) {
+				const resolved = resolveFileUri(candidate);
+				if (resolved) { return resolved; }
+				continue;
+			}
+			// Non-URI value — treat as a plain filesystem path.
+			return candidate;
+		}
+	} catch {
+		// ignore parse/read errors
+	}
+	return undefined;
 }

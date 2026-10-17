@@ -1,5 +1,12 @@
 import * as vscode from 'vscode';
-import { MIN_LOOKBACK_DAYS, MAX_LOOKBACK_DAYS, DEFAULT_LOOKBACK_DAYS } from './constants';
+import {
+	MIN_LOOKBACK_DAYS,
+	MAX_LOOKBACK_DAYS,
+	DEFAULT_LOOKBACK_DAYS,
+	DEFAULT_DATASET_ID,
+	DEFAULT_AGG_TABLE,
+	DEFAULT_EVENTS_TABLE,
+} from './constants';
 import type { BackendUserIdentityMode } from './identity';
 import { parseBackendSharingProfile, type BackendSharingProfile } from './sharingProfile';
 import { inferSharingProfile } from './settingsValidation';
@@ -57,30 +64,42 @@ export interface BackendQueryFilters {
 	userId?: string;
 }
 
-export function getBackendSettings(): BackendSettings {
-	const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
+/**
+ * The sharing profile the user explicitly set, or `undefined` when none is persisted. Uses
+ * `inspect()` because `get()` returns the package.json default (`off`) for an unset value,
+ * which would hide that the profile should be inferred.
+ */
+export function readExplicitSharingProfile(config: vscode.WorkspaceConfiguration): BackendSharingProfile | undefined {
 	const sharingProfileInspect = typeof (config as any).inspect === 'function'
 		? config.inspect<string>('backend.sharingProfile')
 		: undefined;
-	const sharingProfileRaw = sharingProfileInspect?.globalValue ?? sharingProfileInspect?.workspaceValue ?? sharingProfileInspect?.workspaceFolderValue;
+	// VS Code precedence: the most specific scope wins (folder → workspace → user).
+	return parseBackendSharingProfile(sharingProfileInspect?.workspaceFolderValue ?? sharingProfileInspect?.workspaceValue ?? sharingProfileInspect?.globalValue);
+}
+
+export function getBackendSettings(): BackendSettings {
+	const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
 
 	const userId = config.get<string>('backend.userId', '').trim();
 	const userIdMode = config.get<'alias' | 'custom'>('backend.userIdMode', 'alias');
 	const userIdentityMode = config.get<BackendUserIdentityMode>('backend.userIdentityMode', 'pseudonymous');
 	const shareWithTeam = config.get<boolean>('backend.shareWithTeam', false);
 
-	const parsedSharingProfile = parseBackendSharingProfile(sharingProfileRaw);
-	// Default posture is minimizing: when backend is enabled without explicit profile,
-	// always default to teamAnonymized (hashed IDs, no user dimension, names off).
+	const parsedSharingProfile = readExplicitSharingProfile(config);
+	// Default posture is minimizing: when either upload target (Azure Storage or the Team
+	// Server) is enabled without an explicit profile, default to teamAnonymized (hashed IDs,
+	// no user dimension, names off). Enabling the Team Server alone is an explicit opt-in to
+	// uploading, so it must not infer 'off' just because the Azure toggle is unset.
 	// Legacy shareWithTeam only affects the profile when an explicit userIdentityMode is set.
 	const backendEnabled = config.get<boolean>('backend.enabled', false);
-	const inferredSharingProfile: BackendSharingProfile = inferSharingProfile(parsedSharingProfile, backendEnabled, shareWithTeam, userIdentityMode);
+	const sharingServerEnabled = config.get<boolean>('backend.sharingServer.enabled', false);
+	const inferredSharingProfile: BackendSharingProfile = inferSharingProfile(parsedSharingProfile, backendEnabled || sharingServerEnabled, shareWithTeam, userIdentityMode);
 
 	return {
 		enabled: config.get<boolean>('backend.enabled', false),
 		backend: config.get<BackendType>('backend.backend', 'storageTables'),
 		authMode: config.get<BackendAuthMode>('backend.authMode', 'entraId'),
-		datasetId: config.get<string>('backend.datasetId', 'default').trim() || 'default',
+		datasetId: config.get<string>('backend.datasetId', DEFAULT_DATASET_ID).trim() || DEFAULT_DATASET_ID,
 		sharingProfile: inferredSharingProfile,
 		shareWithTeam,
 		shareWorkspaceMachineNames: config.get<boolean>('backend.shareWorkspaceMachineNames', false),
@@ -91,8 +110,8 @@ export function getBackendSettings(): BackendSettings {
 		subscriptionId: config.get<string>('backend.subscriptionId', ''),
 		resourceGroup: config.get<string>('backend.resourceGroup', ''),
 		storageAccount: config.get<string>('backend.storageAccount', ''),
-		aggTable: config.get<string>('backend.aggTable', 'usageAggDaily'),
-		eventsTable: config.get<string>('backend.eventsTable', 'usageEvents'),
+		aggTable: config.get<string>('backend.aggTable', DEFAULT_AGG_TABLE),
+		eventsTable: config.get<string>('backend.eventsTable', DEFAULT_EVENTS_TABLE),
 		lookbackDays: Math.max(MIN_LOOKBACK_DAYS, Math.min(MAX_LOOKBACK_DAYS, config.get<number>('backend.lookbackDays', DEFAULT_LOOKBACK_DAYS))),
 		includeMachineBreakdown: config.get<boolean>('backend.includeMachineBreakdown', false),
 		// Blob upload settings
@@ -101,7 +120,7 @@ export function getBackendSettings(): BackendSettings {
 		blobUploadFrequencyHours: Math.max(1, config.get<number>('backend.blobUploadFrequencyHours', 24)),
 		blobCompressFiles: config.get<boolean>('backend.blobCompressFiles', true),
 		// Sharing server settings
-		sharingServerEnabled: config.get<boolean>('backend.sharingServer.enabled', false),
+		sharingServerEnabled,
 		sharingServerEndpointUrl: config.get<string>('backend.sharingServer.endpointUrl', '').trim(),
 	};
 }
@@ -136,4 +155,25 @@ export function isBackendConfigured(settings: BackendSettings): boolean {
  */
 export function isAnyBackendConfigured(settings: BackendSettings): boolean {
 	return isAzureBackendConfigured(settings) || isSharingServerConfigured(settings);
+}
+
+/** Which independent upload targets a sync pass may write to. */
+export interface SyncTargets {
+	azure: boolean;
+	sharingServer: boolean;
+}
+
+/**
+ * Resolves the upload targets for a sync pass. Each target has its own on/off switch:
+ * Azure Storage is gated on `backend.enabled`, the Team Server on
+ * `backend.sharingServer.enabled` + endpoint URL. The sharing profile applies to both,
+ * so `off` disables every upload. An unset profile resolves to `teamAnonymized`
+ * (see `computeBackendSharingPolicy`), which allows uploads.
+ */
+export function resolveSyncTargets(settings: BackendSettings): SyncTargets {
+	const profileAllowsUpload = settings.sharingProfile !== 'off';
+	return {
+		azure: profileAllowsUpload && !!settings.enabled && isAzureBackendConfigured(settings),
+		sharingServer: profileAllowsUpload && isSharingServerConfigured(settings),
+	};
 }

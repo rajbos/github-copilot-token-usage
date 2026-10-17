@@ -3,6 +3,13 @@ name: VS Code Nightly Pre-Release
 on:
   schedule:
     - cron: '0 2 * * *'  # 2am UTC daily
+  # Re-run when this workflow itself changes on main, so a fix to the nightly
+  # is verified (and a missed nightly published) without waiting for 2am UTC.
+  # Limited to main: the publish job pushes to the marketplace.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/vscode-nightly-prerelease.yml'
   workflow_dispatch:
     inputs:
       force:
@@ -14,16 +21,28 @@ on:
 permissions:
   contents: read
 
+# Three jobs, mirroring release.yml, so no single job can both build and sign, or both
+# build and publish:
+#   build   — runs the dependency install and the build; read-only token, no secrets.
+#   attest  — signs the VSIX the build job uploaded; the only job that can attest.
+#   publish — verifies that same VSIX, then publishes it; the only job with the
+#             marketplace tokens and the permission to push the nightly tag.
 jobs:
-  nightly-pre-release:
-    name: Nightly Pre-Release
+  build:
+    name: Build Nightly VSIX
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      has_changes: ${{ steps.check_changes.outputs.has_changes }}
+      since_tag: ${{ steps.check_changes.outputs.since_tag }}
+      version: ${{ steps.version.outputs.version }}
+      stable_version: ${{ steps.version.outputs.stable_version }}
+      vsix_file: ${{ steps.vsix.outputs.vsix_file }}
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
       with:
         egress-policy: audit
 
@@ -31,6 +50,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
+        persist-credentials: false
 
     - name: Check for changes in vscode-extension/ since last pre-release
       id: check_changes
@@ -90,45 +110,51 @@ jobs:
         "
         echo "✅ package.json version set to ${{ steps.version.outputs.version }} for build"
 
+    - name: Setup pnpm
+      if: steps.check_changes.outputs.has_changes == 'true'
+      uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      with:
+        version: '11.2.2'
+
     - name: Setup Node.js
       if: steps.check_changes.outputs.has_changes == 'true'
-      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version-file: '.nvmrc'
-        cache: 'npm'
-        cache-dependency-path: vscode-extension/package-lock.json
+        cache: 'pnpm'
+        cache-dependency-path: vscode-extension/pnpm-lock.yaml
 
     - name: Install dependencies
       if: steps.check_changes.outputs.has_changes == 'true'
       working-directory: vscode-extension
-      run: npm ci --ignore-scripts
+      run: pnpm install --frozen-lockfile --ignore-scripts
 
     - name: Run linting
       if: steps.check_changes.outputs.has_changes == 'true'
       working-directory: vscode-extension
-      run: npm run lint
+      run: pnpm run lint
 
     - name: Run type checking
       if: steps.check_changes.outputs.has_changes == 'true'
       working-directory: vscode-extension
-      run: npm run check-types
+      run: pnpm run check-types
 
     - name: Build production bundle
       if: steps.check_changes.outputs.has_changes == 'true'
       working-directory: vscode-extension
-      run: npm run package
+      run: pnpm run package
 
     - name: Create pre-release VSIX
       if: steps.check_changes.outputs.has_changes == 'true'
       working-directory: vscode-extension
       run: |
-        npx vsce package --pre-release \
+        npx vsce package --pre-release --no-dependencies \
           --baseImagesUrl https://raw.githubusercontent.com/rajbos/ai-engineering-fluency/main/vscode-extension
 
     - name: Validate localization bundle in VSIX
       if: steps.check_changes.outputs.has_changes == 'true'
       working-directory: vscode-extension
-      run: npm run validate:l10n -- --vsix "$(find . -maxdepth 1 -name 'ai-engineering-fluency-*.vsix' | head -n 1)"
+      run: pnpm run validate:l10n -- --vsix "$(find . -maxdepth 1 -name 'ai-engineering-fluency-*.vsix' | head -n 1)"
 
     - name: Get VSIX filename
       if: steps.check_changes.outputs.has_changes == 'true'
@@ -139,8 +165,129 @@ jobs:
         echo "vsix_file=$VSIX_FILE" >> "$GITHUB_OUTPUT"
         echo "VSIX: $VSIX_FILE"
 
-    - name: Publish to VS Code Marketplace
+    - name: Upload VSIX as workflow artifact
       if: steps.check_changes.outputs.has_changes == 'true'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: vsix-package
+        path: vscode-extension/${{ steps.vsix.outputs.vsix_file }}
+        if-no-files-found: error
+        retention-days: 90
+
+    - name: Build Summary
+      if: always()
+      run: |
+        {
+          if [ "${{ steps.check_changes.outputs.has_changes }}" == "false" ]; then
+            echo "# ⏭️ Nightly Pre-Release Skipped"
+            echo ""
+            echo "No changes to \`vscode-extension/\` since **${{ steps.check_changes.outputs.since_tag }}**."
+            echo "Re-run with **Force publish** checked to bypass this check."
+          elif [ "${{ job.status }}" != "success" ]; then
+            echo "# ❌ Nightly Pre-Release Build Failed"
+            echo ""
+            echo "**Version:** \`${{ steps.version.outputs.version }}\`"
+            echo ""
+            echo "Nothing was attested or published. Check the job logs above for details."
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
+
+  attest:
+    needs: build
+    name: SBOM and Provenance Attestation
+    # Signs the artifact the build job uploaded; it runs no build or dependency install itself.
+    # The publish job needs this job, so a failed attestation or verification blocks publishing.
+    if: needs.build.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write       # Sigstore keyless signing for the attestations
+      attestations: write   # store the attestations
+
+    steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+      with:
+        egress-policy: audit
+
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    # The exact artifact uploaded by the build job; no re-packaging happens here.
+    - name: Download VSIX workflow artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: vsix-package
+        path: dist
+
+    - name: Generate SBOMs, attest, and verify
+      uses: ./.github/actions/vsix-attest
+      with:
+        vsix-path: dist/${{ needs.build.outputs.vsix_file }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+
+    # Nightlies create a tag, not a GitHub release, so the SBOMs are kept as a workflow artifact.
+    - name: Upload SBOMs as workflow artifact
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: vsix-sbom
+        path: sbom/*.spdx.json
+        if-no-files-found: error
+        retention-days: 90
+
+  publish:
+    needs: [build, attest]
+    name: Publish Nightly Pre-Release
+    if: needs.build.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # push the nightly tag
+      attestations: read    # gh attestation verify before publishing
+
+    steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+      with:
+        egress-policy: audit
+
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      with:
+        version: '11.2.2'
+
+    - name: Setup Node.js
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: '.nvmrc'
+        cache: 'pnpm'
+        cache-dependency-path: vscode-extension/pnpm-lock.yaml
+
+    # Only for the vsce / ovsx publish CLIs; nothing is built in this job.
+    - name: Install dependencies
+      working-directory: vscode-extension
+      run: pnpm install --frozen-lockfile --ignore-scripts
+
+    # Publish the exact bytes the attest job attested: take the VSIX from the workflow
+    # artifact (not a re-package), and verify the attestation again right before publishing.
+    - name: Download VSIX workflow artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: vsix-package
+        path: dist
+
+    - name: Verify VSIX attestation before publishing
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh attestation verify "dist/${{ needs.build.outputs.vsix_file }}" --repo "${{ github.repository }}" \
+          --predicate-type https://slsa.dev/provenance/v1
+
+    - name: Publish to VS Code Marketplace
       id: publish_marketplace
       env:
         VSCE_PAT: ${{ secrets.VSCE_PAT }}
@@ -149,14 +296,13 @@ jobs:
           echo "❌ VSCE_PAT secret is not configured."
           exit 1
         fi
-        echo "Publishing ${{ steps.vsix.outputs.vsix_file }} as pre-release to VS Code Marketplace..."
+        echo "Publishing ${{ needs.build.outputs.vsix_file }} as pre-release to VS Code Marketplace..."
         vscode-extension/node_modules/.bin/vsce publish \
-          --packagePath "vscode-extension/${{ steps.vsix.outputs.vsix_file }}" \
+          --packagePath "dist/${{ needs.build.outputs.vsix_file }}" \
           --pat "$VSCE_PAT" \
           --pre-release
 
     - name: Publish to Open VSX Registry
-      if: steps.check_changes.outputs.has_changes == 'true'
       id: publish_open_vsx
       env:
         OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
@@ -165,21 +311,21 @@ jobs:
           echo "❌ OPEN_VSX_TOKEN secret is not configured."
           exit 1
         fi
-        echo "Publishing ${{ steps.vsix.outputs.vsix_file }} as pre-release to Open VSX Registry..."
+        echo "Publishing ${{ needs.build.outputs.vsix_file }} as pre-release to Open VSX Registry..."
         vscode-extension/node_modules/.bin/ovsx publish \
-          --packagePath "vscode-extension/${{ steps.vsix.outputs.vsix_file }}" \
+          --packagePath "dist/${{ needs.build.outputs.vsix_file }}" \
           -p "$OPEN_VSX_TOKEN" \
           --pre-release
 
     - name: Tag nightly pre-release
-      if: steps.check_changes.outputs.has_changes == 'true' && steps.publish_marketplace.outcome == 'success'
+      if: steps.publish_marketplace.outcome == 'success'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        TAG="vscode/nightly/v${{ steps.version.outputs.version }}"
+        TAG="vscode/nightly/v${{ needs.build.outputs.version }}"
         git config --local user.name "github-actions[bot]"
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git tag -a "$TAG" -m "Nightly pre-release ${{ steps.version.outputs.version }}"
+        git tag -a "$TAG" -m "Nightly pre-release ${{ needs.build.outputs.version }}"
         git push origin "$TAG"
         echo "✅ Tagged $TAG"
 
@@ -187,16 +333,11 @@ jobs:
       if: always()
       run: |
         {
-          if [ "${{ steps.check_changes.outputs.has_changes }}" != "true" ]; then
-            echo "# ⏭️ Nightly Pre-Release Skipped"
-            echo ""
-            echo "No changes to \`vscode-extension/\` since **${{ steps.check_changes.outputs.since_tag }}**."
-            echo "Re-run with **Force publish** checked to bypass this check."
-          elif [ "${{ steps.publish_marketplace.outcome }}" == "success" ]; then
+          if [ "${{ steps.publish_marketplace.outcome }}" == "success" ]; then
             echo "# ✅ Nightly Pre-Release Published"
             echo ""
-            echo "- **Version:** \`${{ steps.version.outputs.version }}\` (based on stable \`${{ steps.version.outputs.stable_version }}\`)"
-            echo "- **Since tag:** \`${{ steps.check_changes.outputs.since_tag }}\`"
+            echo "- **Version:** \`${{ needs.build.outputs.version }}\` (based on stable \`${{ needs.build.outputs.stable_version }}\`)"
+            echo "- **Since tag:** \`${{ needs.build.outputs.since_tag }}\`"
             echo "- 🛒 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency)"
             if [ "${{ steps.publish_open_vsx.outcome }}" == "success" ]; then
               echo "- 🌐 [Open VSX Registry](https://open-vsx.org/extension/RobBos/ai-engineering-fluency)"
@@ -204,7 +345,7 @@ jobs:
           else
             echo "# ❌ Nightly Pre-Release Failed"
             echo ""
-            echo "**Version:** \`${{ steps.version.outputs.version }}\`"
+            echo "**Version:** \`${{ needs.build.outputs.version }}\`"
             echo ""
             echo "Check the job logs above for details."
           fi

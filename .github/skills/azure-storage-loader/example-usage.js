@@ -22,6 +22,7 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { sumCounts } = require('./load-table-data.js');
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -75,91 +76,59 @@ try {
 	// Step 3: Perform analysis
 	console.log('=== Summary Report ===\n');
 
-	// Total tokens
-	const totals = data.reduce(
-		(acc, item) => {
-			acc.inputTokens += item.inputTokens || 0;
-			acc.outputTokens += item.outputTokens || 0;
-			acc.interactions += item.interactions || 0;
-			return acc;
-		},
-		{ inputTokens: 0, outputTokens: 0, interactions: 0 }
-	);
+	// Exact totals: sumCounts adds with BigInt, so many large per-row counts
+	// cannot overflow Number precision (see load-table-data.js).
+	const totals = sumCounts(data);
 
 	console.log(`Total Records: ${data.length}`);
 	console.log(`Total Input Tokens: ${totals.inputTokens.toLocaleString()}`);
 	console.log(`Total Output Tokens: ${totals.outputTokens.toLocaleString()}`);
-	console.log(`Total Tokens: ${(totals.inputTokens + totals.outputTokens).toLocaleString()}`);
+	console.log(`Total Tokens: ${totals.totalTokens.toLocaleString()}`);
 	console.log(`Total Interactions: ${totals.interactions.toLocaleString()}`);
+
+	// Group rows by a key and return [key, exact totals] sorted by total tokens
+	const groupTotals = (keyOf) => {
+		const groups = new Map();
+		for (const item of data) {
+			const key = keyOf(item);
+			if (!groups.has(key)) {
+				groups.set(key, []);
+			}
+			groups.get(key).push(item);
+		}
+		return [...groups.entries()]
+			.map(([key, items]) => [key, sumCounts(items), items[0]])
+			.sort((a, b) => (b[1].totalTokens > a[1].totalTokens ? 1 : b[1].totalTokens < a[1].totalTokens ? -1 : 0));
+	};
 
 	// Group by model
 	console.log('\n=== Usage by Model ===\n');
-	const byModel = {};
-	data.forEach(item => {
-		const model = item.model || 'unknown';
-		if (!byModel[model]) {
-			byModel[model] = { inputTokens: 0, outputTokens: 0, interactions: 0 };
-		}
-		byModel[model].inputTokens += item.inputTokens || 0;
-		byModel[model].outputTokens += item.outputTokens || 0;
-		byModel[model].interactions += item.interactions || 0;
+	groupTotals(item => item.model || 'unknown').forEach(([model, stats]) => {
+		console.log(`${model}:`);
+		console.log(`  Input: ${stats.inputTokens.toLocaleString()}`);
+		console.log(`  Output: ${stats.outputTokens.toLocaleString()}`);
+		console.log(`  Total: ${stats.totalTokens.toLocaleString()}`);
+		console.log(`  Interactions: ${stats.interactions.toLocaleString()}`);
+		console.log('');
 	});
-
-	Object.entries(byModel)
-		.sort((a, b) => (b[1].inputTokens + b[1].outputTokens) - (a[1].inputTokens + a[1].outputTokens))
-		.forEach(([model, stats]) => {
-			const totalTokens = stats.inputTokens + stats.outputTokens;
-			console.log(`${model}:`);
-			console.log(`  Input: ${stats.inputTokens.toLocaleString()}`);
-			console.log(`  Output: ${stats.outputTokens.toLocaleString()}`);
-			console.log(`  Total: ${totalTokens.toLocaleString()}`);
-			console.log(`  Interactions: ${stats.interactions.toLocaleString()}`);
-			console.log('');
-		});
 
 	// Group by day
 	console.log('=== Usage by Day (Top 5) ===\n');
-	const byDay = {};
-	data.forEach(item => {
-		const day = item.day || 'unknown';
-		if (!byDay[day]) {
-			byDay[day] = { inputTokens: 0, outputTokens: 0, interactions: 0 };
-		}
-		byDay[day].inputTokens += item.inputTokens || 0;
-		byDay[day].outputTokens += item.outputTokens || 0;
-		byDay[day].interactions += item.interactions || 0;
-	});
-
-	Object.entries(byDay)
-		.sort((a, b) => (b[1].inputTokens + b[1].outputTokens) - (a[1].inputTokens + a[1].outputTokens))
+	groupTotals(item => item.day || 'unknown')
 		.slice(0, 5)
 		.forEach(([day, stats]) => {
-			const totalTokens = stats.inputTokens + stats.outputTokens;
-			console.log(`${day}: ${totalTokens.toLocaleString()} tokens, ${stats.interactions.toLocaleString()} interactions`);
+			console.log(`${day}: ${stats.totalTokens.toLocaleString()} tokens, ${stats.interactions.toLocaleString()} interactions`);
 		});
 
 	// Group by workspace (if available)
 	const workspaces = [...new Set(data.map(item => item.workspaceId).filter(Boolean))];
 	if (workspaces.length > 1) {
 		console.log('\n=== Usage by Workspace (Top 5) ===\n');
-		const byWorkspace = {};
-		data.forEach(item => {
-			const ws = item.workspaceId || 'unknown';
-			const wsName = item.workspaceName || ws;
-			if (!byWorkspace[ws]) {
-				byWorkspace[ws] = { name: wsName, inputTokens: 0, outputTokens: 0, interactions: 0 };
-			}
-			byWorkspace[ws].inputTokens += item.inputTokens || 0;
-			byWorkspace[ws].outputTokens += item.outputTokens || 0;
-			byWorkspace[ws].interactions += item.interactions || 0;
-		});
-
-		Object.entries(byWorkspace)
-			.sort((a, b) => (b[1].inputTokens + b[1].outputTokens) - (a[1].inputTokens + a[1].outputTokens))
+		groupTotals(item => item.workspaceId || 'unknown')
 			.slice(0, 5)
-			.forEach(([wsId, stats]) => {
-				const totalTokens = stats.inputTokens + stats.outputTokens;
-				console.log(`${stats.name}: ${totalTokens.toLocaleString()} tokens, ${stats.interactions.toLocaleString()} interactions`);
+			.forEach(([wsId, stats, first]) => {
+				const name = first.workspaceName || wsId;
+				console.log(`${name}: ${stats.totalTokens.toLocaleString()} tokens, ${stats.interactions.toLocaleString()} interactions`);
 			});
 	}
 

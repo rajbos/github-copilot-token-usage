@@ -5,7 +5,9 @@
  * Mistral Vibe (https://github.com/mistralai/mistral-vibe) is a terminal-based coding agent.
  * Sessions are stored as individual directories under ~/.vibe/logs/session/
  * Each session directory contains:
- *   - meta.json: session metadata including stats (token counts), config (active_model), timestamps
+ *   - meta.json: session metadata including stats (token counts, of which session_cached_tokens is
+ *     the cache-read portion already counted inside session_prompt_tokens), config (active_model),
+ *     timestamps
  *   - messages.jsonl: one JSON object per line (LLMMessage objects)
  *
  * Session path format: ~/.vibe/logs/session/session_<YYYYMMDD>_<HHMMSS>_<session_id[:8]>/meta.json
@@ -21,7 +23,7 @@ import * as path from 'path';
 import * as os from 'os';
 import type { ModelUsage } from './types';
 import { isUnsafeObjectKey } from './utils/protoGuard';
-import { normalizePath } from './utils/pathUtils';
+import { normalizePathForComparison } from './utils/pathUtils';
 
 export class MistralVibeDataAccess {
 
@@ -47,11 +49,14 @@ return path.join(this.getVibeHomeDir(), 'logs', 'session');
 
 /**
  * Check if a file path belongs to a Mistral Vibe session.
- * Session files are meta.json files under ~/.vibe/logs/session/
+ * Session files are meta.json files under <VIBE_HOME>/logs/session/ — the default
+ * ~/.vibe/ or a $VIBE_HOME whose folder name differs.
  */
 isVibeSessionFile(filePath: string): boolean {
-const normalized = normalizePath(filePath);
-return normalized.includes('/.vibe/logs/session/') && normalized.endsWith('/meta.json');
+const normalized = normalizePathForComparison(filePath);
+if (!normalized.endsWith('/meta.json')) { return false; }
+if (normalized.includes('/.vibe/logs/session/')) { return true; }
+return normalized.startsWith(normalizePathForComparison(this.getSessionLogDir()) + '/');
 }
 
 /**
@@ -161,12 +166,30 @@ const completionTokens = typeof meta.stats?.session_completion_tokens === 'numbe
 if (promptTokens + completionTokens === 0) {
 return {};
 }
+// `session_cached_tokens` is the cache-read portion *already included* in
+// session_prompt_tokens, so it maps to cachedReadTokens (which calculateEstimatedCost
+// subtracts from inputTokens) rather than being added on top. Reporting it matters: Vibe
+// discounts these heavily (0.15 vs 1.5 per million on Mistral Medium 3.5), so omitting it
+// overstated cost by up to ~5x on cache-heavy sessions. Verified against Vibe's own
+// `session_cost` — `(prompt - cached) * input + cached * cachedInput + completion * output`
+// reproduces it exactly, and matches calculateEstimatedCost's formula. Models whose rates
+// report no cached price (devstral-2, glm-5-2) have no cachedInputCostPerMillion entry, so
+// the calculation falls back to the full input rate — which is what Vibe bills them at.
+const cachedTokens = typeof meta.stats?.session_cached_tokens === 'number' ? meta.stats.session_cached_tokens : 0;
 // Untrusted `active_model` string from parsed meta.json — treat unsafe object keys
 // like a missing model (see protoGuard.ts).
 const rawModel = meta.config?.active_model;
 const model: string = rawModel && !isUnsafeObjectKey(rawModel) ? rawModel : 'devstral';
 return {
-[model]: { inputTokens: promptTokens, outputTokens: completionTokens, sessions: 0 }
+[model]: {
+inputTokens: promptTokens,
+outputTokens: completionTokens,
+// Clamp: a malformed meta.json reporting more cached than prompt tokens would otherwise
+// drive uncachedInput negative (Math.max(0, …) in calculateEstimatedCost already floors
+// it, but clamping here keeps the reported breakdown internally consistent too).
+...(cachedTokens > 0 ? { cachedReadTokens: Math.max(0, Math.min(cachedTokens, promptTokens)) } : {}),
+sessions: 0,
+}
 };
 }
 

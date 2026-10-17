@@ -49,7 +49,7 @@ Before changing anything, compile and run the existing unit tests to establish a
 ```bash
 cd vscode-extension
 node_modules/.bin/tsc.cmd --noEmit          # type-check
-npm run test:node                            # unit tests
+pnpm run test:node                            # unit tests
 ```
 
 Record which tests cover the target file so you know what to watch.
@@ -78,7 +78,7 @@ All **new** warnings introduced by your changes must be resolved before proceedi
 ```bash
 cd vscode-extension
 node_modules/.bin/tsc.cmd --noEmit          # type-check
-npm run test:node                            # unit tests
+pnpm run test:node                            # unit tests
 node esbuild.js --production                # production bundle
 ```
 

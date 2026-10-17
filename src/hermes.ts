@@ -163,9 +163,15 @@ export class HermesDataAccess {
 		return `${this.getDbPath()}#${sessionId}`;
 	}
 
-	/** Returns true if the path is a Hermes virtual session path (backslashes normalised). */
+	/**
+	 * Returns true if the path is a Hermes virtual session path (backslashes normalised):
+	 * either the default `hermes/state.db#` marker, or `<getDbPath()>#` for a $HERMES_HOME
+	 * whose folder is not named `hermes`.
+	 */
 	isHermesSessionFile(filePath: string): boolean {
-		return filePath.replace(/\\/g, '/').toLowerCase().includes(DB_MARKER);
+		const normalized = filePath.replace(/\\/g, '/').toLowerCase();
+		if (normalized.includes(DB_MARKER)) { return true; }
+		return normalized.startsWith(this.getDbPath().replace(/\\/g, '/').toLowerCase() + '#');
 	}
 
 	/** Extract the real DB file path from a virtual session path. */

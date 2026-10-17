@@ -328,6 +328,7 @@ function attachMock(target: any): void {
 		'aiEngineeringFluency.showDetails',
 		'aiEngineeringFluency.showChart',
 		'aiEngineeringFluency.showMaturity',
+		'aiEngineeringFluency.showReadiness',
 		'aiEngineeringFluency.showFluencyLevelViewer',
 		'aiEngineeringFluency.runLocalViewRegression',
 		'aiEngineeringFluency.generateDiagnosticReport'
@@ -385,7 +386,16 @@ try {
 // Safety net: force exit after 30 s if open handles (e.g. timers from
 // imported extension code) prevent the process from exiting after tests.
 // The timer is unref()'d so it won't keep the process alive on its own.
-setTimeout(() => process.exit(process.exitCode ?? 0), 30_000).unref();
+//
+// Not armed in the `node --test` runner process itself: that process also
+// `--require`s this shim, and a 30 s exit(0) there silently ends a multi-file
+// run after ~30 s with exit code 0 - everything not yet finished is dropped,
+// and no summary or coverage report (or coverage threshold) is ever reached.
+// The per-file child processes node:test spawns carry NODE_TEST_CONTEXT.
+const isTestRunnerParent = process.execArgv.includes('--test') && !process.env.NODE_TEST_CONTEXT;
+if (!isTestRunnerParent) {
+	setTimeout(() => process.exit(process.exitCode ?? 0), 30_000).unref();
+}
 
 // Set up a minimal browser-like `window` global so webview utilities that
 // call getWindowData() (modelUtils, formatUtils, etc.) work in Node.js tests.

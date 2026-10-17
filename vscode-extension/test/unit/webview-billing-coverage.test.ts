@@ -3,6 +3,7 @@ import * as assert from 'node:assert/strict';
 import {
 	billingOtherSessionsCostUsd,
 	billingExtGroupCostsHtml,
+	billingTabBodyHtml,
 } from '../../src/webview/usage/billingCoverage';
 import type { CopilotApiBalance } from '../../src/webview/usage/billingStatsSanitizer';
 import { setFormatLocale } from '../../src/webview/shared/formatUtils';
@@ -102,5 +103,33 @@ describe('billingExtGroupCostsHtml', () => {
 		assert.ok(!html.includes('other sessions'), 'did not expect the other-sessions row');
 		assert.ok(html.includes('GitHub Copilot - local sessions'), 'expected the local Copilot row');
 		assert.ok(html.includes('$6.00'), 'expected the total to equal the local cost only');
+	});
+
+	test('the other-sessions row sits muted under the local Copilot row, with the total in the footer', () => {
+		const html = billingExtGroupCostsHtml({ 'Claude Code': 9, 'GitHub Copilot': 6 }, makeApi(1000));
+		const body = html.match(/<tbody>(.*?)<\/tbody>/s)?.[1] ?? '';
+		const labels = [...body.matchAll(/<tr[^>]*><td>([^<]*)<\/td>/g)].map(m => m[1]);
+		assert.deepEqual(labels, [
+			'Claude Code',
+			'GitHub Copilot - local sessions',
+			'GitHub Copilot - other sessions (remote or different environment)',
+		], 'providers by cost, the API gap directly under the local Copilot row');
+		assert.match(body, /<tr class="data-table-muted"><td>GitHub Copilot - other sessions/);
+		assert.match(html, /<tfoot><tr class="data-table-footer-row"><td>Total<\/td><td class="data-table-align-right">\$19\.00<\/td><\/tr><\/tfoot>/);
+		assert.ok(!html.includes('data-table-sort='), 'a bounded summary with a meaningful row order is not sortable');
+	});
+});
+
+describe('billingTabBodyHtml', () => {
+	test('no billing data (signed out): renders the GitHub authentication hint', () => {
+		const html = billingTabBodyHtml('');
+		assert.match(html, /id="section-billing-coverage"/);
+		assert.match(html, /GitHub authentication required/);
+		assert.match(html, /Sign in with GitHub \(via the Diagnostics tab\)/);
+	});
+
+	test('billing data present: passes the gated section through unchanged', () => {
+		const section = '<div class="section" id="section-billing-coverage">data</div>';
+		assert.equal(billingTabBodyHtml(section), section);
 	});
 });

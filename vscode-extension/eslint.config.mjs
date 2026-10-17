@@ -1,8 +1,36 @@
 import typescriptEslint from "@typescript-eslint/eslint-plugin";
 import tsParser from "@typescript-eslint/parser";
 import sonarjs from "eslint-plugin-sonarjs";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-export default [{
+const extRoot = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(extRoot, "..");
+
+// Warning ratchet (see scripts/check-lint-baseline.mjs): files that still carry
+// no-explicit-any warnings. Every other file gets the rule at `error`, so new files cannot
+// introduce `any`. The list only shrinks: `npm run lint:baseline:update` after cleaning a file.
+const baselinePath = path.join(extRoot, "lint-baseline.json");
+const baselineRules = fs.existsSync(baselinePath) ? JSON.parse(fs.readFileSync(baselinePath, "utf8")).rules ?? {} : {};
+// Baseline paths are repo-root relative. Files under this directory match relative to it; the
+// shared ../src files fall outside ESLint's base path and can only be matched with a `**/`
+// glob. That glob can also match a same-named file in vscode-extension/src, which at worst gets
+// `warn` instead of `error` for `any` — it is still held by the lint-baseline.json ratchet.
+const toPattern = (repoRel) => repoRel.startsWith("vscode-extension/")
+    ? repoRel.slice("vscode-extension/".length)
+    : "**/" + repoRel;
+const legacyAnyFiles = Object.keys(baselineRules["@typescript-eslint/no-explicit-any"] ?? {}).map(toPattern);
+
+// Files currently over the max-lines ceiling, pinned at their present size so no second
+// file can cross 6000. The numbers are exactly what `max-lines` reports (it skips blank lines
+// and comments, so they are lower than `wc -l`); there is deliberately no slack. Shrink these numbers as the files are decomposed; never raise them.
+const MAX_LINES = 6000;
+const oversizedFiles = { "vscode-extension/src/extension.ts": 11274 };
+
+export default [
+  ...typescriptEslint.configs["flat/recommended"].map(c => ({ ...c, files: ["**/*.ts"] })),
+  {
     files: ["**/*.ts"],
 
     plugins: {
@@ -17,6 +45,15 @@ export default [{
     },
 
     rules: {
+        // Recommended rules that still have legacy violations stay at warn and are held by the
+        // lint-baseline.json ratchet; the rest of the recommended set is already error.
+        "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" }],
+        "@typescript-eslint/no-require-imports": "warn",
+        "@typescript-eslint/triple-slash-reference": "warn",
+        "@typescript-eslint/no-unsafe-function-type": "warn",
+        "@typescript-eslint/ban-ts-comment": "warn",
+        "@typescript-eslint/no-explicit-any": "error",
+
         "@typescript-eslint/naming-convention": ["warn", {
             selector: "import",
             format: ["camelCase", "PascalCase"],
@@ -58,13 +95,32 @@ export default [{
         "max-lines-per-function": ["warn", 80],
 
         // File-size ceiling. The per-function rules above are satisfied almost everywhere
-        // (extension.ts's ~169 methods all individually pass max-lines-per-function), yet the
-        // file itself reached 12k+ lines — proof that "every function is small" doesn't stop a
-        // file from becoming unmanageable. 6000 is set just above today's second-largest linted
-        // file (webview/usage/main.ts, ~5900 lines) so extension.ts is the only file flagged
-        // right now; it isn't a target size. As extension.ts is decomposed
+        // (extension.ts's methods pass max-lines-per-function apart from an explicit
+        // eslint-disable exemption), yet the file itself
+        // became enormous — proof that "every function is small" doesn't stop a file from
+        // becoming unmanageable. extension.ts is by far the largest file; the threshold isn't a
+        // target size. Run `pnpm run lint` for the current offenders. As extension.ts is decomposed
         // (docs/adr/EXTENSION-TS-DECOMPOSITION.md) and other files are split, ratchet this
         // number down rather than raising it to accommodate growth.
-        "max-lines": ["warn", { max: 6000, skipBlankLines: true, skipComments: true }],
+        "max-lines": ["error", { max: MAX_LINES, skipBlankLines: true, skipComments: true }],
     },
+},
+...(legacyAnyFiles.length ? [{
+    // Legacy files that still contain explicit `any`: warn only (counts held by the baseline).
+    files: legacyAnyFiles,
+    rules: { "@typescript-eslint/no-explicit-any": "warn" },
+}] : []),
+{
+    // cli/ has no baseline of its own yet (its lint wiring is tracked separately); keep `any`
+    // a warning there so `cd cli && npm run lint` does not start failing.
+    files: ["**/cli/**/*.ts"],
+    rules: { "@typescript-eslint/no-explicit-any": "warn" },
+},
+...Object.entries(oversizedFiles).map(([file, max]) => ({
+    files: [toPattern(file)],
+    rules: { "max-lines": ["error", { max, skipBlankLines: true, skipComments: true }] },
+})),
+{
+    files: ["**/*.test.ts", "**/test/**/*.ts"],
+    rules: { "@typescript-eslint/no-explicit-any": "off" },
 }];

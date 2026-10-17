@@ -3,7 +3,7 @@
  */
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { discoverSessionFiles, calculateDailyStats, buildChartPayload, fmt, formatTokens } from '../helpers';
+import { discoverSessionFiles, calculateDailyStats, recentAnalysisCutoff, buildChartPayload, fmt } from '../helpers';
 import { shouldOutputJson } from '../commandUtils';
 import { createEmptyChartPayload } from './payloads';
 
@@ -23,8 +23,9 @@ export const chartCommand = new Command('chart')
 		}
 
 		const verbose = options.verbose === true;
-		const { labels, days, allDaysMap } = await calculateDailyStats(files, verbose);
-		const payload = buildChartPayload(labels, days, allDaysMap) as any;
+		// Bounded like `all`: hosts call this too, and enriching the whole history on every run
+		// is the slow path. See DailyStatsOptions.enrichSince.
+		const payload = buildChartPayload(await calculateDailyStats(files, verbose, { enrichSince: recentAnalysisCutoff() }));
 
 		if (shouldOutputJson(options)) {
 			process.stdout.write(JSON.stringify(payload));
@@ -34,29 +35,28 @@ export const chartCommand = new Command('chart')
 		// Human-readable output
 		console.log(chalk.bold.cyan('\n📊 Token Usage Summary\n'));
 
-		const periods = payload.periods || {};
+		// The shared payload's periods reach back to the earliest session (for the webview's
+		// "All time" window); the summary shows the recent window each heading names.
 		const periodNames = [
-			{ key: 'day', label: 'Daily (last 30 days)' },
-			{ key: 'week', label: 'Weekly (last 6 weeks)' },
-			{ key: 'month', label: 'Monthly (last 12 months)' },
-		];
+			{ key: 'day', label: 'Daily (last 30 days)', recent: 30 },
+			{ key: 'week', label: 'Weekly (last 6 weeks)', recent: 6 },
+			{ key: 'month', label: 'Monthly (last 12 months)', recent: 12 },
+		] as const;
 
-		for (const { key, label } of periodNames) {
-			const period = periods[key];
-			if (!period) continue;
+		for (const { key, label, recent } of periodNames) {
+			const period = payload.periods[key];
+			const labels = period.labels.slice(-recent);
+			const tokensData = period.tokensData.slice(-recent);
+			const costData = period.costData.slice(-recent);
 
 			console.log(chalk.bold(label));
 			console.log(chalk.dim('─'.repeat(60)));
 
-			const rows = (period.labels || []).map((periodLabel: string, idx: number) => {
-				const tokens = period.tokensData?.[idx] ?? 0;
-				const cost = period.costData?.[idx] ?? 0;
-				return {
-					Period: periodLabel,
-					Tokens: fmt(tokens),
-					Cost: `$${cost.toFixed(2)}`,
-				};
-			});
+			const rows = labels.map((periodLabel, idx) => ({
+				Period: periodLabel,
+				Tokens: fmt(tokensData[idx] ?? 0),
+				Cost: `$${(costData[idx] ?? 0).toFixed(2)}`,
+			}));
 
 			// Print table
 			if (rows.length > 0) {
@@ -64,9 +64,9 @@ export const chartCommand = new Command('chart')
 			}
 
 			// Print totals
-			const totalTokens = period.totalTokens ?? 0;
-			const totalCost = period.totalCost ?? 0;
-			const periodCount = period.periodCount ?? 0;
+			const totalTokens = tokensData.reduce((a, b) => a + b, 0);
+			const totalCost = costData.reduce((a, b) => a + b, 0);
+			const periodCount = labels.length;
 			const avgTokens = periodCount > 0 ? Math.round(totalTokens / periodCount) : 0;
 			const avgCost = periodCount > 0 ? totalCost / periodCount : 0;
 

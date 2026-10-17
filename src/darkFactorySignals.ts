@@ -395,6 +395,50 @@ export function readGitOriginUrl(repoRoot: string): string | undefined {
 	return config ? GIT_ORIGIN_URL_PATTERN.exec(config)?.[1] : undefined;
 }
 
+/**
+ * Identify the repository a checkout belongs to, so linked worktrees of one
+ * repository can be grouped. Returns the shared git directory (the same for the
+ * main checkout and every linked worktree) and whether `repoRoot` is itself the
+ * main checkout (a non-bare repository whose common dir is `<repoRoot>/.git`).
+ */
+export function resolveRepoIdentity(repoRoot: string): { key: string; isMainCheckout: boolean } {
+	const configDir = resolveGitConfigDir(repoRoot);
+	if (!configDir) { return { key: canonicalPath(repoRoot), isMainCheckout: true }; }
+	// Canonical, so a checkout reached through a symlink and a worktree whose gitdir
+	// points at the physical path still share one key.
+	const key = canonicalPath(configDir);
+	// The main checkout is the one whose own `.git` directory *is* the common dir (a bare repo has none).
+	return { key, isMainCheckout: !isLinkedWorktree(repoRoot) && !isBareRepository(key) };
+}
+
+/**
+ * A linked worktree's `.git` is a pointer file whose gitdir carries a `commondir`
+ * link back to the shared repository. A normal checkout (`.git` directory), a
+ * submodule and a checkout made with `--separate-git-dir` have no such link, so
+ * they are main checkouts even though their `.git` is not at `<root>/.git`.
+ */
+function isLinkedWorktree(repoRoot: string): boolean {
+	const gitPath = path.join(repoRoot, '.git');
+	if (probePath(gitPath) !== 'file') { return false; }
+	const match = /^gitdir:\s*(.+)$/m.exec(readPointerFile(gitPath) ?? '');
+	return !!match && readPointerFile(path.join(path.resolve(repoRoot, match[1].trim()), 'commondir')) !== undefined;
+}
+
+/** `realpath` when the path exists, otherwise the plain resolved path. */
+function canonicalPath(target: string): string {
+	try {
+		return fs.realpathSync.native(target);
+	} catch {
+		return path.resolve(target);
+	}
+}
+
+/** A bare repository (even one that happens to be named `.git`) has no working checkout beside it. */
+function isBareRepository(gitDir: string): boolean {
+	const config = readPointerFile(path.join(gitDir, 'config'));
+	return config !== undefined && /^\s*bare\s*=\s*true\s*$/im.test(config);
+}
+
 /** Markdown files under `.github/agents/` that are documentation, not agent definitions. */
 const NON_AGENT_MARKDOWN = new Set(['readme.md', 'index.md', 'contributing.md']);
 

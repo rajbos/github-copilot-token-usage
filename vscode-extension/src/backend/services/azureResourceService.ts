@@ -9,6 +9,7 @@ import { StorageManagementClient } from '@azure/arm-storage';
 import { SubscriptionClient } from '@azure/arm-resources-subscriptions';
 import { TableServiceClient } from '@azure/data-tables';
 import { safeStringifyError, isAzurePolicyDisallowedError, isStorageLocalAuthDisallowedByPolicyError } from '../../../../src/utils/errors';
+import { applySettingsAtomically } from '../settingsBatch';
 import { getAzureTableStorageEndpoint } from '../../utils/azureEndpoints';
 import type { BackendAuthMode, BackendSettings } from '../settings';
 import { validateTeamAlias, type BackendUserIdentityMode } from '../identity';
@@ -41,7 +42,7 @@ export interface AzureResourceServiceDeps {
 	updateTokenStats?: () => Promise<void>;
 	getSettings: () => BackendSettings;
 	startTimerIfEnabled: () => void;
-	syncToBackendStore: (force: boolean) => Promise<void>;
+	syncToBackendStore: (force: boolean) => Promise<unknown>;
 	clearQueryCache: () => void;
 }
 
@@ -449,20 +450,23 @@ export class AzureResourceService {
 		authMode: BackendAuthMode,
 		profile: SharingProfileResult
 	): Promise<void> {
-		await config.update('backend.subscriptionId', subscriptionId, vscode.ConfigurationTarget.Global);
-		await config.update('backend.resourceGroup', rgResult.resourceGroup, vscode.ConfigurationTarget.Global);
-		await config.update('backend.storageAccount', storageAccount, vscode.ConfigurationTarget.Global);
-		await config.update('backend.aggTable', tableConfig.aggTable, vscode.ConfigurationTarget.Global);
-		await config.update('backend.datasetId', tableConfig.datasetId, vscode.ConfigurationTarget.Global);
-		await config.update('backend.sharingProfile', profile.sharingProfile, vscode.ConfigurationTarget.Global);
-		await config.update('backend.userId', profile.userId, vscode.ConfigurationTarget.Global);
-		await config.update('backend.userIdMode', profile.userIdMode, vscode.ConfigurationTarget.Global);
-		await config.update('backend.shareWithTeam', profile.shareWithTeam, vscode.ConfigurationTarget.Global);
-		await config.update('backend.shareWorkspaceMachineNames', profile.shareWorkspaceMachineNames, vscode.ConfigurationTarget.Global);
-		await config.update('backend.shareConsentAt', profile.shareConsentAt, vscode.ConfigurationTarget.Global);
-		await config.update('backend.userIdentityMode', profile.userIdentityMode, vscode.ConfigurationTarget.Global);
-		await config.update('backend.authMode', authMode, vscode.ConfigurationTarget.Global);
-		await config.update('backend.enabled', true, vscode.ConfigurationTarget.Global);
+		// One batch, so the settings-change sync runs once against the finished configuration.
+		await applySettingsAtomically(async () => {
+			await config.update('backend.subscriptionId', subscriptionId, vscode.ConfigurationTarget.Global);
+			await config.update('backend.resourceGroup', rgResult.resourceGroup, vscode.ConfigurationTarget.Global);
+			await config.update('backend.storageAccount', storageAccount, vscode.ConfigurationTarget.Global);
+			await config.update('backend.aggTable', tableConfig.aggTable, vscode.ConfigurationTarget.Global);
+			await config.update('backend.datasetId', tableConfig.datasetId, vscode.ConfigurationTarget.Global);
+			await config.update('backend.sharingProfile', profile.sharingProfile, vscode.ConfigurationTarget.Global);
+			await config.update('backend.userId', profile.userId, vscode.ConfigurationTarget.Global);
+			await config.update('backend.userIdMode', profile.userIdMode, vscode.ConfigurationTarget.Global);
+			await config.update('backend.shareWithTeam', profile.shareWithTeam, vscode.ConfigurationTarget.Global);
+			await config.update('backend.shareWorkspaceMachineNames', profile.shareWorkspaceMachineNames, vscode.ConfigurationTarget.Global);
+			await config.update('backend.shareConsentAt', profile.shareConsentAt, vscode.ConfigurationTarget.Global);
+			await config.update('backend.userIdentityMode', profile.userIdentityMode, vscode.ConfigurationTarget.Global);
+			await config.update('backend.authMode', authMode, vscode.ConfigurationTarget.Global);
+			await config.update('backend.enabled', true, vscode.ConfigurationTarget.Global);
+		});
 	}
 
 	/**
@@ -559,13 +563,15 @@ export class AzureResourceService {
 		const shareWorkspaceMachineNames = await this.maybeAskNamesForTeamProfile(picked.profile, picked.sharingLevel, currentLevel)
 			?? profileDefaults.shareWorkspaceMachineNames;
 
-		await config.update('backend.sharingProfile', picked.profile, vscode.ConfigurationTarget.Global);
-		await config.update('backend.shareWithTeam', profileDefaults.shareWithTeam, vscode.ConfigurationTarget.Global);
-		await config.update('backend.shareWorkspaceMachineNames', shareWorkspaceMachineNames, vscode.ConfigurationTarget.Global);
-		await config.update('backend.userId', profileDefaults.userId, vscode.ConfigurationTarget.Global);
-		await config.update('backend.userIdMode', profileDefaults.userIdMode, vscode.ConfigurationTarget.Global);
-		await config.update('backend.userIdentityMode', profileDefaults.userIdentityMode, vscode.ConfigurationTarget.Global);
-		await config.update('backend.shareConsentAt', profileDefaults.shareConsentAt, vscode.ConfigurationTarget.Global);
+		await applySettingsAtomically(async () => {
+			await config.update('backend.sharingProfile', picked.profile, vscode.ConfigurationTarget.Global);
+			await config.update('backend.shareWithTeam', profileDefaults.shareWithTeam, vscode.ConfigurationTarget.Global);
+			await config.update('backend.shareWorkspaceMachineNames', shareWorkspaceMachineNames, vscode.ConfigurationTarget.Global);
+			await config.update('backend.userId', profileDefaults.userId, vscode.ConfigurationTarget.Global);
+			await config.update('backend.userIdMode', profileDefaults.userIdMode, vscode.ConfigurationTarget.Global);
+			await config.update('backend.userIdentityMode', profileDefaults.userIdentityMode, vscode.ConfigurationTarget.Global);
+			await config.update('backend.shareConsentAt', profileDefaults.shareConsentAt, vscode.ConfigurationTarget.Global);
+		});
 
 		this.deps.clearQueryCache();
 		if (currentSettings.enabled) {

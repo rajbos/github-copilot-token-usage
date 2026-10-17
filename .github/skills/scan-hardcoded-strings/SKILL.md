@@ -44,7 +44,7 @@ node .github/skills/scan-hardcoded-strings/scan-hardcoded-strings.js --json
 The script will:
 1. Recursively scan every `*.ts` file (excluding `*.test.ts`) under
    `vscode-extension/src/webview/`, plus only the `get*Html(...)` method
-   bodies in `vscode-extension/src/extension.ts` (not the whole 13k-line
+   bodies in `vscode-extension/src/extension.ts` (not the whole
    file — this keeps out unrelated string literals like GitHub issue
    Markdown templates or VS Code panel titles), after blanking out `/* ... */`
    block/JSDoc comments so example markup in a doc comment isn't mistaken
@@ -85,6 +85,7 @@ The script will:
    suppress another genuine one
 4. Print a console report grouped by file, with line numbers and snippets
 5. Write the same findings to `hardcoded-strings-report.md` at the repo root
+   (git-ignored, so running the scan never dirties the tree; `--out <path>` overrides)
 6. Set `process.exitCode = 0` rather than forcing `process.exit()` — this
    script informs, it does not gate, and letting the process exit naturally
    avoids truncating buffered output when piped (e.g. in CI or `--json | ...`).
@@ -146,4 +147,4 @@ ranking — triage each entry:
   extension-host translation tables
 - `scripts/validate-localization.js`, `vscode-extension/scripts/validate-l10n.mjs`
   — consistency checks for strings already routed through localization
-- `hardcoded-strings-report.md` (repo root) — the generated inventory report
+- `hardcoded-strings-report.md` (repo root, git-ignored) — the generated inventory report

@@ -6,7 +6,7 @@ applyTo: "vscode-extension/**"
 
 ## Architecture Overview
 
-The entire extension's logic is contained within the `CopilotTokenTracker` class in `vscode-extension/src/extension.ts`. Its primary function is to track GitHub Copilot token usage by reading and parsing session log files.
+The extension's entry point and orchestration live in the `CopilotTokenTracker` class in `vscode-extension/src/extension.ts`, which is still very large (see the decomposition status in the repo-root `AGENTS.md`); supporting logic lives in sibling modules under `vscode-extension/src/` and in the shared repo-root `src/`. Put new logic in a module and call it from there rather than adding it to `extension.ts`. Its primary function is to track GitHub Copilot token usage by reading and parsing session log files.
 
 - **Activation**: The extension activates on VS Code startup via the `onStartupFinished` event in `vscode-extension/package.json`. The `activate` function in `vscode-extension/src/extension.ts` instantiates `CopilotTokenTracker`.
 
@@ -49,17 +49,17 @@ The entire extension's logic is contained within the `CopilotTokenTracker` class
 
 ## Developer Workflow
 
-- **Setup**: Run `npm install` inside `vscode-extension/` to install dependencies.
-- **Build**: Run `npm run compile` from `vscode-extension/` to build the extension using `esbuild`. The output is a single file: `vscode-extension/dist/extension.js`.
-- **Validation**: Run `npm run validate` to type-check, lint, and build the extension.
-- **Watch Mode**: For active development, use `npm run watch` from `vscode-extension/`. This will automatically recompile the extension on file changes.
-- **Testing/Debugging (human developers only)**: Press `F5` in VS Code to open the Extension Development Host. This will launch a new VS Code window with the extension running. `console.log` statements from `vscode-extension/src/extension.ts` will appear in the Developer Tools console of this new window (Help > Toggle Developer Tools). **AI agents must never do this** — see "Never launch a real editor/IDE instance" in the root `.github/copilot-instructions.md`. Use `npm run validate` and `npm run test:node` / `npm run test:coverage` to validate changes instead.
+- **Setup**: Run `pnpm install` inside `vscode-extension/` to install dependencies.
+- **Build**: Run `pnpm run compile` from `vscode-extension/` to build the extension using `esbuild`. The output is a single file: `vscode-extension/dist/extension.js`.
+- **Validation**: Run `pnpm run validate` to type-check, lint, and build the extension.
+- **Watch Mode**: For active development, use `pnpm run watch` from `vscode-extension/`. This will automatically recompile the extension on file changes.
+- **Testing/Debugging (human developers only)**: Press `F5` in VS Code to open the Extension Development Host. This will launch a new VS Code window with the extension running. `console.log` statements from `vscode-extension/src/extension.ts` will appear in the Developer Tools console of this new window (Help > Toggle Developer Tools). **AI agents must never do this** — see "Never launch a real editor/IDE instance" in the root `AGENTS.md`. Use `pnpm run validate` and `pnpm run test:node` / `pnpm run test:coverage` to validate changes instead.
 
-**Important build guidance:** After making changes to source code or related files (TypeScript, JavaScript, JSON, or other code files used by the extension), always run both `npm ci` and then `npm run validate` from `vscode-extension/` to validate that the project still builds and lints cleanly before opening a pull request or releasing. Also run the unit tests with `npm run test:node` to catch any regressions. You do not need to run the full validation step for documentation-only changes (Markdown files), but you should run it after any edits that touch source, configuration, or JSON data files.
+**Important build guidance:** After making changes to source code or related files (TypeScript, JavaScript, JSON, or other code files used by the extension), always run both `pnpm install --frozen-lockfile` and then `pnpm run validate` from `vscode-extension/` to validate that the project still builds and lints cleanly before opening a pull request or releasing. Also run the unit tests with `pnpm run test:node` to catch any regressions. You do not need to run the full validation step for documentation-only changes (Markdown files), but you should run it after any edits that touch source, configuration, or JSON data files.
 
-**Zero warnings policy:** `npm run validate` must report `0 problems (0 errors, 0 warnings)`. ESLint warnings count as failures — do not leave new warnings in the codebase. If validation outputs `✖ N problems`, fix all of them before committing.
+**Zero warnings policy:** `pnpm run validate` must report `0 problems (0 errors, 0 warnings)`. ESLint warnings count as failures — do not leave new warnings in the codebase. If validation outputs `✖ N problems`, fix all of them before committing.
 
-**Always use `npm ci` (not `npm install`) when validating a build** — `npm ci` installs from the lockfile exactly, mirroring what CI does, and will catch any dependency drift. Use `npm install` only when intentionally adding or updating packages.
+**Always use `pnpm install --frozen-lockfile` (not `pnpm install`) when validating a build** — `pnpm install --frozen-lockfile` installs from the lockfile exactly, mirroring what CI does, and will catch any dependency drift. Use `pnpm install` only when intentionally adding or updating packages.
 
 > ⚠️ **Common mistake**: The `edit` tool's old_str/new_str replacement can accidentally drop comment delimiters (e.g. `/**` opening a JSDoc block) when the match boundary falls exactly at that line. After editing `tokenEstimation.ts` or any file with JSDoc comments, always verify the file compiles before committing.
 
@@ -77,7 +77,7 @@ The extension supports localization for all user-facing strings, including comma
 
 ### Validating Localization
 
-Run `npm run validate:l10n` (script: `scripts/validate-l10n.mjs`) to detect broken localization before it ships: it strictly parses every `package.nls*.json`, checks that all `%key%` references in `package.json` and all `l10n.t('key')` calls in `src/**` resolve against `package.nls.json`, and verifies locale files cover every base key. With `--vsix <file>` it also validates the packaged VSIX contents. CI and the nightly pre-release workflow run this automatically after packaging.
+Run `pnpm run validate:l10n` (script: `scripts/validate-l10n.mjs`) to detect broken localization before it ships: it strictly parses every `package.nls*.json`, checks that all `%key%` references in `package.json` and all `l10n.t('key')` calls in `src/**` resolve against `package.nls.json`, and verifies locale files cover every base key. With `--vsix <file>` it also validates the packaged VSIX contents. CI and the nightly pre-release workflow run this automatically after packaging.
 
 ### Runtime Localization (Key-Based)
 
@@ -174,7 +174,7 @@ const html = this.getSomeViewHtml(..., { localization });
 
 ### Detecting Hardcoded Strings
 
-`validate:l10n` and `lint:l10n` only check *consistency* of strings already wired through `localize(`/`t(`/`vscode.l10n.t(` — neither one notices a plain string literal written directly into UI-rendering code that never goes through that system at all, e.g. `button.textContent = 'Refresh'` or `<h2>Usage Analysis</h2>` baked straight into an HTML template literal. Run `npm run lint:hardcoded-strings` (script: `scripts/check-hardcoded-strings.mjs`) to catch that instead. It walks the TypeScript AST (not a blind regex scan) of `src/webview/**/*.ts`, `src/backend/configPanel.ts`, `src/backend/teamServerConfigPanel.ts`, `src/loadingHtml.ts`, and the `getXxxHtml`-style methods in `extension.ts`, and flags a string/template literal (including each branch of a `cond ? 'A' : 'B'`, each static piece of `'a' + x + 'b'` concatenation, and the fallback side of `x ?? 'F'` / `x || 'F'`) that looks like prose when it sits in a UI-rendering position — assigned (via `=` or `+=`) to `.textContent`/`.innerText`/`.innerHTML`/`.title`/`.placeholder` (identifier or string-literal object keys alike), passed to a known text-argument sink (`el(...)`, `iconHeading(...)`, `createButton(id, label, ...)`, `document.createTextNode(...)`, `setHtml(...)`), passed to `.setAttribute('aria-label'|'title'|'placeholder', ...)`, or as an `aria-label`/`title`/`placeholder` attribute or tag text content (`<button>`, `<h1>`-`<h6>`, `<span>`, `<vscode-button>`, …) inside any string or template literal, holes in an interpolation included, or as direct text sitting outside any tag in a raw HTML fragment (e.g. `'<span class="icon"></span> Insights'` built for concatenation into a `setHtml(...)` call) — and isn't already an argument to `localize(`/`t(`/`vscode.l10n.t(`. A markup-bearing value (`.innerHTML =` / `setHtml(...)`) is reported once via whichever mechanism actually matches the text, not twice. It has five deliberate scope boundaries, documented in the script's doc comment: it doesn't trace a literal nested inside a template's `${...}` hole back to an *enclosing* tag context; it doesn't parse the client-side JavaScript inside the large inline `<script>` bodies that `configPanel.ts`/`teamServerConfigPanel.ts`/`loadingHtml.ts` build as plain strings, only the markup around it; it recognizes only a fixed, explicit list of sink property/function names, not an arbitrary call graph; its tag matching stops at the *nearest* closing tag rather than a properly balanced one, so a tag nested directly inside another of the *same* name isn't handled correctly (a real fix needs a stack-based tokenizer, not another regex); and an `// i18n-exempt` comment must sit next to the specific reported line, not necessarily the enclosing literal's own opening line, for a multiline template. None of these are bugs to report — they're documented limits of a heuristic ratchet, not a sound analysis. The `// i18n-exempt` escape hatch is checked against real comment tokens found by the TypeScript scanner (not raw line text), specifically so a marker can't be smuggled in as part of a string/template literal's own rendered content.
+`validate:l10n` and `lint:l10n` only check *consistency* of strings already wired through `localize(`/`t(`/`vscode.l10n.t(` — neither one notices a plain string literal written directly into UI-rendering code that never goes through that system at all, e.g. `button.textContent = 'Refresh'` or `<h2>Usage Analysis</h2>` baked straight into an HTML template literal. Run `pnpm run lint:hardcoded-strings` (script: `scripts/check-hardcoded-strings.mjs`) to catch that instead. It walks the TypeScript AST (not a blind regex scan) of `src/webview/**/*.ts`, `src/backend/configPanel.ts`, `src/backend/teamServerConfigPanel.ts`, the repo-root `src/loadingHtml.ts` (moved out of `vscode-extension/src/`), and the `getXxxHtml`-style methods in `extension.ts`, and flags a string/template literal (including each branch of a `cond ? 'A' : 'B'`, each static piece of `'a' + x + 'b'` concatenation, and the fallback side of `x ?? 'F'` / `x || 'F'`) that looks like prose when it sits in a UI-rendering position — assigned (via `=` or `+=`) to `.textContent`/`.innerText`/`.innerHTML`/`.title`/`.placeholder` (identifier or string-literal object keys alike), passed to a known text-argument sink (`el(...)`, `iconHeading(...)`, `createButton(id, label, ...)`, `document.createTextNode(...)`, `setHtml(...)`), passed to `.setAttribute('aria-label'|'title'|'placeholder', ...)`, or as an `aria-label`/`title`/`placeholder` attribute or tag text content (`<button>`, `<h1>`-`<h6>`, `<span>`, `<vscode-button>`, …) inside any string or template literal, holes in an interpolation included, or as direct text sitting outside any tag in a raw HTML fragment (e.g. `'<span class="icon"></span> Insights'` built for concatenation into a `setHtml(...)` call) — and isn't already an argument to `localize(`/`t(`/`vscode.l10n.t(`. A markup-bearing value (`.innerHTML =` / `setHtml(...)`) is reported once via whichever mechanism actually matches the text, not twice. It has five deliberate scope boundaries, documented in the script's doc comment: it doesn't trace a literal nested inside a template's `${...}` hole back to an *enclosing* tag context; it doesn't parse the client-side JavaScript inside the large inline `<script>` bodies that `configPanel.ts`/`teamServerConfigPanel.ts`/`loadingHtml.ts` build as plain strings, only the markup around it; it recognizes only a fixed, explicit list of sink property/function names, not an arbitrary call graph; its tag matching stops at the *nearest* closing tag rather than a properly balanced one, so a tag nested directly inside another of the *same* name isn't handled correctly (a real fix needs a stack-based tokenizer, not another regex); and an `// i18n-exempt` comment must sit next to the specific reported line, not necessarily the enclosing literal's own opening line, for a multiline template. None of these are bugs to report — they're documented limits of a heuristic ratchet, not a sound analysis. The `// i18n-exempt` escape hatch is checked against real comment tokens found by the TypeScript scanner (not raw line text), specifically so a marker can't be smuggled in as part of a string/template literal's own rendered content.
 
 This check is a **baseline/ratchet**, the same pattern as the `max-lines` ceiling in `eslint.config.mjs` (see the repo-root AGENTS.md's "File-size ceiling" section): it doesn't try to fix today's existing hardcoded strings, it only stops new ones. `scripts/hardcoded-strings-baseline.json` records every violation that already existed, keyed by file + a hash of the offending line's trimmed content (not the line number, so it survives unrelated line-number drift) with a per-key occurrence count (so a genuinely new duplicate of an already-baselined line is still caught, not silently covered by the first occurrence). CI fails only when the check finds a violation whose count exceeds what the baseline recorded for that file+hash — a genuinely new hardcoded string.
 
@@ -186,7 +186,7 @@ If a new literal is legitimately not meant to be localized (a brand name, a debu
    ```
 2. **Allowlist** — for a literal that's awkward to annotate inline (e.g. repeated across many files), add its exact text to `scripts/hardcoded-strings-allowlist.json`'s `allow` array instead.
 
-For everything else, route the string through `localize()`/`t()` per the sections above rather than reaching for an escape hatch. Never regenerate the baseline (`npm run lint:hardcoded-strings -- --update-baseline`) to paper over new violations — only run it when a genuinely pre-existing string is being deliberately deferred.
+For everything else, route the string through `localize()`/`t()` per the sections above rather than reaching for an escape hatch. Never regenerate the baseline (`pnpm run lint:hardcoded-strings -- --update-baseline`) to paper over new violations — only run it when a genuinely pre-existing string is being deliberately deferred.
 
 ### Adding a New Language
 
@@ -207,17 +207,14 @@ For everything else, route the string through `localize()`/`t()` per the section
 
 ## Logging Best Practices
 
-**CRITICAL**: Do NOT add debug logging statements like `this.log('[DEBUG] message')` or `console.log('[DEBUG] ...')` for troubleshooting during development. This approach has been found to flood the output channel and cause messages to disappear.
+Avoid adding debug logging (`this.log`, `console.log`) inside frequently-called
+code (cache lookups, per-file loops, webview message handlers): the Output
+Channel's buffer is bounded, and high-frequency logging evicts real messages.
 
 ### Why DEBUG Logs Are Problematic
 
-**Extension Host Flooding**: When DEBUG log statements are added to frequently-called methods in `extension.ts` (e.g., cache lookups, file processing loops, webview message handlers), they can generate hundreds of log entries per operation. VS Code's OutputChannel has a buffer limit, and excessive logging causes older messages to be pushed out and lost. This was observed when:
-- Cache hit/miss logging was added to session file processing
-- JSONL content reference counting was logged for each file
-- Webview message handlers logged every incoming message with full JSON payloads
-- Session data was logged with repository counts on each webview update
-
-**Symptom**: After operations like clearing the cache, expected log messages would disappear from the Output panel because they were pushed out of the buffer by DEBUG logs.
+**Symptom**: expected log messages disappear from the Output panel because
+high-frequency DEBUG logging pushed them out of the bounded buffer.
 
 ### Extension vs Webview Logging
 
@@ -230,7 +227,6 @@ These are two completely separate logging systems:
 
 - Clearing the output channel (`outputChannel.clear()`) does NOT affect webview console logs
 - Webview console.log statements do NOT appear in the Output panel
-- DEBUG prefixes in webviews were removed to maintain consistency with extension guidelines
 
 ### Best Practices
 
@@ -251,7 +247,7 @@ For human developers, prefer VS Code's debugger with breakpoints rather than add
 2. Set breakpoints in `vscode-extension/src/extension.ts`
 3. Use the Debug Console to inspect variables
 
-AI agents cannot use the interactive debugger and must never launch the Extension Development Host (no `F5`, no `code .`, no editing `.vscode/launch.json` to auto-run). Rely on the unit test suite (`npm run test:node`) and, where needed, temporary `console.log`/assertions inside a test file — removed before committing.
+AI agents cannot use the interactive debugger and must never launch the Extension Development Host (no `F5`, no `code .`, no editing `.vscode/launch.json` to auto-run). Rely on the unit test suite (`pnpm run test:node`) and, where needed, temporary `console.log`/assertions inside a test file — removed before committing.
 
 ## Parallel Model Usage Aggregation Paths
 
@@ -285,7 +281,7 @@ If you find any match outside of `addModelUsage` itself, convert it to use the h
 
 ## Key Files & Conventions
 
-- **`vscode-extension/src/extension.ts`**: The single source file containing all logic.
+- **`vscode-extension/src/extension.ts`**: The entry point and the large `CopilotTokenTracker` class. It still holds much of the logic, but new logic should go in separate modules (see the repo-root `AGENTS.md` and `docs/adr/EXTENSION-TS-DECOMPOSITION.md`).
   - `CopilotTokenTracker`: The main class.
   - `calculateDetailedStats()`: The primary data aggregation method.
   - `getDetailsHtml()`: The method responsible for rendering the webview's HTML content. All styling is inlined within this method's template string.
@@ -322,8 +318,12 @@ To maintain a consistent, VS Code-native look across all webview panels (Details
 - **Checklist for PRs touching webviews**:
   - Ensure the toolkit is registered before creating `vscode-button` elements.
   - Keep navigation command names unchanged so `extension.ts` handlers continue to work.
-  - Run `npm run validate` and verify TypeScript and ESLint pass.
+  - Run `pnpm run validate` and verify TypeScript and ESLint pass.
   - Visually compare the header with the Details and other panels to confirm parity.
+
+## Webview Tables
+
+Every table in a webview is rendered with `renderDataTable()` from `src/webview/shared/dataTable.ts` and styled by `src/webview/shared/dataTable.css` — never hand-build a `<table>` with its own sort state, sort indicators, pager or table CSS. The component owns layout, styling, sorting, pagination (10 rows by default; `pageSize: false` only for fixed-structure tables), row filters, focus restoration, screen-reader announcements and the click wiring; a view only supplies rows and column definitions. See [docs/vscode-extension/DATA-TABLE.md](../../docs/vscode-extension/DATA-TABLE.md).
 
 ## Webview State Persistence
 

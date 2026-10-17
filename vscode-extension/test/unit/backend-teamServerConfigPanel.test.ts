@@ -314,14 +314,14 @@ test('TeamServerConfigPanel - handleMessage saves valid configuration', async ()
 	const handleMessage = (panel as any).handleMessage.bind(panel);
 	await handleMessage(message);
 	
-	// Should update config
+	// Should update config — the enable flag last, once endpoint and profile are in place
 	assert.equal(configUpdates.length, 3, 'Should update 3 config values');
-	assert.equal(configUpdates[0].key, 'backend.sharingServer.enabled');
-	assert.equal(configUpdates[0].value, true);
+	assert.equal(configUpdates[0].key, 'backend.sharingProfile');
+	assert.equal(configUpdates[0].value, 'teamAnonymized');
 	assert.equal(configUpdates[1].key, 'backend.sharingServer.endpointUrl');
 	assert.equal(configUpdates[1].value, 'https://example.com/server');
-	assert.equal(configUpdates[2].key, 'backend.sharingProfile');
-	assert.equal(configUpdates[2].value, 'teamAnonymized');
+	assert.equal(configUpdates[2].key, 'backend.sharingServer.enabled');
+	assert.equal(configUpdates[2].value, true);
 	
 	// Should show success message
 	assert.equal(infoMessages.length, 1, 'Should show success message');
@@ -378,8 +378,8 @@ test('TeamServerConfigPanel - handleMessage uses default profile for invalid sha
 	
 	// Should use 'off' as default for invalid profile
 	assert.equal(configUpdates.length, 3, 'Should update 3 config values');
-	assert.equal(configUpdates[2].key, 'backend.sharingProfile');
-	assert.equal(configUpdates[2].value, 'off', 'Should default to off for invalid profile');
+	const profileUpdate = configUpdates.find((u: any) => u.key === 'backend.sharingProfile');
+	assert.equal(profileUpdate?.value, 'off', 'Should default to off for invalid profile');
 });
 
 test('TeamServerConfigPanel - handleMessage ignores non-save commands', async () => {
@@ -499,4 +499,119 @@ test('TeamServerConfigPanel - renderHtml includes the data-sharing info column',
 	assert.ok(html.includes("What you'll get"), 'Should include the dashboard preview heading');
 	assert.ok(html.includes('dashboard-preview'), 'Should include the dashboard preview mockup');
 	assert.ok(html.includes('not live data'), 'Should label the mockup as illustrative, not live data');
+});
+
+function renderPanelWithProfile(inspected: string | undefined, values: Record<string, unknown> = {}): string {
+	(vscode as any).__mock.reset();
+	const panel = createMockPanel();
+	(vscode.window as any).createWebviewPanel = () => panel;
+	(vscode.workspace as any).getConfiguration = () => ({
+		// get() returns the package.json default for an unset profile, exactly like VS Code.
+		get: (key: string, defaultValue: any) => (key in values ? values[key] : defaultValue),
+		inspect: (key: string) => key === 'backend.sharingProfile' ? { globalValue: inspected } : undefined,
+	});
+	const { TeamServerConfigPanel } = require('../../src/backend/teamServerConfigPanel');
+	TeamServerConfigPanel.current = undefined;
+	TeamServerConfigPanel.show({ extensionUri: vscode.Uri.parse('file:///extension'), subscriptions: [] } as any);
+	const html = panel.webview.html as string;
+	TeamServerConfigPanel.current?.dispose();
+	TeamServerConfigPanel.current = undefined;
+	return html;
+}
+
+test('TeamServerConfigPanel - an unset sharing profile preselects teamAnonymized, not off', () => {
+	const html = renderPanelWithProfile(undefined);
+	assert.ok(html.includes('<option value="teamAnonymized" selected>'), 'an unchanged save must not persist an explicit off');
+	assert.ok(!html.includes('<option value="off" selected>'));
+});
+
+test('TeamServerConfigPanel - an explicit sharing profile is preserved, including off', () => {
+	assert.ok(renderPanelWithProfile('off').includes('<option value="off" selected>'));
+	assert.ok(renderPanelWithProfile('teamIdentified').includes('<option value="teamIdentified" selected>'));
+});
+
+test('TeamServerConfigPanel - an unset profile follows the same legacy inference as the settings', () => {
+	const html = renderPanelWithProfile(undefined, { 'backend.shareWithTeam': true, 'backend.userIdentityMode': 'teamAlias' });
+	assert.ok(html.includes('<option value="teamIdentified" selected>'));
+});
+
+async function saveFromPanel(message: any, current: Record<string, unknown>): Promise<Array<{ key: string; value: unknown }>> {
+	(vscode as any).__mock.reset();
+	const updates: Array<{ key: string; value: unknown }> = [];
+	const state: Record<string, unknown> = { ...current };
+	(vscode.workspace as any).getConfiguration = () => ({
+		get: (key: string, defaultValue: any) => (key in state ? state[key] : defaultValue),
+		update: async (key: string, value: unknown) => { updates.push({ key, value }); state[key] = value; },
+	});
+	(vscode.window as any).showInformationMessage = async () => undefined;
+	const { TeamServerConfigPanel } = require('../../src/backend/teamServerConfigPanel');
+	const panel = new TeamServerConfigPanel(vscode.Uri.parse('file:///extension'));
+	(panel as any).panel = createMockPanel();
+	await (panel as any).handleMessage({ command: 'save', ...message });
+	return updates;
+}
+
+/** Replays the writes and returns every intermediate state in which the Team Server would upload. */
+function uploadingStates(updates: Array<{ key: string; value: unknown }>, current: Record<string, unknown>): Array<Record<string, unknown>> {
+	const state: Record<string, unknown> = { ...current };
+	const uploading: Array<Record<string, unknown>> = [];
+	for (const { key, value } of updates) {
+		state[key] = value;
+		if (state['backend.sharingServer.enabled'] && state['backend.sharingServer.endpointUrl'] && state['backend.sharingProfile'] !== 'off') {
+			uploading.push({ ...state });
+		}
+	}
+	return uploading;
+}
+
+test('TeamServerConfigPanel - a new setup saved with profile Off never passes through an uploading state', async () => {
+	const current = {};
+	const updates = await saveFromPanel({ enabled: true, endpointUrl: 'https://team.example.com', sharingProfile: 'off' }, current);
+	assert.deepEqual(uploadingStates(updates, current), []);
+	assert.deepEqual(updates.at(-1), { key: 'backend.sharingServer.enabled', value: true });
+});
+
+test('TeamServerConfigPanel - changing endpoint and profile on an enabled server disables it before applying them', async () => {
+	const current = { 'backend.sharingServer.enabled': true, 'backend.sharingServer.endpointUrl': 'https://old.example.com', 'backend.sharingProfile': 'teamIdentified' };
+	const updates = await saveFromPanel({ enabled: true, endpointUrl: 'https://new.example.com', sharingProfile: 'off' }, current);
+	assert.deepEqual(updates[0], { key: 'backend.sharingServer.enabled', value: false });
+	assert.deepEqual(uploadingStates(updates, current), [], 'no write may upload to the new endpoint under the old profile');
+});
+
+test('TeamServerConfigPanel - only the final state uploads when enabling with a team profile', async () => {
+	const current = {};
+	const updates = await saveFromPanel({ enabled: true, endpointUrl: 'https://team.example.com', sharingProfile: 'teamAnonymized' }, current);
+	const uploading = uploadingStates(updates, current);
+	assert.equal(uploading.length, 1);
+	assert.equal(uploading[0]['backend.sharingProfile'], 'teamAnonymized');
+	assert.equal(uploading[0]['backend.sharingServer.endpointUrl'], 'https://team.example.com');
+});
+
+test('TeamServerConfigPanel - disabling writes the enable flag first', async () => {
+	const current = { 'backend.sharingServer.enabled': true, 'backend.sharingServer.endpointUrl': 'https://team.example.com', 'backend.sharingProfile': 'teamAnonymized' };
+	const updates = await saveFromPanel({ enabled: false, endpointUrl: 'https://team.example.com', sharingProfile: 'teamAnonymized' }, current);
+	assert.deepEqual(updates[0], { key: 'backend.sharingServer.enabled', value: false });
+	assert.deepEqual(uploadingStates(updates, current), []);
+});
+
+test('TeamServerConfigPanel - the settings-change sync is deferred until the whole save has been applied', async () => {
+	const { deferWhileApplyingSettings } = require('../../src/backend/settingsBatch');
+	(vscode as any).__mock.reset();
+	const state: Record<string, unknown> = { 'backend.sharingServer.enabled': false };
+	const syncedStates: Array<Record<string, unknown>> = [];
+	// Stand-in for the extension's listener: every write fires a change, whose reaction syncs
+	// against whatever the settings are when it runs.
+	const react = () => { syncedStates.push({ ...state }); };
+	(vscode.workspace as any).getConfiguration = () => ({
+		get: (key: string, defaultValue: any) => (key in state ? state[key] : defaultValue),
+		update: async (key: string, value: unknown) => { state[key] = value; if (!deferWhileApplyingSettings(react)) { react(); } },
+	});
+	(vscode.window as any).showInformationMessage = async () => undefined;
+	const { TeamServerConfigPanel } = require('../../src/backend/teamServerConfigPanel');
+	const panel = new TeamServerConfigPanel(vscode.Uri.parse('file:///extension'));
+	(panel as any).panel = createMockPanel();
+	await (panel as any).handleMessage({ command: 'save', enabled: true, endpointUrl: 'https://team.example.com', sharingProfile: 'off' });
+	assert.equal(syncedStates.length, 1, 'one sync after the save, none per intermediate write');
+	assert.equal(syncedStates[0]['backend.sharingProfile'], 'off');
+	assert.equal(syncedStates[0]['backend.sharingServer.enabled'], true);
 });

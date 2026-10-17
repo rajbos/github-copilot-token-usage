@@ -26,16 +26,15 @@ export class SyncLock {
 	 * Try to acquire an exclusive file lock so only one VS Code window
 	 * can run a backend sync at a time.
 	 *
-	 * If the existing lock was written by an instance configured against a
-	 * *different* server URL, the lock does not apply — both instances are
-	 * syncing to independent endpoints and should not block each other.
+	 * `lockName` selects the lock file (see {@link SyncLock.lockPath}); callers pass one name per
+	 * sync target endpoint, so independent targets never share a file. If the existing lock was written by
+	 * an instance configured against a *different* server URL, the lock does not apply — both
+	 * instances are syncing to independent endpoints and should not block each other.
 	 */
-	async acquire(backend?: string, serverUrl?: string): Promise<boolean> {
+	async acquire(lockName?: string, serverUrl?: string): Promise<boolean> {
 		const ctx = this.context;
 		if (!ctx) { return true; } // No context → allow (tests)
-		// Use a backend-specific lock so Azure and sharingServer syncs don't block each other.
-		const suffix = backend === 'sharingServer' ? '_sharingserver' : '';
-		const lockPath = path.join(ctx.globalStorageUri.fsPath, `backend_sync${suffix}.lock`);
+		const lockPath = SyncLock.lockPath(ctx, lockName);
 		const lockContent = JSON.stringify({
 			sessionId: vscode.env.sessionId,
 			timestamp: Date.now(),
@@ -77,6 +76,17 @@ export class SyncLock {
 		}
 	}
 
+	/**
+	 * Lock file for a lock name: `backend_sync.lock` by default, else `backend_sync_<name>.lock`.
+	 * Keyed by the target being written to — never by the legacy `backend.backend` selector,
+	 * which says nothing about which targets a window syncs.
+	 */
+	private static lockPath(ctx: vscode.ExtensionContext, lockName?: string): string {
+		const safeName = (lockName ?? '').toLowerCase().replace(/[^a-z0-9_]/g, '');
+		const suffix = safeName ? `_${safeName}` : '';
+		return path.join(ctx.globalStorageUri.fsPath, `backend_sync${suffix}.lock`);
+	}
+
 	private parseLockContent(content: string): { sessionId?: unknown; timestamp: number; serverUrl?: string } | undefined {
 		try {
 			const lock = JSON.parse(content);
@@ -98,13 +108,29 @@ export class SyncLock {
 	}
 
 	/**
+	 * Whether a live (non-stale, parseable) lock at `lockName` is held by *another* window and
+	 * `covers` its recorded server URL. Read-only: never creates, breaks or rewrites the file.
+	 */
+	async isHeldByAnotherWindow(lockName: string | undefined, covers: (lockServerUrl: string | undefined) => boolean): Promise<boolean> {
+		const ctx = this.context;
+		if (!ctx) { return false; }
+		try {
+			const lock = this.parseLockContent(await fs.promises.readFile(SyncLock.lockPath(ctx, lockName), 'utf-8'));
+			if (!lock || lock.sessionId === vscode.env.sessionId) { return false; }
+			if (Date.now() - lock.timestamp > SyncLock.STALE_MS) { return false; }
+			return covers(lock.serverUrl);
+		} catch {
+			return false; // No lock file
+		}
+	}
+
+	/**
 	 * Release the sync lock, but only if we own it.
 	 */
-	async release(backend?: string): Promise<void> {
+	async release(lockName?: string): Promise<void> {
 		const ctx = this.context;
 		if (!ctx) { return; }
-		const suffix = backend === 'sharingServer' ? '_sharingserver' : '';
-		const lockPath = path.join(ctx.globalStorageUri.fsPath, `backend_sync${suffix}.lock`);
+		const lockPath = SyncLock.lockPath(ctx, lockName);
 		try {
 			const content = await fs.promises.readFile(lockPath, 'utf-8');
 			const lock = JSON.parse(content);

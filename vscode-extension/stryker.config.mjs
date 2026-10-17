@@ -11,13 +11,13 @@ export default {
       '--require ./out/vscode-extension/test/unit/vscode-shim-register.js',
       '--test',
       '--test-force-exit',
-      'out/vscode-extension/test/unit/tokenEstimation.test.js',
-      'out/vscode-extension/test/unit/sessionParser.test.js',
+      'out/src/test/tokenEstimation.test.js',
+      'out/src/test/sessionParser.test.js',
       'out/vscode-extension/test/unit/sessionParser-integration.test.js',
       'out/vscode-extension/test/unit/maturityScoring.test.js',
       'out/vscode-extension/test/unit/usageAnalysis.test.js',
-      'out/vscode-extension/test/unit/utils-dayKeys.test.js',
-      'out/vscode-extension/test/unit/utils-errors.test.js',
+      'out/src/test/utils-dayKeys.test.js',
+      'out/src/test/utils-errors.test.js',
       'out/vscode-extension/test/unit/utils-html.test.js',
       'out/vscode-extension/test/unit/workspaceHelpers.test.js',
       'out/vscode-extension/test/unit/claudecode.test.js',
@@ -66,7 +66,10 @@ export default {
   thresholds: {
     high: 80,
     low: 60,
-    break: 0, // Informational — does not fail the build during initial rollout.
+    // Ratchet: ~3.5 points under the score measured 2026-10-08..10-10 (70.7-70.9 on
+    // the `mutate` list below). Raise it as the score improves; never lower it to
+    // admit a regression.
+    break: 67,
   },
 
   reporters: ['html', 'json', 'clear-text', 'progress'],

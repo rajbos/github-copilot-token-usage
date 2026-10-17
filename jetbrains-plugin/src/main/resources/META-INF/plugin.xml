@@ -28,6 +28,33 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.5.3</h3>
+        <ul>
+            <li>Fixed a startup error on IntelliJ Platform 2026.2 and newer caused by the JCEF classloader split</li>
+        </ul>
+        <h3>0.5.2</h3>
+        <ul>
+            <li>Updated shared webview bundles: grouped Usage Analysis tabs, official editor logos in the Chart view</li>
+            <li>The Environmental view's methodology links now open in your browser</li>
+        </ul>
+        <h3>0.5.1</h3>
+        <ul>
+            <li>Updated shared webview bundles: removed the dead Mistral Cloud tab and fixed Mistral Vibe cost attribution in the Diagnostics view, and surfaced Copilot's server-side repository memories in the Usage view</li>
+        </ul>
+        <h3>0.5.0</h3>
+        <ul>
+            <li>Add the Scoring Guide view, matching the VS Code and Visual Studio hosts</li>
+        </ul>
+        <h3>0.4.4</h3>
+        <ul>
+            <li>Internal compatibility fixes for the latest IntelliJ Platform APIs</li>
+        </ul>
+        <h3>0.2.0</h3>
+        <ul>
+            <li>Usage charts with weekly/monthly periods, dark theme support, and instant view switching via CLI prefetch</li>
+            <li>Application-level settings, budget visualization, and retry/wait-longer handling on slow CLI startups</li>
+            <li>macOS ARM64 support</li>
+        </ul>
         <h3>0.1.0</h3>
         <ul>
             <li>Initial scaffold: tool window + JCEF host + CLI bridge</li>
@@ -37,10 +64,12 @@
     <!--
       `com.intellij.modules.platform` is the lowest-common-denominator module —
       every JetBrains IDE provides it, so a plugin that only depends on it
-      installs everywhere. We additionally need JCEF, which is bundled with the
-      platform on 2024.3+ for all IDEs that ship the JBR with JCEF.
+      installs everywhere. JCEF moved behind its own classloader in 2026.2, so
+      declare it as an optional dependency for visibility on new IDEs while
+      remaining loadable on older IDEs where that plugin ID does not exist.
     -->
     <depends>com.intellij.modules.platform</depends>
+    <depends optional="true" config-file="ai-engineering-fluency-jcef.xml">com.intellij.modules.jcef</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow

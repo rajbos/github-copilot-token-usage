@@ -8,8 +8,8 @@
  *
  * The same script (from the PR checkout) is run against BOTH the base and the PR
  * builds so the comparison is apples-to-apples — the base checkout does not need
- * to contain this script. See .github/workflows/agent-review.yml (performance job)
- * and .github/workflows/scripts/perf_compare.py.
+ * to contain this script. Compare the two outputs with
+ * .github/workflows/scripts/perf_compare.py (see the performance-expert agent).
  *
  *   node scripts/benchmark/perf-bench.cjs <vscode-extension-dir> <out.json>
  *

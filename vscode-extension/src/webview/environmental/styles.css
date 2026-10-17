@@ -150,6 +150,16 @@ body {
 	line-height: 1.4;
 }
 
+.notes a {
+	color: var(--vscode-textLink-foreground, #3794ff);
+	text-decoration: none;
+}
+
+.notes a:hover {
+	color: var(--vscode-textLink-activeForeground, #3794ff);
+	text-decoration: underline;
+}
+
 .footer {
 	color: var(--text-muted);
 	font-size: 11px;

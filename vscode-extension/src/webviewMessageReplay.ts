@@ -39,6 +39,32 @@ export class WebviewMessageReplay {
 		this.ready = false;
 	}
 
+	/**
+	 * Forgets every retained message and the readiness flag.
+	 *
+	 * For a panel whose buffered state is only meaningful for one document — the Efficiency
+	 * panel's Value snapshot is derived from the data that document was rendered with — replaying
+	 * it into a *later* document would push stale numbers over fresher bootstrap data. Such a
+	 * panel resets the buffer whenever it replaces its HTML, and on disposal.
+	 *
+	 * What this does and does not promise, because the difference is easy to lose in a refactor:
+	 * after `reset()` returns, nothing buffered before it is ever sent again. That holds because
+	 * `deliver()` calls `send()` *synchronously* — a `publish()` already in flight has therefore
+	 * posted before the reset ran, to the document that was live at the time — and because
+	 * clearing the map ends any `markReady()` replay loop iterating it. Deferring that `send()`
+	 * to a later turn would open exactly the window this method exists to close; the tests in
+	 * `webviewMessageReplay.test.ts` pin both halves.
+	 *
+	 * It does not promise anything about a message the host has already handed to VS Code: that
+	 * post is in the transport, and a document swapped in right behind it may still observe it.
+	 * A panel that cares re-publishes after the swap (see `renderEfficiencyData`), which per-webview
+	 * ordering puts last.
+	 */
+	public reset(): void {
+		this.latest.clear();
+		this.ready = false;
+	}
+
 	public get isReady(): boolean {
 		return this.ready;
 	}

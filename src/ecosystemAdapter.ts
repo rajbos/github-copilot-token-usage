@@ -122,6 +122,15 @@ export interface IEcosystemAdapter {
 	getDailyFractions?(sessionFile: string): Promise<Record<string, number>>;
 
 	/**
+	 * Cheap last-activity time for one session, for adapters whose `stat()` cannot
+	 * provide it — DB-backed editors stat the shared database, whose mtime moves
+	 * for every session in it (and may not move at all while writes sit in the
+	 * WAL). Must be a single row read, not a message scan: hosts call it for every
+	 * session to rank them before paying for `getMeta()`. Returns null when unknown.
+	 */
+	getLastActivity?(sessionFile: string): Promise<Date | null>;
+
+	/**
 	 * Return data needed for backend sync.
 	 * Only implemented by ecosystems that support sync (OpenCode, Crush).
 	 */
@@ -211,4 +220,21 @@ export interface IAnalyzableEcosystem {
 /** Type guard: check whether an adapter also implements IAnalyzableEcosystem. */
 export function isAnalyzable(adapter: IEcosystemAdapter): adapter is IEcosystemAdapter & IAnalyzableEcosystem {
 	return typeof (adapter as any).analyzeUsage === 'function';
+}
+
+/**
+ * Ask any adapter that does *not* handle this file whether it can still supply a workspace
+ * directory for it. Used for files like Copilot CLI `events.jsonl`, which an adapter discovers
+ * but the generic JSONL path parses. Shared by the extension and the CLI.
+ */
+export async function findWorkspacePathForDiscoveredPath(ecosystems: readonly IEcosystemAdapter[], sessionFile: string): Promise<string | undefined> {
+	for (const eco of ecosystems) {
+		if (eco.handles(sessionFile)) { continue; }
+		if (typeof eco.getWorkspacePathForDiscoveredPath !== 'function') { continue; }
+		try {
+			const cwd = await eco.getWorkspacePathForDiscoveredPath(sessionFile);
+			if (cwd) { return cwd; }
+		} catch { /* adapter failed; try next */ }
+	}
+	return undefined;
 }

@@ -72,10 +72,15 @@ export type FeatureKind = 'view' | 'tab' | 'section';
 export interface WhatsNewFeature {
 	/** Stable id, persisted in globalState. Never reuse one. */
 	readonly id: string;
-	/** Short noun phrase, as it reads in the UI ("Corrections tab"). */
-	readonly title: string;
-	/** One or two sentences of plain English: what it shows and why you'd look. */
-	readonly description: string;
+	/**
+	 * `package.nls.json` key for the short noun phrase as it reads in the UI
+	 * ("Corrections tab"). A key, not the text: this module is pure — no `vscode`
+	 * import — so it cannot resolve strings itself. `extension.ts` resolves them
+	 * at the render boundary. See docs/adr/LOCALIZATION-ARCHITECTURE.md (S3).
+	 */
+	readonly titleKey: string;
+	/** `package.nls.json` key for one or two sentences: what it shows and why you'd look. */
+	readonly descriptionKey: string;
 	readonly kind: FeatureKind;
 	readonly surface: FeatureSurface;
 }
@@ -85,8 +90,8 @@ export interface WhatsNewRelease {
 	readonly version: string;
 	/** Release date as `YYYY-MM-DD`, or `null` while the version is unreleased. */
 	readonly date: string | null;
-	/** One sentence summing the release up for someone who skipped the details. */
-	readonly headline: string;
+	/** `package.nls.json` key for one sentence summing the release up. */
+	readonly headlineKey: string;
 	readonly features: readonly WhatsNewFeature[];
 }
 
@@ -108,40 +113,103 @@ export const WHATS_NEW_MAX_ANNOUNCEMENT_AGE_DAYS = 60;
  */
 export const WHATS_NEW_RELEASES: readonly WhatsNewRelease[] = [
 	{
-		version: '0.17.3',
+		version: '0.19.1',
 		date: null,
-		headline:
-			'This release is about noticing patterns you would otherwise have to spot yourself: what a model router did off screen, where the agent had to backtrack, which prompts you keep retyping, and how quickly models actually start answering.',
+		headlineKey: 'whatsNew.release.0.19.1.headline',
 		features: [
 			{
+				id: 'usage.tool-execution-stats',
+				titleKey: 'whatsNew.feature.usage.tool-execution-stats.title',
+				descriptionKey: 'whatsNew.feature.usage.tool-execution-stats.description',
+				kind: 'section',
+				surface: { view: 'usage', tab: 'tools', anchor: 'section-tool-reliability' },
+			},
+			{
+				id: 'whatsnew.view-index',
+				titleKey: 'whatsNew.feature.whatsnew.view-index.title',
+				descriptionKey: 'whatsNew.feature.whatsnew.view-index.description',
+				kind: 'tab',
+				surface: { view: 'whatsnew', tab: 'index' },
+			},
+		],
+	},
+	{
+		version: '0.19.0',
+		date: '2026-10-02',
+		headlineKey: 'whatsNew.release.0.19.0.headline',
+		features: [
+			{
+				id: 'usage.group-tabs',
+				titleKey: 'whatsNew.feature.usage.group-tabs.title',
+				descriptionKey: 'whatsNew.feature.usage.group-tabs.description',
+				kind: 'section',
+				surface: { view: 'usage' },
+			},
+		],
+	},
+	{
+		version: '0.18.3',
+		date: '2026-09-29',
+		headlineKey: 'whatsNew.release.0.18.3.headline',
+		features: [],
+	},
+	{
+		version: '0.18.2',
+		date: '2026-09-28',
+		headlineKey: 'whatsNew.release.0.18.2.headline',
+		features: [
+			{
+				id: 'usage.readiness-tab',
+				titleKey: 'whatsNew.feature.usage.readiness-tab.title',
+				descriptionKey: 'whatsNew.feature.usage.readiness-tab.description',
+				kind: 'tab',
+				surface: { view: 'usage', tab: 'readiness' },
+			},
+		],
+	},
+	{
+		version: '0.18.1',
+		date: '2026-09-21',
+		headlineKey: 'whatsNew.release.0.18.1.headline',
+		features: [],
+	},
+	{
+		version: '0.18.0',
+		date: '2026-09-18',
+		headlineKey: 'whatsNew.release.0.18.0.headline',
+		features: [
+			{
+				id: 'usage.memory-files-hygiene',
+				titleKey: 'whatsNew.feature.usage.memory-files-hygiene.title',
+				descriptionKey: 'whatsNew.feature.usage.memory-files-hygiene.description',
+				kind: 'section',
+				surface: { view: 'usage', tab: 'health', anchor: 'section-memory-files' },
+			},
+			{
 				id: 'logviewer.hydrafusion-routing',
-				title: 'HydraFusion Routing',
-				description:
-					'When a Copilot CLI session runs on HydraFusion, several models draft, judge and repair one answer behind the scenes and you are shown one result and one credit number. This section opens that up: which models ran, who rejected whom, which leg you actually read, and what share of the credits went on review rather than on the answer.',
+				titleKey: 'whatsNew.feature.logviewer.hydrafusion-routing.title',
+				descriptionKey: 'whatsNew.feature.logviewer.hydrafusion-routing.description',
 				kind: 'section',
 				surface: { view: 'logviewer', anchor: 'section-hydrafusion-routing' },
 			},
 			{
 				id: 'usage.corrections-tab',
-				title: 'Corrections tab',
-				description:
-					'Shows the moments where things went sideways — a tool call that failed, an edit the agent immediately redid, a "sorry, let me try that again" — grouped per repository. A good place to look when a session felt like hard work but you cannot say why.',
+				titleKey: 'whatsNew.feature.usage.corrections-tab.title',
+				descriptionKey: 'whatsNew.feature.usage.corrections-tab.description',
 				kind: 'tab',
 				surface: { view: 'usage', tab: 'corrections' },
 			},
 			{
 				id: 'usage.skill-suggestions',
-				title: 'Skill Suggestions',
-				description:
-					'Clusters the opening prompt of your recent sessions to find the task you keep asking for by hand. Each cluster is a candidate for a reusable skill, prompt file, or custom agent.',
+				titleKey: 'whatsNew.feature.usage.skill-suggestions.title',
+				descriptionKey: 'whatsNew.feature.usage.skill-suggestions.description',
 				kind: 'section',
 				surface: { view: 'usage', tab: 'tools', anchor: 'section-skill-suggestions' },
 			},
 			{
 				id: 'diagnostics.ttft-tab',
-				title: 'Research → TTFT',
-				description:
-					'How long each model takes to start answering you, averaged by day, week, and month with a trendline. Read straight from Copilot Chat\'s own debug log, so there is nothing to switch on.',
+				titleKey: 'whatsNew.feature.diagnostics.ttft-tab.title',
+				descriptionKey: 'whatsNew.feature.diagnostics.ttft-tab.description',
 				kind: 'tab',
 				surface: { view: 'diagnostics', tab: 'ttft' },
 			},
@@ -150,9 +218,8 @@ export const WHATS_NEW_RELEASES: readonly WhatsNewRelease[] = [
 				// announced, and it does not need to be — the notification's second
 				// button is a link to this very page.
 				id: 'whatsnew.view',
-				title: "What's New view",
-				description:
-					'The last few releases in plain English, with a way in to each new view, tab, and section from here. Also where the extension sends you when it points something out.',
+				titleKey: 'whatsNew.feature.whatsnew.view.title',
+				descriptionKey: 'whatsNew.feature.whatsnew.view.description',
 				kind: 'view',
 				surface: { view: 'whatsnew' },
 			},
@@ -161,44 +228,38 @@ export const WHATS_NEW_RELEASES: readonly WhatsNewRelease[] = [
 	{
 		version: '0.17.2',
 		date: '2026-08-17',
-		headline:
-			'A maintenance release: cold-boot token counts, worktree detection, and the Recent Sessions list all stopped getting things wrong. No new screens.',
+		headlineKey: 'whatsNew.release.0.17.2.headline',
 		features: [],
 	},
 	{
 		version: '0.17.1',
 		date: '2026-07-31',
-		headline:
-			'Two fixes for stats that under-reported: the Efficiency view no longer gets stuck after you close and reopen it, and sessions spanning midnight now count toward today.',
+		headlineKey: 'whatsNew.release.0.17.1.headline',
 		features: [],
 	},
 	{
 		version: '0.17.0',
 		date: '2026-07-30',
-		headline:
-			'The release that made the data comparative: efficiency over time, and per-model numbers you can rank against each other rather than read one at a time.',
+		headlineKey: 'whatsNew.release.0.17.0.headline',
 		features: [
 			{
 				id: 'efficiency.view',
-				title: 'Efficiency view',
-				description:
-					'Answers one question over the long run: are you getting more done per token than you were a month ago? Trends rather than totals.',
+				titleKey: 'whatsNew.feature.efficiency.view.title',
+				descriptionKey: 'whatsNew.feature.efficiency.view.description',
 				kind: 'view',
 				surface: { view: 'efficiency' },
 			},
 			{
 				id: 'usage.model-efficiency',
-				title: 'Model Efficiency',
-				description:
-					'Per-model one-shot edit rate, retry rate, cost per turn and cache hit rate in one sortable table — so "which model should I use for this" stops being a guess.',
+				titleKey: 'whatsNew.feature.usage.model-efficiency.title',
+				descriptionKey: 'whatsNew.feature.usage.model-efficiency.description',
 				kind: 'section',
 				surface: { view: 'usage', tab: 'activity', anchor: 'section-model-efficiency' },
 			},
 			{
 				id: 'chart.cost-by-model-split',
-				title: 'Cost by Model and Tokens by Provider',
-				description:
-					'The usage chart can now be split by model or by provider, and the By Editor breakdown collapses out of the way when you are not reading it.',
+				titleKey: 'whatsNew.feature.chart.cost-by-model-split.title',
+				descriptionKey: 'whatsNew.feature.chart.cost-by-model-split.description',
 				kind: 'section',
 				surface: { view: 'chart' },
 			},
@@ -207,14 +268,12 @@ export const WHATS_NEW_RELEASES: readonly WhatsNewRelease[] = [
 	{
 		version: '0.13.0',
 		date: '2026-07-11',
-		headline:
-			'Long-context pricing became visible: the extension now knows when a request crossed into long-context rates and what that cost you.',
+		headlineKey: 'whatsNew.release.0.13.0.headline',
 		features: [
 			{
 				id: 'usage.context-window',
-				title: 'Context Window & Long-Context Pricing',
-				description:
-					'How full your context windows run, and which requests tipped into long-context pricing. Large contexts are billed differently, and this is where that shows up.',
+				titleKey: 'whatsNew.feature.usage.context-window.title',
+				descriptionKey: 'whatsNew.feature.usage.context-window.description',
 				kind: 'section',
 				surface: { view: 'usage', tab: 'activity' },
 			},

@@ -1,9 +1,9 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { createRequire } from 'node:module';
+import { makeTmpFixtureDir } from './tmpFixtureDirs';
 
 // The validator is plain CommonJS developer tooling that runs from the repo
 // root, outside the extension's TypeScript program, so it is loaded by path.
@@ -38,7 +38,7 @@ const contract = requireFromHere(
 
 /** Writes `source` to a throwaway .ts file and returns its path. */
 function fixture(source: string): string {
-	const dir = fs.mkdtempSync(path.join(process.cwd(), 'contract-fixture-'));
+	const dir = makeTmpFixtureDir('contract-fixture-');
 	const file = path.join(dir, 'fixture.ts');
 	fs.writeFileSync(file, source);
 	return file;
@@ -59,6 +59,25 @@ test('collectPostedCommands: treats `type` as a message name too', () => {
 	// The backend config panels key on `type` rather than `command`.
 	const file = fixture(`declare const p: any; p.webview.postMessage({ type: 'testResult', ok: true });`);
 	assert.ok(contract.collectPostedCommands([file]).has('testResult'));
+});
+
+test('collectPostedCommands: sees literals wrapped in parentheses, casts and satisfies', () => {
+	// The wrapper changes nothing about the message that is posted; skipping it
+	// would let a new command bypass the contract.
+	const file = fixture(`
+		type Msg = { command: string };
+		declare const vscode: any;
+		vscode.postMessage(({ command: 'parenthesized' }));
+		vscode.postMessage({ command: 'castObject' } as Msg);
+		vscode.postMessage(<Msg>{ command: 'angleCast' });
+		vscode.postMessage({ command: 'satisfiesObject' } satisfies Msg);
+		vscode.postMessage({ command: 'constValue' as const });
+		vscode.postMessage({ command: ('parenthesizedValue') });
+	`);
+	assert.deepEqual(
+		[...contract.collectPostedCommands([file]).keys()].sort(),
+		['angleCast', 'castObject', 'constValue', 'parenthesized', 'parenthesizedValue', 'satisfiesObject'],
+	);
 });
 
 test('collectPostedCommands: ignores a command name it cannot resolve statically', () => {

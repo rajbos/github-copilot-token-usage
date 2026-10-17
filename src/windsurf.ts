@@ -4,13 +4,54 @@
  * Uses gRPC-over-HTTP/1.1 to query Cascade trajectories and extract token usage.
  * Falls back to file-based discovery (~/.codeium/windsurf/cascade/*.pb) when running in VS Code.
  */
-import * as vscode from 'vscode';
 import * as http from 'http';
 import * as https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import type { ModelUsage, SessionFileDetails, DailyTokenStats } from './types';
+import type { UriLike } from './opencode';
+
+/** Minimal view of an installed editor extension, as needed to reach the Windsurf language server. */
+export interface WindsurfExtensionLike {
+	isActive: boolean;
+	exports?: any;
+	packageJSON?: { version?: string };
+}
+
+/**
+ * Editor-host services Windsurf discovery needs. Supplied by the VS Code extension
+ * (see vscode-extension/src/srcHostAdapters.ts); src/ never imports `vscode` itself.
+ * Without a host (CLI, worker threads) the editor is treated as "not Windsurf",
+ * no extension is found and the integration stays enabled.
+ */
+export interface WindsurfHost {
+	/** The host application name (`vscode.env.appName`), e.g. "Windsurf" or "Devin". */
+	getAppName(): string;
+	/** Look up an installed extension by id. */
+	getExtension(extensionId: string): WindsurfExtensionLike | undefined;
+	/** Whether `aiEngineeringFluency.windsurf.enabled` is on. */
+	isEnabled(): boolean;
+}
+
+/**
+ * Describes an error for the shared Output Channel log without leaking where the user keeps
+ * their data: filesystem errors collapse to their errno code (their messages embed the absolute
+ * path, e.g. /home/alice/.codeium/...), and for anything else the home directory is replaced by
+ * `~` and control characters (log injection) are flattened.
+ */
+export function describeErrorForLog(error: unknown): string {
+	const code = (error as NodeJS.ErrnoException | null | undefined)?.code;
+	if (typeof code === 'string' && /^[A-Z0-9_]+$/.test(code)) { return code; }
+	const message = error instanceof Error ? error.message : String(error);
+	return message.split(os.homedir()).join('~').replace(/[\r\n]+/g, ' ');
+}
+
+const NO_WINDSURF_HOST: WindsurfHost = {
+	getAppName: () => '',
+	getExtension: () => undefined,
+	isEnabled: () => true,
+};
 
 interface WindsurfCredentials {
 	csrf: string;
@@ -68,14 +109,21 @@ interface GetCascadeTrajectoryStepsResponse {
 
 export class WindsurfDataAccess {
 	private credentials: WindsurfCredentials | null = null;
-	private readonly extensionUri: vscode.Uri;
-	private log: (msg: string) => void = (msg) => console.log(msg);
+	private readonly extensionUri: UriLike;
+	private readonly host: WindsurfHost;
+	private log: (msg: string) => void = () => { /* silent unless the host wires a logger */ };
 	private sessionCache: { sessions: SessionFileDetails[]; expiresAt: number } | null = null;
 	private _sessionFetchInFlight: Promise<SessionFileDetails[]> | null = null;
-	private static readonly SESSION_CACHE_TTL_MS = 15_000;
+	// Long enough that resolveSession() calls made later in a large preload/stats pass (which can
+	// easily take well over a minute across thousands of session files) still hit the cache
+	// populated by the discovery pass's own getWindsurfSessions() call, instead of re-running the
+	// full API+file-based discovery (several seconds of disk/API I/O) a second time for the same
+	// batch. Was 15s, too short relative to that pipeline's real wall-clock time.
+	private static readonly SESSION_CACHE_TTL_MS = 120_000;
 
-	constructor(extensionUri: vscode.Uri, log?: (msg: string) => void) {
+	constructor(extensionUri: UriLike, log?: (msg: string) => void, host: WindsurfHost = NO_WINDSURF_HOST) {
 		this.extensionUri = extensionUri;
+		this.host = host;
 		if (log) { this.log = log; }
 	}
 
@@ -83,8 +131,8 @@ export class WindsurfDataAccess {
 	 * Check if the extension is running inside Windsurf.
 	 */
 	isRunningInWindsurf(): boolean {
-		const appName = vscode.env.appName.toLowerCase();
-		this.log(`[Windsurf] appName="${vscode.env.appName}" → isWindsurf=${appName.includes('windsurf')}`);
+		const appName = this.host.getAppName().toLowerCase();
+		this.log(`[Windsurf] appName="${this.host.getAppName()}" → isWindsurf=${appName.includes('windsurf')}`);
 		return appName.includes('windsurf');
 	}
 
@@ -95,8 +143,8 @@ export class WindsurfDataAccess {
 	 * and writes Cascade trajectories into the very same ~/.codeium/windsurf/cascade folder.
 	 */
 	isRunningInDevin(): boolean {
-		const appName = vscode.env.appName.toLowerCase();
-		this.log(`[Windsurf] appName="${vscode.env.appName}" → isDevin=${appName.includes('devin')}`);
+		const appName = this.host.getAppName().toLowerCase();
+		this.log(`[Windsurf] appName="${this.host.getAppName()}" → isDevin=${appName.includes('devin')}`);
 		return appName.includes('devin');
 	}
 
@@ -213,7 +261,7 @@ export class WindsurfDataAccess {
 			}
 			return sessions;
 		} catch (error) {
-			console.warn('[Windsurf] Could not read cascade directory:', error);
+			this.log(`[Windsurf] Could not read cascade directory: ${describeErrorForLog(error)}`);
 			return [];
 		}
 	}
@@ -263,10 +311,9 @@ export class WindsurfDataAccess {
 
 	/** Wait for the Windsurf devClient to become ready (up to 10 attempts, 2 s apart). */
 	private async waitForDevClient(exports: any): Promise<any | null> {
-		console.log('[Windsurf] Waiting for devClient to be ready...');
+		this.log('[Windsurf] Waiting for devClient to be ready...');
 		for (let attempt = 0; attempt < 10; attempt++) {
 			const devClient = exports.devClient();
-			console.log(`[Windsurf] DevClient attempt ${attempt + 1}: ${!!devClient}`);
 			if (devClient) { return devClient; }
 			await new Promise(resolve => setTimeout(resolve, 2000));
 		}
@@ -277,14 +324,12 @@ export class WindsurfDataAccess {
 	private async triggerDevClientForCsrf(devClient: any, hasCsrf: () => boolean): Promise<void> {
 		for (const method of Object.keys(devClient)) {
 			if (typeof devClient[method] !== 'function') { continue; }
-			console.log(`[Windsurf] Trying method: ${method}`);
 			try {
 				await Promise.race([
 					devClient[method]({}),
 					new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
 				]);
 			} catch (error) {
-				console.log(`[Windsurf] Method ${method} failed (expected): ${error instanceof Error ? error.message : String(error)}`);
 			}
 			if (hasCsrf()) { break; }
 		}
@@ -296,7 +341,6 @@ export class WindsurfDataAccess {
 			const value = exports[key];
 			if (!value || typeof value !== 'object') { continue; }
 			if (!(value.port || value.token || value.csrf)) { continue; }
-			console.log(`[Windsurf] Found potential credentials in exports.${key}`);
 			const port = value.port || value.serverPort || value.languageServerPort;
 			const csrf = value.token || value.csrf || value.authToken;
 			if (port && csrf) { return { csrf: String(csrf), port: Number(port) }; }
@@ -308,30 +352,30 @@ export class WindsurfDataAccess {
 	 * Capture credentials by monkey-patching http.ClientRequest.
 	 */
 	private async captureCredentials(): Promise<WindsurfCredentials | null> {
-		console.log('[Windsurf] Starting credentials capture...');
+		this.log('[Windsurf] Starting credentials capture...');
 		
 		// 1. Get reference to Windsurf extension
-		const ext = vscode.extensions.getExtension('codeium.windsurf');
-		console.log(`[Windsurf] Extension found: ${!!ext}, active: ${ext?.isActive}`);
+		const ext = this.host.getExtension('codeium.windsurf');
+		this.log(`[Windsurf] Extension found: ${!!ext}, active: ${ext?.isActive}`);
 		if (!ext?.isActive) {
-			console.warn('Windsurf extension not found or not active');
+			this.log('Windsurf extension not found or not active');
 			return null;
 		}
 
 		const exports = ext.exports;
-		console.log(`[Windsurf] Extension exports available: ${!!exports}`);
+		this.log(`[Windsurf] Extension exports available: ${!!exports}`);
 		if (!exports || typeof exports.devClient !== 'function') {
-			console.warn('Windsurf extension devClient not available');
+			this.log('Windsurf extension devClient not available');
 			return null;
 		}
 
 		// 2. Wait for devClient to be ready
 		const devClient = await this.waitForDevClient(exports);
 		if (!devClient) {
-			console.warn('Windsurf devClient not ready after timeout');
+			this.log('Windsurf devClient not ready after timeout');
 			return null;
 		}
-		console.log(`[Windsurf] DevClient ready, available methods: ${Object.keys(devClient).filter(k => typeof devClient[k] === 'function').join(', ')}`);
+		this.log(`[Windsurf] DevClient ready, available methods: ${Object.keys(devClient).filter(k => typeof devClient[k] === 'function').join(', ')}`);
 
 		// 3. Patch ClientRequest to intercept headers
 		let csrf = '';
@@ -339,18 +383,18 @@ export class WindsurfDataAccess {
 		const origEnd = http.ClientRequest.prototype.end;
 		const origWrite = http.ClientRequest.prototype.write;
 
+		const log = (msg: string): void => this.log(msg);
 		const capture = function (this: http.ClientRequest) {
 			const token = this.getHeader('x-codeium-csrf-token');
 			const host = this.getHeader('host');
-			console.log(`[Windsurf] HTTP Request intercepted - CSRF token: ${!!token}, Host: ${host}`);
 			if (token && !csrf) {
 				csrf = String(token);
-				console.log(`[Windsurf] Captured CSRF token: ${csrf.substring(0, 10)}...`);
+				log('[Windsurf] Captured CSRF token');
 				if (host) {
 					const m = String(host).match(/:(\d+)/);
 					if (m) {
 						port = Number(m[1]);
-						console.log(`[Windsurf] Captured port: ${port}`);
+						log(`[Windsurf] Captured port: ${port}`);
 					}
 				}
 			}
@@ -367,9 +411,9 @@ export class WindsurfDataAccess {
 
 		try {
 			// 4. Trigger devClient method to cause HTTP request
-			console.log('[Windsurf] Triggering devClient methods to capture credentials...');
+			this.log('[Windsurf] Triggering devClient methods to capture credentials...');
 			await this.triggerDevClientForCsrf(devClient, () => !!csrf);
-			if (csrf) { console.log('[Windsurf] Credentials captured successfully!'); }
+			if (csrf) { this.log('[Windsurf] Credentials captured successfully!'); }
 		} finally {
 			// Always restore originals
 			http.ClientRequest.prototype.end = origEnd;
@@ -377,7 +421,7 @@ export class WindsurfDataAccess {
 		}
 
 		const result = csrf && port ? { csrf, port } : null;
-		console.log(`[Windsurf] Credential capture result: ${result ? `CSRF=${result.csrf.substring(0, 10)}..., Port=${result.port}` : 'null'}`);
+		this.log(`[Windsurf] Credential capture result: ${result ? `CSRF captured, Port=${result.port}` : 'null'}`);
 		return result;
 	}
 
@@ -385,20 +429,20 @@ export class WindsurfDataAccess {
 	 * Alternative credential capture method - tries different approaches.
 	 */
 	private async captureCredentialsAlternative(): Promise<WindsurfCredentials | null> {
-		console.log('[Windsurf] Trying alternative credential capture methods...');
+		this.log('[Windsurf] Trying alternative credential capture methods...');
 		
 		// Method 1: Try to get credentials from environment variables or configuration
 		const envPort = process.env.WINDSURF_PORT || process.env.CODEIUM_PORT;
 		const envToken = process.env.WINDSURF_TOKEN || process.env.CODEIUM_TOKEN;
 		
 		if (envPort && envToken) {
-			console.log('[Windsurf] Found credentials in environment variables');
+			this.log('[Windsurf] Found credentials in environment variables');
 			return { csrf: envToken, port: parseInt(envPort) };
 		}
 		
 		// Method 2: Try common ports for Windsurf language server
 		const commonPorts = [6060, 6061, 6062, 6063, 8080, 8081, 9090, 9091];
-		console.log('[Windsurf] Trying common ports for Windsurf language server...');
+		this.log('[Windsurf] Trying common ports for Windsurf language server...');
 		
 		for (const port of commonPorts) {
 			try {
@@ -406,7 +450,7 @@ export class WindsurfDataAccess {
 				const response = await this.makeApiCall('GetProcesses', {}, { csrf: 'dummy', port });
 				if (response.statusCode === 400 || response.statusCode === 401) {
 					// Port is alive but needs proper CSRF - this is likely the right port
-					console.log(`[Windsurf] Found active Windsurf server on port ${port}, but need proper CSRF`);
+					this.log(`[Windsurf] Found active Windsurf server on port ${port}, but need proper CSRF`);
 					// We can't proceed without CSRF, but at least we know the port
 					// Return null to let the main method handle it
 					return null;
@@ -419,17 +463,17 @@ export class WindsurfDataAccess {
 		
 		// Method 3: Try to access Windsurf's internal state directly
 		try {
-			const ext = vscode.extensions.getExtension('codeium.windsurf');
+			const ext = this.host.getExtension('codeium.windsurf');
 			if (ext?.isActive && ext.exports) {
-				console.log('[Windsurf] Checking Windsurf extension exports for alternative access...');
+				this.log('[Windsurf] Checking Windsurf extension exports for alternative access...');
 				const found = this.findCredentialsInExtensionExports(ext.exports);
 				if (found) { return found; }
 			}
 		} catch (error) {
-			console.log('[Windsurf] Alternative access failed:', error);
+			this.log(`[Windsurf] Alternative access failed: ${describeErrorForLog(error)}`);
 		}
 		
-		console.log('[Windsurf] All alternative methods failed');
+		this.log('[Windsurf] All alternative methods failed');
 		return null;
 	}
 
@@ -478,43 +522,40 @@ export class WindsurfDataAccess {
 	 * Get all Cascade trajectory summaries.
 	 */
 	async getAllCascadeTrajectories(): Promise<GetAllCascadeTrajectoriesResponse | null> {
-		console.log('[Windsurf] Getting all Cascade trajectories...');
+		this.log('[Windsurf] Getting all Cascade trajectories...');
 		const credentials = await this.getCredentials();
 		if (!credentials) {
-			console.warn('Windsurf: No credentials available for API call');
+			this.log('Windsurf: No credentials available for API call');
 			return null;
 		}
 
-		console.log(`[Windsurf] Making API call to GetAllCascadeTrajectories with credentials: CSRF=${credentials.csrf.substring(0, 10)}..., Port=${credentials.port}`);
+		this.log(`[Windsurf] Making API call to GetAllCascadeTrajectories on port ${credentials.port}`);
 		try {
 			const response = await this.makeApiCall('GetAllCascadeTrajectories', { include_user_inputs: false }, credentials);
 			
-			console.log(`[Windsurf] API response status: ${response.statusCode}`);
+			this.log(`[Windsurf] API response status: ${response.statusCode}`);
 			if (response.statusCode !== 200) {
 				throw new Error(`API call failed with status ${response.statusCode}`);
 			}
 
 			const data = await this.readResponseData(response);
-			console.log(`[Windsurf] Raw API response data: ${data.substring(0, 200)}${data.length > 200 ? '...' : ''}`);
+			this.log(`[Windsurf] API response body: ${data.length} chars`);
 			const result = JSON.parse(data) as GetAllCascadeTrajectoriesResponse;
 			
 			// Validate response structure
 			if (!result || typeof result !== 'object' || !('trajectorySummaries' in result)) {
-				console.error('[Windsurf] Invalid response structure:', result);
+				this.log('[Windsurf] Invalid response structure (missing trajectorySummaries)');
 				throw new Error('Invalid response structure from GetAllCascadeTrajectories');
 			}
 			
 			const trajectoryCount = Object.keys(result.trajectorySummaries).length;
-			console.log(`[Windsurf] Successfully retrieved ${trajectoryCount} trajectories`);
+			this.log(`[Windsurf] Successfully retrieved ${trajectoryCount} trajectories`);
 			// Log details of each trajectory for debugging
-			for (const [cascadeId, summary] of Object.entries(result.trajectorySummaries)) {
-				console.log(`[Windsurf] Trajectory ${cascadeId}: status=${summary.status}, type=${summary.trajectoryType}, steps=${summary.stepCount}`);
-			}
 			return result;
 		} catch (error) {
 			// Remove newlines from the (attacker-influenceable) error message before
 			// logging, so it can't be used to forge extra log lines.
-			console.error('[Windsurf] Failed to get Cascade trajectories:', String(error).replace(/\n|\r/g, ''));
+			this.log(`[Windsurf] Failed to get Cascade trajectories: ${describeErrorForLog(error)}`);
 			// Clear credentials on error
 			this.credentials = null;
 			return null;
@@ -543,8 +584,8 @@ export class WindsurfDataAccess {
 			// Remove newlines from the (attacker-influenceable) cascadeId/error
 			// message before logging, so they can't be used to forge extra log lines.
 			const safeCascadeId = String(cascadeId).replace(/\n|\r/g, '');
-			const safeError = String(error).replace(/\n|\r/g, '');
-			console.error(`Failed to get Cascade trajectory steps for ${safeCascadeId}:`, safeError);
+			const safeError = describeErrorForLog(error);
+			this.log(`Failed to get Cascade trajectory steps for ${safeCascadeId}: ${safeError}`);
 			// Clear credentials on error
 			this.credentials = null;
 			return null;
@@ -775,7 +816,6 @@ export class WindsurfDataAccess {
 	 * Simple test method to verify basic functionality
 	 */
 	async testMethod(): Promise<string> {
-		console.log('[Windsurf] testMethod() called');
 		return 'test-method-works';
 	}
 
@@ -806,8 +846,7 @@ export class WindsurfDataAccess {
 			this.log('[Windsurf] === STARTING API SESSION DISCOVERY ===');
 			const sessions: SessionFileDetails[] = [];
 
-			const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
-			const windsurfEnabled = config.get<boolean>('windsurf.enabled', true);
+			const windsurfEnabled = this.host.isEnabled();
 			this.log(`[Windsurf] enabled=${windsurfEnabled}, isRunningInWindsurf=${this.isRunningInWindsurf()}`);
 
 			if (!windsurfEnabled) {
@@ -836,7 +875,7 @@ export class WindsurfDataAccess {
 			this.log(`[Windsurf] === API DISCOVERY COMPLETE — ${sessions.length} sessions ===`);
 			return sessions;
 		} catch (error) {
-			this.log(`[Windsurf] Exception in getWindsurfSessionsV2(): ${error}`);
+			this.log(`[Windsurf] Exception in getWindsurfSessionsV2(): ${describeErrorForLog(error)}`);
 			return [];
 		}
 	}
@@ -953,115 +992,6 @@ export class WindsurfDataAccess {
 		return fileSessions;
 	}
 
-	/** Extract workspace and repository names from a trajectory summary. */
-	private extractWorkspaceInfoOriginal(summary: CascadeTrajectorySummary): { workspaceName: string; repositoryName: string } {
-		let workspaceName = 'Unknown';
-		let repositoryName = 'Unknown';
-		if (summary.workspaces && Array.isArray(summary.workspaces) && summary.workspaces.length > 0) {
-			const workspace = summary.workspaces[0];
-			if (workspace && typeof workspace === 'object') {
-				if (workspace.workspaceFolderAbsoluteUri && typeof workspace.workspaceFolderAbsoluteUri === 'string') {
-					const uriParts = workspace.workspaceFolderAbsoluteUri.split('/');
-					workspaceName = uriParts[uriParts.length - 1] || workspaceName;
-				}
-				if (workspace.repository?.computedName) {
-					repositoryName = String(workspace.repository.computedName);
-				}
-			}
-		}
-		return { workspaceName, repositoryName };
-	}
-
-	/** Process a single trajectory for the original debug method. Returns null if the trajectory should be skipped. */
-	private async processOriginalTrajectory(cascadeId: string, summary: CascadeTrajectorySummary): Promise<SessionFileDetails | null> {
-		if (!summary || typeof summary !== 'object') {
-			console.warn(`[Windsurf] Invalid trajectory summary for ${cascadeId}, skipping`);
-			return null;
-		}
-		console.log(`[Windsurf] Getting steps for trajectory ${cascadeId}...`);
-		const steps = await this.getCascadeTrajectorySteps(cascadeId);
-		if (!steps || !steps.steps) {
-			console.warn(`[Windsurf] No steps found for trajectory ${cascadeId}, skipping`);
-			return null;
-		}
-		console.log(`[Windsurf] Found ${steps.steps.length} steps for trajectory ${cascadeId}`);
-		const tokenUsage = this.extractTokenUsage(steps.steps);
-		const totalTokens = tokenUsage.totalTokens;
-		console.log(`[Windsurf] Token usage for ${cascadeId}: total=${totalTokens}, input=${tokenUsage.inputTokens}, cached=${tokenUsage.cachedTokens}`);
-		if (totalTokens === 0) {
-			console.log(`[Windsurf] Skipping trajectory ${cascadeId} - no tokens found`);
-			return null;
-		}
-		let createdDate: Date;
-		try {
-			createdDate = new Date(summary.createdTime);
-			if (isNaN(createdDate.getTime())) {
-				console.warn(`Invalid createdTime for trajectory ${cascadeId}: ${summary.createdTime}`);
-				return null;
-			}
-		} catch (error) {
-			console.warn(`Failed to parse createdTime for trajectory ${cascadeId}: ${error}`);
-			return null;
-		}
-		const { repositoryName } = this.extractWorkspaceInfoOriginal(summary);
-		return {
-			file: `windsurf://${cascadeId}`,
-			size: 0,
-			modified: summary.lastModifiedTime,
-			interactions: summary.stepCount,
-			tokens: totalTokens,
-			contextReferences: { file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0, workspace: 0, terminal: 0, vscode: 0, terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0, outputPanel: 0, problemsPanel: 0, pullRequest: 0, byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {} },
-			firstInteraction: summary.createdTime,
-			lastInteraction: summary.lastUserInputTime || summary.lastModifiedTime,
-			editorSource: 'windsurf',
-			editorName: 'Windsurf',
-			title: summary.summary || `Cascade ${cascadeId}`,
-			repository: repositoryName,
-		};
-	}
-
-	/**
-	 * Original version (commented out for debugging)
-	 */
-	async getWindsurfSessionsOriginal(): Promise<SessionFileDetails[]> {
-		console.log('[Windsurf] getWindsurfSessions() ENTRY POINT');
-		try {
-			console.log('[Windsurf] === STARTING SESSION DISCOVERY ===');
-			const sessions: SessionFileDetails[] = [];
-			const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
-			const windsurfEnabled = config.get<boolean>('windsurf.enabled', true);
-			console.log(`[Windsurf] Configuration check - enabled: ${windsurfEnabled}`);
-			if (!windsurfEnabled) {
-				console.log('[Windsurf] Integration is disabled in configuration');
-				return sessions;
-			}
-			console.log('[Windsurf] Fetching trajectories...');
-			const trajectories = await this.getAllCascadeTrajectories();
-			if (!trajectories || !trajectories.trajectorySummaries) {
-				console.log('[Windsurf] No Cascade trajectories found or invalid response');
-				return sessions;
-			}
-			console.log(`[Windsurf] Processing ${Object.keys(trajectories.trajectorySummaries).length} trajectories...`);
-			for (const [cascadeId, summary] of Object.entries(trajectories.trajectorySummaries)) {
-				console.log(`[Windsurf] Processing trajectory ${cascadeId}...`);
-				try {
-					const session = await this.processOriginalTrajectory(cascadeId, summary);
-					if (session) {
-						console.log(`[Windsurf] Successfully processed session ${cascadeId}: ${session.title} (${session.tokens} tokens)`);
-						sessions.push(session);
-					}
-				} catch (error) {
-					console.error(`Failed to process Windsurf trajectory ${cascadeId}:`, error);
-				}
-			}
-			console.log(`[Windsurf] Session processing complete. Returning ${sessions.length} sessions.`);
-			return sessions;
-		} catch (error) {
-			console.error('[Windsurf] Error in getWindsurfSessions:', error);
-			return [];
-		}
-	}
-
 	/**
 	 * Clear cached credentials (useful for testing or when Windsurf restarts).
 	 */
@@ -1076,7 +1006,7 @@ export class WindsurfDataAccess {
 			const response = await this.makeApiCall('GetProcesses', {}, credentials);
 			return { success: true, statusCode: response.statusCode };
 		} catch (error) {
-			return { success: false, error: error instanceof Error ? error.message : String(error) };
+			return { success: false, error: describeErrorForLog(error) };
 		}
 	}
 
@@ -1086,7 +1016,7 @@ export class WindsurfDataAccess {
 			const trajectories = await this.getAllCascadeTrajectories();
 			return { available: !!trajectories, count: trajectories ? Object.keys(trajectories.trajectorySummaries).length : 0 };
 		} catch (error) {
-			return { available: false, error: error instanceof Error ? error.message : String(error) };
+			return { available: false, error: describeErrorForLog(error) };
 		}
 	}
 
@@ -1094,16 +1024,16 @@ export class WindsurfDataAccess {
 	 * Run diagnostics to help troubleshoot Windsurf session detection issues.
 	 */
 	async runDiagnostics(): Promise<{ [key: string]: any }> {
-		console.log('[Windsurf] Running diagnostics...');
+		this.log('[Windsurf] Running diagnostics...');
 		const diagnostics: { [key: string]: any } = {};
 
 		diagnostics.environment = {
 			isRunningInWindsurf: this.isRunningInWindsurf(),
 			isRunningInDevin: this.isRunningInDevin(),
-			appName: vscode.env.appName,
+			appName: this.host.getAppName(),
 		};
 
-		const ext = vscode.extensions.getExtension('codeium.windsurf');
+		const ext = this.host.getExtension('codeium.windsurf');
 		diagnostics.extension = {
 			found: !!ext,
 			active: ext?.isActive,
@@ -1119,14 +1049,13 @@ export class WindsurfDataAccess {
 
 		diagnostics.apiTest = await this.runApiConnectivityTest(credentials);
 
-		const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
 		diagnostics.configuration = {
-			enabled: config.get<boolean>('windsurf.enabled', true),
+			enabled: this.host.isEnabled(),
 		};
 
 		diagnostics.sessions = await this.getSessionStats();
 
-		console.log('[Windsurf] Diagnostics complete:', diagnostics);
+		this.log(`[Windsurf] Diagnostics complete (credentials=${diagnostics.credentials.available}, api=${diagnostics.apiTest.success}, sessions=${diagnostics.sessions.count ?? 'n/a'})`);
 		return diagnostics;
 	}
 }

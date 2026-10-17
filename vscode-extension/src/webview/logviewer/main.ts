@@ -4,15 +4,29 @@ import { setHtml } from '../shared/domUtils';
 import { escapeHtml, formatCompact, formatCost, formatFileSize, setCompactNumbers, getEditorIcon } from '../shared/formatUtils';
 import { getModelDisplayName } from '../../../../src/webview/shared/modelUtils';
 import type { McpToolUsage, ModeUsage, ToolCallUsage } from '../shared/types';
-import { buildTurnOverviewRows, hashModelToHue } from './turnsOverview';
+import { aggregateTokenStats, aggregateActualUsageStats, aggregateModeStats, buildSummaryStats, getEffortDisplayName, getModeIcon, getTopEntries, MODE_LABELS, type ActualUsageStats, type BreakdownEntry, type SummaryStats, type ThinkingEffortUsage } from './summaryStats';
+import { buildTurnOverviewRows, hashModelToHue, type TurnOverviewRow } from './turnsOverview';
 import { renderHydraFusionSection, renderLegsTable, formatFusionCost } from './hydraFusionSection';
+import { buildMcpAndContextRefsCard, formatTopListWithOther, sumSessionCost } from './summaryCards';
 import { matchHydraFusionTurnsToChatTurns } from '../../../../src/hydrafusion';
 import type { HydraFusionSummary, HydraFusionTurn } from '../../../../src/hydrafusion';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
+import dataTableStyles from '../shared/dataTable.css';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
-import { initializeWebviewLocalization, setCurrentLanguage, localize, localizeFormat } from '../shared/localization';
+import { localize, localizeFormat } from '../shared/localization';
+import {
+	getDataTableState,
+	renderDataTable,
+	rerenderDataTable,
+	revealDataTableRow,
+	setDataTableState,
+	type DataTableCell,
+	type DataTableColumn,
+	type DataTableSort,
+} from '../shared/dataTable';
+import { applyWebviewLocale } from '../shared/webviewLocale';
 
 // ── Type definitions ──────────────────────────────────────────────────────────
 
@@ -59,7 +73,6 @@ thinkingEffort?: string;
 estimatedCost?: number;
 };
 
-type ThinkingEffortUsage = { byEffort: { [effort: string]: number }; switchCount: number; defaultEffort: string | null };
 type SessionUsageAnalysis = {
 toolCalls: ToolCallUsage;
 modeUsage: ModeUsage;
@@ -110,15 +123,6 @@ hydraFusion?: HydraFusionSummary;
 compactNumbers?: boolean;
 };
 
-/** Aggregated prompt-breakdown entry accumulated across all turns in a session. */
-type BreakdownEntry = {
-category: string;
-label: string;
-totalTokens: number;
-totalPct: number;
-count: number;
-};
-
 /**
  * A single row for `renderUsageComparisonTable`.
  * When `delta` is `undefined` the Delta column is omitted.
@@ -129,34 +133,6 @@ estimated: number;
 actual: number;
 delta?: number;
 isTotal?: boolean;
-};
-
-/** Pre-computed statistics passed to `renderSummaryCards`. */
-type SummaryStats = {
-totalTokens: number;
-totalThinkingTokens: number;
-totalSubAgentCalls: number;
-turnsWithThinking: number;
-hasAnyActualUsage: boolean;
-hasSessionActualOnly: boolean;
-actualTotal: number;
-actualPromptTotal: number;
-actualCompletionTotal: number;
-sessionActualTokens: number;
-usageToolTotal: number;
-usageTopTools: { key: string; value: number }[];
-usageMcpTotal: number;
-usageTopMcpTools: { key: string; value: number }[];
-usageContextTotal: number;
-usageContextImplicit: number;
-usageContextExplicit: number;
-sessionEffort: ThinkingEffortUsage | undefined;
-effortDefaultLabel: string;
-effortSummary: string;
-modeEntries: [keyof ModeUsage, number][];
-totalModeTurns: number;
-primaryModeLabel: string;
-modeSubLabel: string;
 };
 
 // ── VS Code API bootstrap ────────────────────────────────────────────────────
@@ -175,11 +151,7 @@ const vscode = acquireVsCodeApi();
 const initialData = getWindowData<SessionLogData & { focusedTurnNumber?: number; localization?: Record<string, string> }>('__INITIAL_LOGDATA__');
 
 // Initialize localization for webview
-if (initialData?.localization) {
-	initializeWebviewLocalization(initialData.localization);
-	const language = initialData.localization['__language__'] || 'en';
-	setCurrentLanguage(language);
-}
+applyWebviewLocale(initialData);
 
 import { resolveGuidMcpToolName, resolveMcpFamilyToolName, lookupKnownToolName } from '../../../../src/utils/toolUtils';
 
@@ -188,15 +160,6 @@ const TOOL_NAME_MAP: { [key: string]: string } | null = getWindowData<Record<str
 
 // ── Module-level constants ────────────────────────────────────────────────────
 
-const EFFORT_DISPLAY_NAMES: Record<string, string> = {
-xhigh: 'Extra High',
-};
-
-/** Human-readable labels for each editor mode. */
-const MODE_LABELS: Record<string, string> = {
-ask: 'Ask', edit: 'Edit', agent: 'Agent', plan: 'Plan', customAgent: 'Custom Agent', cli: 'CLI'
-};
-
 // ── Utility helpers ──────────────────────────────────────────────────────────
 
 function lookupToolName(id: string): string {
@@ -204,10 +167,6 @@ if (!TOOL_NAME_MAP) {
 return id;
 }
 return lookupKnownToolName(id, TOOL_NAME_MAP) ?? resolveGuidMcpToolName(id) ?? resolveMcpFamilyToolName(id) ?? id;
-}
-
-function getEffortDisplayName(level: string): string {
-return EFFORT_DISPLAY_NAMES[level] ?? level;
 }
 
 function formatDate(isoString: string | null): string {
@@ -246,8 +205,8 @@ function getContextRefBadges(refs: ContextReferenceUsage): string {
 		.join('');
 }
 
-function buildContextRefRows(refs: ContextReferenceUsage): { category: string; name: string; count: number; type: 'implicit' | 'explicit' }[] {
-	const rows: { category: string; name: string; count: number; type: 'implicit' | 'explicit' }[] = [];
+function buildContextRefRows(refs: ContextReferenceUsage): ContextRefRow[] {
+	const rows: ContextRefRow[] = [];
 	if (refs.implicitSelection > 0) {
 		rows.push({ category: '📝 Selection', name: 'editor selection', count: refs.implicitSelection, type: 'implicit' });
 	}
@@ -285,55 +244,29 @@ function buildContextRefRows(refs: ContextReferenceUsage): { category: string; n
 	return rows;
 }
 
-function renderContextReferencesDetailed(refs: ContextReferenceUsage): string {
+type ContextRefRow = { category: string; name: string; count: number; type: 'implicit' | 'explicit' };
+
+function renderContextReferencesDetailed(refs: ContextReferenceUsage, turnNumber: number): string {
 	const rows = buildContextRefRows(refs);
 	if (rows.length === 0) {
 		return '<div class="context-section">No context references</div>';
 	}
-	const tableRows = rows.map(row => {
-		const typeClass = row.type === 'implicit' ? 'context-type-implicit' : 'context-type-explicit';
-		const typeLabel = row.type === 'implicit' ? '🔒 implicit' : '👤 explicit';
-		return `<tr>
-<td>${row.category}</td>
-<td>${escapeHtml(row.name)}</td>
-<td class="count-cell">${row.count}</td>
-<td class="${typeClass}">${typeLabel}</td>
-</tr>`;
-	}).join('');
-	return `
-<table class="context-refs-table">
-<thead>
-<tr>
-<th>Category</th>
-<th>Reference</th>
-<th>Count</th>
-<th>Type</th>
-</tr>
-</thead>
-<tbody>
-${tableRows}
-</tbody>
-</table>
-`;
-}
-
-function getTopEntries(map: { [key: string]: number } = {}, limit = 3): { key: string; value: number }[] {
-return Object.entries(map)
-.sort((a, b) => b[1] - a[1])
-.slice(0, limit)
-.map(([key, value]) => ({ key, value }));
-}
-
-function getModeIcon(mode: string): string {
-switch (mode) {
-case 'ask': return '💬';
-case 'edit': return '✏️';
-case 'agent': return '🤖';
-case 'plan': return '📋';
-case 'customAgent': return '⚡';
-case 'cli': return '🖥️';
-default: return '❓';
-}
+	const columns: DataTableColumn<ContextRefRow>[] = [
+		{ id: 'category', label: 'Category', sortValue: row => row.category, render: row => row.category },
+		{ id: 'reference', label: 'Reference', className: 'data-table-wrap-anywhere', sortValue: row => row.name, render: row => row.name },
+		{ id: 'count', label: 'Count', align: 'right', className: 'count-cell', sortValue: row => row.count, render: row => String(row.count) },
+		{
+			id: 'type', label: 'Type', sortValue: row => row.type,
+			cellClassName: row => row.type === 'implicit' ? 'context-type-implicit' : 'context-type-explicit',
+			render: row => row.type === 'implicit' ? '🔒 implicit' : '👤 explicit',
+		},
+	];
+	return renderDataTable({
+		tableId: `logviewer-context-refs-${turnNumber}`,
+		ariaLabel: localize('logviewer.summary.contextRefs'),
+		rows,
+		columns,
+	});
 }
 
 function getModeColor(mode: string): string {
@@ -404,75 +337,53 @@ if (!entries.length) { return 'None'; }
 return entries.map(e => `<div>${escapeHtml(mapper ? mapper(e.key) : e.key)}: ${e.value}</div>`).join('');
 }
 
-/**
- * Renders a top-N list with an "Other: N" row appended when the total exceeds the listed sum.
- * @security All keys are passed through `escapeHtml`.
- */
-function formatTopListWithOther(entries: { key: string; value: number }[], total: number, mapper?: (k: string) => string): string {
-if (!entries.length) { return 'None'; }
-const lines = entries.map(e => `<div>${escapeHtml(mapper ? mapper(e.key) : e.key)}: ${e.value}</div>`);
-const topSum = entries.reduce((sum, e) => sum + e.value, 0);
-const other = total - topSum;
-if (other > 0) {
-lines.push(`<div>Other: ${other}</div>`);
-}
-return lines.join('');
-}
-
 // ── Shared render helpers ────────────────────────────────────────────────────
 
 /**
- * Renders a `<table class="usage-comparison-table">` from structured row data.
- * The Delta column is included only when `showDelta` is `true`.
- * All numeric values are formatted via `formatCompact`; ratio cells gracefully
- * fall back to `'N/A'` when the estimated value is zero.
+ * Renders the estimated-vs-actual comparison table from structured row data; a row
+ * flagged `isTotal` becomes the table's footer. The Delta column is included only when
+ * `showDelta` is `true`. All numeric values are formatted via `formatCompact`; ratio
+ * cells gracefully fall back to `'N/A'` when the estimated value is zero.
+ * A fixed set of rows in a meaningful order, so it is neither paged nor sortable.
  */
-function renderUsageComparisonTable(rows: ComparisonRow[], showDelta: boolean): string {
-const deltaHeaderHtml = showDelta ? '<th>Delta</th>' : '';
+function renderUsageComparisonTable(tableId: string, ariaLabel: string, rows: ComparisonRow[], showDelta: boolean): string {
+const ratio = (row: ComparisonRow): string => row.estimated > 0 ? (row.actual / row.estimated).toFixed(1) + 'x' : 'N/A';
+const delta = (row: ComparisonRow): string => row.delta === undefined ? '' : `${deltaSign(row.delta)}${formatCompact(row.delta)}`;
+const strong = (text: string, className?: string): DataTableCell =>
+	({ html: `<strong${className ? ` class="${className}"` : ''}>${escapeHtml(text)}</strong>` });
 
-const tableRows = rows.map(row => {
-const estimatedFmt = formatCompact(row.estimated);
-const actualFmt    = formatCompact(row.actual);
-const ratioFmt     = row.estimated > 0
-? (row.actual / row.estimated).toFixed(1) + 'x'
-: 'N/A';
+const deltaColumn: DataTableColumn<ComparisonRow> = {
+	id: 'delta', label: 'Delta', align: 'right', className: 'count-cell',
+	cellClassName: row => row.delta === undefined ? undefined : deltaClass(row.delta),
+	render: delta,
+};
+const columns: DataTableColumn<ComparisonRow>[] = [
+	{ id: 'metric', label: 'Metric', render: row => row.label },
+	{ id: 'estimated', label: 'Estimated', align: 'right', className: 'count-cell', render: row => formatCompact(row.estimated) },
+	{ id: 'actual', label: 'Actual', align: 'right', className: 'count-cell', render: row => formatCompact(row.actual) },
+	...(showDelta ? [deltaColumn] : []),
+	{ id: 'ratio', label: 'Ratio', align: 'right', className: 'count-cell', render: ratio },
+];
 
-const deltaCell = (showDelta && row.delta !== undefined)
-? `<td class="count-cell ${deltaClass(row.delta)}">${row.isTotal ? '<strong>' : ''}${deltaSign(row.delta)}${formatCompact(row.delta)}${row.isTotal ? '</strong>' : ''}</td>`
-: '';
+const footerRows = rows.filter(row => row.isTotal).map(row => ({
+	cells: {
+		metric: strong(row.label),
+		estimated: strong(formatCompact(row.estimated)),
+		actual: strong(formatCompact(row.actual)),
+		delta: row.delta === undefined ? '' : strong(delta(row), deltaClass(row.delta)),
+		ratio: strong(ratio(row)),
+	},
+}));
 
-if (row.isTotal) {
-return `<tr class="usage-total-row">
-<td><strong>${row.label}</strong></td>
-<td class="count-cell"><strong>${estimatedFmt}</strong></td>
-<td class="count-cell"><strong>${actualFmt}</strong></td>
-${deltaCell}
-<td class="count-cell"><strong>${ratioFmt}</strong></td>
-</tr>`;
-}
-return `<tr>
-<td>${row.label}</td>
-<td class="count-cell">${estimatedFmt}</td>
-<td class="count-cell">${actualFmt}</td>
-${deltaCell}
-<td class="count-cell">${ratioFmt}</td>
-</tr>`;
-}).join('');
-
-return `<table class="usage-comparison-table">
-<thead>
-<tr>
-<th>Metric</th>
-<th>Estimated</th>
-<th>Actual</th>
-${deltaHeaderHtml}
-<th>Ratio</th>
-</tr>
-</thead>
-<tbody>
-${tableRows}
-</tbody>
-</table>`;
+return renderDataTable({
+	tableId,
+	ariaLabel,
+	rows: rows.filter(row => !row.isTotal),
+	columns,
+	pageSize: false,
+	footerRows,
+	rootClassName: 'usage-comparison',
+});
 }
 
 /**
@@ -510,24 +421,54 @@ badges.push(`<span class="context-badge" title="${escapeHtml(path)}">📄 ${esca
 return badges.join('');
 }
 
+type PromptBreakdownRow = { category: string; label: string; percent: number; tokens: number };
+
+/**
+ * Renders a prompt-breakdown table (category, label, share of the prompt, deduced tokens and a
+ * distribution bar). The per-turn and the session-level tables differ only in their headers.
+ */
+function renderPromptBreakdownTable(options: {
+	tableId: string;
+	rows: PromptBreakdownRow[];
+	percentLabel: string;
+	tokensLabel: string;
+	initialSort?: DataTableSort;
+}): string {
+	const categoryClass = (row: PromptBreakdownRow): string => row.category === 'System' ? 'category-system' : 'category-user';
+	const columns: DataTableColumn<PromptBreakdownRow>[] = [
+		{
+			id: 'category', label: 'Category', sortValue: row => row.category,
+			render: row => ({ html: `<span class="${categoryClass(row)}">${escapeHtml(row.category)}</span>` }),
+		},
+		{ id: 'label', label: 'Label', sortValue: row => row.label, render: row => row.label },
+		{ id: 'percent', label: options.percentLabel, align: 'right', className: 'count-cell', sortValue: row => row.percent, render: row => `${row.percent}%` },
+		{ id: 'tokens', label: options.tokensLabel, align: 'right', className: 'count-cell', sortValue: row => row.tokens, render: row => formatCompact(row.tokens) },
+		{
+			id: 'distribution', label: 'Distribution',
+			render: row => ({ html: `<div class="bar-cell"><div class="bar-fill ${categoryClass(row)}-bar" style="width: ${Math.min(row.percent, 100)}%"></div></div>` }),
+		},
+	];
+	return renderDataTable({
+		tableId: options.tableId,
+		ariaLabel: 'Prompt breakdown',
+		rows: options.rows,
+		columns,
+		initialSort: options.initialSort,
+	});
+}
+
 /**
  * Renders the "📊 ACTUAL LLM USAGE" `<details>` block for a single turn.
  * Returns an empty string when the turn has no actual usage data.
  */
-function buildPromptBreakdownHtml(au: ChatTurn['actualUsage'] & {}): string {
+function buildPromptBreakdownHtml(au: ChatTurn['actualUsage'] & {}, turnNumber: number): string {
 	if (!au.promptTokenDetails || au.promptTokenDetails.length === 0) { return ''; }
-	const breakdownRows = au.promptTokenDetails.map(detail => {
-		const deducedTokens = Math.round(au.promptTokens * detail.percentageOfPrompt / 100);
-		const barWidth = Math.min(detail.percentageOfPrompt, 100);
-		const categoryClass = detail.category === 'System' ? 'category-system' : 'category-user';
-		return `<tr>
-<td><span class="${categoryClass}">${escapeHtml(detail.category)}</span></td>
-<td>${escapeHtml(detail.label)}</td>
-<td class="count-cell">${detail.percentageOfPrompt}%</td>
-<td class="count-cell">${formatCompact(deducedTokens)}</td>
-<td><div class="bar-cell"><div class="bar-fill ${categoryClass}-bar" style="width: ${barWidth}%"></div></div></td>
-</tr>`;
-	}).join('');
+	const breakdownRows: PromptBreakdownRow[] = au.promptTokenDetails.map(detail => ({
+		category: detail.category,
+		label: detail.label,
+		percent: detail.percentageOfPrompt,
+		tokens: Math.round(au.promptTokens * detail.percentageOfPrompt / 100),
+	}));
 	const systemPct = au.promptTokenDetails.filter(d => d.category === 'System').reduce((s, d) => s + d.percentageOfPrompt, 0);
 	const userPct   = au.promptTokenDetails.filter(d => d.category !== 'System').reduce((s, d) => s + d.percentageOfPrompt, 0);
 	const systemTokens = Math.round(au.promptTokens * systemPct / 100);
@@ -538,20 +479,7 @@ function buildPromptBreakdownHtml(au: ChatTurn['actualUsage'] & {}): string {
 <span class="category-system">System: ${systemPct}% (~${formatCompact(systemTokens)} tokens)</span>
 <span class="category-user">User Context: ${userPct}% (~${formatCompact(userTokens)} tokens)</span>
 </div>
-<table class="prompt-breakdown-table">
-<thead>
-<tr>
-<th>Category</th>
-<th>Label</th>
-<th>%</th>
-<th>~Tokens</th>
-<th>Distribution</th>
-</tr>
-</thead>
-<tbody>
-${breakdownRows}
-</tbody>
-</table>
+${renderPromptBreakdownTable({ tableId: `logviewer-prompt-breakdown-turn-${turnNumber}`, rows: breakdownRows, percentLabel: '%', tokensLabel: '~Tokens' })}
 </div>
 `;
 }
@@ -567,7 +495,7 @@ const dInput  = au.promptTokens      - turn.inputTokensEstimate;
 const dOutput = au.completionTokens  - turn.outputTokensEstimate;
 const dTotal  = actualTotal          - estimatedTotal;
 
-const promptBreakdownHtml = buildPromptBreakdownHtml(au);
+const promptBreakdownHtml = buildPromptBreakdownHtml(au, turn.turnNumber);
 
 const comparisonRows: ComparisonRow[] = [
 { label: '↑ Prompt / Input',      estimated: turn.inputTokensEstimate,  actual: au.promptTokens,     delta: dInput  },
@@ -590,13 +518,19 @@ ${au.details ? `<span class="usage-badge usage-model-info">${escapeHtml(au.detai
 </span>
 </summary>
 <div class="actual-usage-content">
-${renderUsageComparisonTable(comparisonRows, true)}
+${renderUsageComparisonTable(`logviewer-usage-comparison-turn-${turn.turnNumber}`, 'Actual LLM usage', comparisonRows, true)}
 ${promptBreakdownHtml}
 </div>
 </details>
 </div>
 `;
 }
+
+/** One tool call in a turn's tool table; `idx` is its position in `turn.toolCalls`, which the host uses to find it. */
+type ToolCallRow = { tc: ToolCall; idx: number; displayName: string; filterKey: string };
+
+/** The `data-tool-filter` value of the sub-agent pill, and the filter key of every sub-agent row. */
+const SUB_AGENT_TOOL_FILTER = '__subagent__';
 
 /**
  * Renders the "🔧 TOOL CALLS" `<details>` block for a single turn.
@@ -618,7 +552,7 @@ const toolSummary = Object.entries(toolCounts)
 .map(([name, count]) => `<span class="tool-summary-item" data-tool-filter="${escapeHtml(name)}" data-turn="${turn.turnNumber}" title="Click to filter by ${escapeHtml(name)}">${escapeHtml(name)}: <strong>${count}</strong></span>`)
 .join('');
 const subAgentSummary = subAgentCallsInTurn.length > 0
-? `<span class="sub-agent-summary-item" data-tool-filter="__subagent__" data-turn="${turn.turnNumber}" title="Click to filter sub-agent calls">🤖 Sub-Agents: <strong>${subAgentCallsInTurn.length}</strong></span>`
+? `<span class="sub-agent-summary-item" data-tool-filter="${SUB_AGENT_TOOL_FILTER}" data-turn="${turn.turnNumber}" title="Click to filter sub-agent calls">🤖 Sub-Agents: <strong>${subAgentCallsInTurn.length}</strong></span>`
 : '';
 
 const SUB_AGENT_DISPLAY: Record<string, string> = {
@@ -628,25 +562,12 @@ write_agent: '🤖 Sub-Agent (write)',
 list_agents: '🤖 Sub-Agent (list)',
 };
 
-const toolRows = turn.toolCalls.map((tc, idx) => {
-const displayName = tc.isSubAgent
-? (SUB_AGENT_DISPLAY[tc.toolName] ?? `🤖 ${tc.toolName}`)
-: lookupToolName(tc.toolName);
-return `
-<tr class="tool-row${tc.isSubAgent ? ' sub-agent-row' : ''}" data-tool-name="${tc.isSubAgent ? '__subagent__' : escapeHtml(lookupToolName(tc.toolName))}">
-<td class="tool-name-cell">
-<span class="tool-name tool-call-link" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="${escapeHtml(tc.toolName)}" style="cursor:pointer;">${escapeHtml(displayName)}</span>
-${tc.isSubAgent && tc.subAgentModel ? `<span class="sub-agent-model-badge">${escapeHtml(getModelDisplayName(tc.subAgentModel))}</span>` : ''}
-${tc.isSubAgent && tc.subAgentTokens ? `<span class="sub-agent-tokens">↑${formatCompact(tc.subAgentTokens.input)} ↓${formatCompact(tc.subAgentTokens.output)} tokens${tc.subAgentCost ? ` · ${formatCost(tc.subAgentCost)}` : ''}</span>` : ''}
-${tc.arguments && !tc.isSubAgent ? `<details class="tool-details"><summary>Arguments</summary><pre>${escapeHtml(tc.arguments)}</pre></details>` : ''}
-${tc.result && !tc.isSubAgent ? `<details class="tool-details"><summary>Result</summary><pre>${escapeHtml(truncateText(tc.result, 500))}</pre></details>` : ''}
-</td>
-<td class="tool-action-cell">
-${!tc.isSubAgent ? `<span class="tool-call-pretty" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="View pretty JSON" style="cursor:pointer;color:#22c55e;">Investigate</span>` : ''}
-</td>
-</tr>
-`;
-}).join('');
+const toolRows: ToolCallRow[] = turn.toolCalls.map((tc, idx) => ({
+tc,
+idx,
+displayName: tc.isSubAgent ? (SUB_AGENT_DISPLAY[tc.toolName] ?? `🤖 ${tc.toolName}`) : lookupToolName(tc.toolName),
+filterKey: tc.isSubAgent ? SUB_AGENT_TOOL_FILTER : lookupToolName(tc.toolName),
+}));
 
 return `
 <div class="turn-tools">
@@ -656,20 +577,64 @@ return `
 <span class="tools-header-inline">🔧 TOOL CALLS (${turn.toolCalls.length})</span>
 <span class="tool-summary-text">${toolSummary}${subAgentSummary}</span>
 </summary>
-<table class="tools-table">
-<thead>
-<tr>
-<th scope="col">Tool Name</th>
-<th scope="col">Action</th>
-</tr>
-</thead>
-<tbody>
-${toolRows}
-</tbody>
-</table>
+${renderToolCallsTable(turn.turnNumber, toolRows)}
 </details>
 </div>
 `;
+}
+
+function toolCallsTableId(turnNumber: number | string): string {
+return `logviewer-tools-${turnNumber}`;
+}
+
+/**
+ * A turn's tool calls, in call order. The summary pills above it narrow the table to one tool
+ * through the table's own filter state (see `applyToolCallFilter`), so the filter covers every
+ * page and survives sorting and paging.
+ * @security All tool names, arguments and results are passed through `escapeHtml`.
+ */
+function renderToolCallsTable(turnNumber: number, rows: ToolCallRow[]): string {
+const columns: DataTableColumn<ToolCallRow>[] = [
+{
+id: 'name', label: 'Tool Name', className: 'tool-name-cell', sortValue: row => row.displayName,
+render: ({ tc, idx, displayName }) => ({ html: `
+<span class="tool-name tool-call-link" data-turn="${turnNumber}" data-toolcall="${idx}" title="${escapeHtml(tc.toolName)}" style="cursor:pointer;">${escapeHtml(displayName)}</span>
+${tc.isSubAgent && tc.subAgentModel ? `<span class="sub-agent-model-badge">${escapeHtml(getModelDisplayName(tc.subAgentModel))}</span>` : ''}
+${tc.isSubAgent && tc.subAgentTokens ? `<span class="sub-agent-tokens">↑${formatCompact(tc.subAgentTokens.input)} ↓${formatCompact(tc.subAgentTokens.output)} tokens${tc.subAgentCost ? ` · ${formatCost(tc.subAgentCost)}` : ''}</span>` : ''}
+${tc.arguments && !tc.isSubAgent ? `<details class="tool-details"><summary>Arguments</summary><pre>${escapeHtml(tc.arguments)}</pre></details>` : ''}
+${tc.result && !tc.isSubAgent ? `<details class="tool-details"><summary>Result</summary><pre>${escapeHtml(truncateText(tc.result, 500))}</pre></details>` : ''}
+` }),
+},
+{
+id: 'action', label: 'Action', align: 'right', width: '100px', className: 'tool-action-cell',
+render: ({ tc, idx }) => ({ html: !tc.isSubAgent ? `<span class="tool-call-pretty" data-turn="${turnNumber}" data-toolcall="${idx}" title="View pretty JSON" style="cursor:pointer;color:#22c55e;">Investigate</span>` : '' }),
+},
+];
+return renderDataTable({
+tableId: toolCallsTableId(turnNumber),
+ariaLabel: localize('logviewer.summary.toolCalls'),
+rows,
+columns,
+rootClassName: 'turn-tools-table',
+rowOptions: row => ({
+className: `tool-row${row.tc.isSubAgent ? ' sub-agent-row' : ''}`,
+attributes: { 'data-tool-name': row.filterKey },
+}),
+filterRows: (row, filters) => {
+const active = Object.keys(filters).filter(key => filters[key]);
+return active.length === 0 || active.includes(row.filterKey);
+},
+});
+}
+
+/** Narrows a turn's tool table to `filterKey`, or shows every call again when it is `null`. */
+function applyToolCallFilter(turnNumber: string, filterKey: string | null): void {
+const tableId = toolCallsTableId(turnNumber);
+const filters: Record<string, boolean> = {};
+for (const key of Object.keys(getDataTableState(tableId).filters)) { filters[key] = false; }
+if (filterKey !== null) { filters[filterKey] = true; }
+setDataTableState(tableId, { filters, page: 1 });
+rerenderDataTable(tableId);
 }
 
 /**
@@ -690,7 +655,7 @@ return `
 <span class="context-ref-summary-text">${contextRefBadges}</span>
 </summary>
 <div class="context-refs-content">
-${renderContextReferencesDetailed(turn.contextReferences)}
+${renderContextReferencesDetailed(turn.contextReferences, turn.turnNumber)}
 </div>
 </details>
 </div>
@@ -720,28 +685,6 @@ function buildEditorIdentityCard(data: SessionLogData, stats: SummaryStats): str
 <div class="summary-compact-row"><span class="summary-compact-key">📝 ${localize('logviewer.summary.interactions')}</span><span class="summary-compact-val">${interactions}</span></div>
 </div>
 <div class="summary-sub">${escapeHtml(modeSub)}</div>
-</div>`;
-}
-
-/**
- * Combined "MCP tools & context references" card: merges the previous MCP Tools
- * and Context Refs cards into a single compact card, since both describe the
- * external context a session pulled in (tool servers vs. editor references).
- */
-function buildMcpAndContextRefsCard(data: SessionLogData, stats: SummaryStats): string {
-	const { usageMcpTotal, usageTopMcpTools, usageContextTotal, usageContextImplicit, usageContextExplicit } = stats;
-	const mcpSub = usageMcpTotal === 0 ? 'None' : formatTopListWithOther(usageTopMcpTools, usageMcpTotal);
-	const refsSub = usageContextTotal === 0 ? 'None' : `implicit ${usageContextImplicit}, explicit ${usageContextExplicit}`;
-	return `<div class="summary-card summary-card--compact summary-card--combined">
-<div class="summary-label">🔌 ${localize('logviewer.summary.mcpAndContextRefs')}</div>
-<div class="summary-compact-rows">
-<div class="summary-compact-row"><span class="summary-compact-key">🔌 ${localize('logviewer.summary.mcpTools')}</span><span class="summary-compact-val">${usageMcpTotal}</span></div>
-<div class="summary-compact-row"><span class="summary-compact-key">🔗 ${localize('logviewer.summary.contextRefs')}</span><span class="summary-compact-val">${usageContextTotal}</span></div>
-</div>
-<div class="summary-sub combined-card-sub">
-<div class="combined-card-sub-line">🔌 <span class="combined-card-sub-label">${localize('logviewer.summary.mcpTools')}:</span> ${mcpSub}</div>
-<div class="combined-card-sub-line">🔗 <span class="combined-card-sub-label">${localize('logviewer.summary.contextRefs')}:</span> ${refsSub}</div>
-</div>
 </div>`;
 }
 
@@ -854,6 +797,16 @@ function buildCachedTokensCard(data: SessionLogData): string {
 </div>`;
 }
 
+function buildEstimatedCostCard(data: SessionLogData): string {
+	const total = sumSessionCost(data);
+	if (total <= 0) { return ''; }
+	return `<div class="summary-card" title="${escapeHtml(localize('logviewer.summary.estimatedCostTooltip'))}">
+<div class="summary-label">💰 ${localize('logviewer.summary.estimatedCost')}</div>
+<div class="summary-value">${formatCost(total)}</div>
+<div class="summary-sub">${localize('logviewer.summary.estimatedCostSub')}</div>
+</div>`;
+}
+
 function buildThinkingTokensCard(data: SessionLogData, stats: SummaryStats): string {
 	if (stats.totalThinkingTokens <= 0) { return ''; }
 	return `<div class="summary-card">
@@ -879,7 +832,7 @@ function buildHierarchyCard(data: SessionLogData): string {
 	const childCount = data.totalChildCount ?? data.childInfo?.length ?? 0;
 	if (!hasParent && childCount === 0) { return ''; }
 
-	let parts: string[] = [];
+	const parts: string[] = [];
 	if (hasParent) {
 		const pName = escapeHtml(data.parentInfo!.name);
 		parts.push(`<div class="hierarchy-line hierarchy-parent-line">↑ Parent: <strong>${pName}</strong></div>`);
@@ -963,7 +916,7 @@ function renderEditorInfoPanel(data: SessionLogData): string {
  * @security All user-controlled strings (editorName, file path) are escaped via `escapeHtml`.
  */
 function renderSummaryCards(data: SessionLogData, stats: SummaryStats): string {
-	const { usageToolTotal, usageTopTools, usageMcpTotal, usageTopMcpTools, usageContextTotal, usageContextImplicit, usageContextExplicit } = stats;
+	const { usageToolTotal, usageTopTools } = stats;
 	return `
 <div class="summary-cards">
 ${buildEditorIdentityCard(data, stats)}
@@ -972,6 +925,7 @@ ${buildActualTokensCard(data, stats)}
 ${buildModelTurnsCard(data)}
 ${buildDebugTokenCards(data)}
 ${buildCachedTokensCard(data)}
+${buildEstimatedCostCard(data)}
 ${buildThinkingTokensCard(data, stats)}
 ${buildEffortCard(stats)}
 ${buildSubAgentsCard(data, stats)}
@@ -982,7 +936,7 @@ ${buildHierarchyCard(data)}
 <div class="summary-value">${usageToolTotal}</div>
 <div class="summary-sub">${formatTopListWithOther(usageTopTools, usageToolTotal, lookupToolName)}</div>
 </div>
-${buildMcpAndContextRefsCard(data, stats)}
+${buildMcpAndContextRefsCard(stats)}
 <div class="summary-card">
 <div class="summary-label">📦 ${localize('logviewer.summary.fileSize')}</div>
 <div class="summary-value">${formatFileSize(data.size)}</div>
@@ -1027,19 +981,13 @@ if (turnsWithActual.length === 0) { return ''; }
 const inputEstimateSum  = data.turns.reduce((s, t) => s + t.inputTokensEstimate, 0);
 const outputEstimateSum = data.turns.reduce((s, t) => s + t.outputTokensEstimate, 0);
 
-const breakdownEntries = Object.values(aggregatedBreakdown).sort((a, b) => b.totalTokens - a.totalTokens);
-const avgPct = (entry: BreakdownEntry) => Math.round(entry.totalPct / entry.count);
-const breakdownRows = breakdownEntries.map(entry => {
-const pct = avgPct(entry);
-const categoryClass = entry.category === 'System' ? 'category-system' : 'category-user';
-return `<tr>
-<td><span class="${categoryClass}">${escapeHtml(entry.category)}</span></td>
-<td>${escapeHtml(entry.label)}</td>
-<td class="count-cell">${pct}%</td>
-<td class="count-cell">${formatCompact(entry.totalTokens)}</td>
-<td><div class="bar-cell"><div class="bar-fill ${categoryClass}-bar" style="width: ${Math.min(pct, 100)}%"></div></div></td>
-</tr>`;
-}).join('');
+const breakdownEntries = Object.values(aggregatedBreakdown);
+const breakdownRows: PromptBreakdownRow[] = breakdownEntries.map(entry => ({
+category: entry.category,
+label: entry.label,
+percent: Math.round(entry.totalPct / entry.count),
+tokens: entry.totalTokens,
+}));
 
 const systemTokens = breakdownEntries.filter(e => e.category === 'System').reduce((s, e) => s + e.totalTokens, 0);
 const userTokens   = breakdownEntries.filter(e => e.category !== 'System').reduce((s, e) => s + e.totalTokens, 0);
@@ -1061,17 +1009,20 @@ return `
 <div class="session-usage-header">📊 Session Actual LLM Usage (${turnsWithActual.length}/${data.turns.length} turns with data)</div>
 <div class="${gridClass}">
 ${hasComparison ? `<div class="session-usage-comparison">
-${renderUsageComparisonTable(comparisonRows, false)}
+${renderUsageComparisonTable('logviewer-usage-comparison-session', 'Session Actual LLM Usage', comparisonRows, false)}
 </div>` : ''}
 ${hasBreakdown ? `<div class="session-usage-breakdown">
 <div class="breakdown-summary">
 <span class="category-system">System: ~${formatCompact(systemTokens)} tokens</span>
 <span class="category-user">User Context: ~${formatCompact(userTokens)} tokens</span>
 </div>
-<table class="prompt-breakdown-table">
-<thead><tr><th>Category</th><th>Label</th><th>Avg %</th><th>Total ~Tokens</th><th>Distribution</th></tr></thead>
-<tbody>${breakdownRows}</tbody>
-</table>
+${renderPromptBreakdownTable({
+	tableId: 'logviewer-prompt-breakdown-session',
+	rows: breakdownRows,
+	percentLabel: 'Avg %',
+	tokensLabel: 'Total ~Tokens',
+	initialSort: { columnId: 'tokens', direction: 'desc' },
+})}
 </div>` : ''}
 </div>
 </div>
@@ -1090,6 +1041,159 @@ function renderModelOverviewBadge(model: string | null): string {
 	return `<span class="overview-model-badge" style="${style}" title="${escapeHtml(model)}">${escapeHtml(getModelDisplayName(model))}</span>`;
 }
 
+// Layout flags for the turns-overview table, derived once from its row list.
+type TurnsOverviewTableFlags = {
+	hasCached: boolean;
+	hasModelSwitches: boolean;
+	hasCost: boolean;
+	totalChildren: number;
+	hasLegs: boolean;
+	columnCount: number;
+};
+
+function computeTurnsOverviewTableFlags(rows: TurnOverviewRow[]): TurnsOverviewTableFlags {
+	const hasCached = rows.some(r => r.cached !== null);
+	const hasModelSwitches = rows.some((r, i) => i > 0 && r.model && rows[i - 1].model && r.model !== rows[i - 1].model);
+	const hasCost = rows.some(r => r.cost !== null || r.children.some(c => c.cost !== null));
+	const totalChildren = rows.reduce((sum, r) => sum + r.children.length, 0);
+	const hasLegs = rows.some(r => r.legs.length > 0);
+	const columnCount = 7 + (hasCached ? 1 : 0) + (hasCost ? 1 : 0);
+	return { hasCached, hasModelSwitches, hasCost, totalChildren, hasLegs, columnCount };
+}
+
+// Reverse-map chat turn number → this turn's matched HydraFusionTurn, so an expanded
+// row can reuse the exact same leg table the HydraFusion section renders above
+// (instead of re-deriving markup from the trimmed TurnOverviewLegRow) and show the
+// same total: the turn's own rollup `aiu`, not a sum of the legs' individual costs,
+// which `analyzeHydraFusionSession` can legitimately differ from (it prefers
+// `session.fusion_completed.totalNanoAiu` and only falls back to summing legs when
+// that rollup is missing — see buildTurn in src/hydrafusion.ts).
+function buildHydraTurnByChatTurnMap(data: SessionLogData, hydraTurnMatches?: Map<number, number>): Map<number, HydraFusionTurn> {
+	const hydraTurnByChatTurn = new Map<number, HydraFusionTurn>();
+	if (data.hydraFusion && hydraTurnMatches) {
+		for (const [hydraIndex, chatTurnNumber] of hydraTurnMatches) {
+			const hydraTurn = data.hydraFusion.turns[hydraIndex];
+			if (hydraTurn) { hydraTurnByChatTurn.set(chatTurnNumber, hydraTurn); }
+		}
+	}
+	return hydraTurnByChatTurn;
+}
+
+/** One Session Steps Overview row plus what rendering it needs from its neighbours. */
+type TurnsOverviewItem = {
+	row: TurnOverviewRow;
+	/** The model differs from the previous step's, in chronological order, so it holds under any sort. */
+	switched: boolean;
+	hydraTurn: HydraFusionTurn | undefined;
+};
+
+const TURNS_OVERVIEW_TABLE_ID = 'logviewer-turns-overview';
+
+/** Steps whose HydraFusion legs are expanded, kept here so a sort or page change keeps them open. */
+const expandedOverviewLegs = new Set<number>();
+
+/** What the overview was last rendered with, to find the page that shows a given step. */
+
+function overviewCountCell(html: string): string {
+	return `<td class="data-table-align-right count-cell">${html}</td>`;
+}
+
+function renderTurnOverviewChildRows(row: TurnOverviewRow, flags: TurnsOverviewTableFlags): string {
+	return row.children.map(child => `<tr class="turns-overview-row turns-overview-child-row" data-turn="${row.turnNumber}" title="Sub-agent call from step #${row.turnNumber} — jump to turn">
+<td class="turns-overview-num">↳ 🤖</td>
+<td><span class="turn-mode turns-overview-child-tool" title="${escapeHtml(child.toolName)}">${escapeHtml(child.toolName)}</span></td>
+<td>${renderModelOverviewBadge(child.model)}</td>
+${overviewCountCell(formatCompact(child.input))}
+${flags.hasCached ? overviewCountCell('—') : ''}
+${overviewCountCell(formatCompact(child.output))}
+${overviewCountCell(`<strong>${formatCompact(child.total)}</strong>`)}
+${flags.hasCost ? overviewCountCell(child.cost !== null ? escapeHtml(formatCost(child.cost)) : '—') : ''}
+<td class="data-table-align-center turns-overview-actual" title="Estimated from text">~</td>
+</tr>`).join('');
+}
+
+function turnsOverviewLegsTableId(turnNumber: number): string {
+	return `logviewer-turns-overview-legs-${turnNumber}`;
+}
+
+function renderTurnOverviewLegsRow(item: TurnsOverviewItem, columnCount: number): string {
+	const { row, hydraTurn } = item;
+	if (row.legs.length === 0 || !hydraTurn) { return ''; }
+	const hidden = expandedOverviewLegs.has(row.turnNumber) ? '' : ' style="display: none;"';
+	return `<tr class="turns-overview-legs-row" data-parent-turn="${row.turnNumber}"${hidden}>
+<td colspan="${columnCount}">
+<div class="turns-overview-legs-wrap">
+<div class="turns-overview-legs-caption">${escapeHtml(localizeFormat('logviewer.hydrafusion.legsCaptionTotal', row.turnNumber))} <strong>${escapeHtml(formatFusionCost(hydraTurn.aiu))}</strong></div>
+${renderLegsTable(hydraTurn.phases, turnsOverviewLegsTableId(row.turnNumber))}
+</div>
+</td>
+</tr>`;
+}
+
+function renderTurnOverviewStepCell({ row, switched }: TurnsOverviewItem): string {
+	const expanded = expandedOverviewLegs.has(row.turnNumber);
+	const legToggle = row.legs.length > 0
+		? `<button type="button" class="turns-overview-leg-toggle" data-turn="${row.turnNumber}" aria-expanded="${expanded}" aria-label="${escapeHtml(localizeFormat('logviewer.hydrafusion.toggleLegsAriaLabel', row.turnNumber))}" title="${escapeHtml(localize('logviewer.hydrafusion.showLegsTitle'))}">${expanded ? '▾' : '▸'}</button> `
+		: '';
+	const switchIcon = switched ? ` <span class="overview-switch-icon" title="${escapeHtml(localize('logviewer.hydrafusion.modelChangedTitle'))}">⇄</span>` : '';
+	return `${legToggle}#${row.turnNumber}${switchIcon}`;
+}
+
+function overviewCountColumn(
+	id: string,
+	label: string,
+	value: (row: TurnOverviewRow) => number | null,
+	strong = false,
+): DataTableColumn<TurnsOverviewItem> {
+	return {
+		id, label, align: 'right', className: 'count-cell',
+		sortValue: ({ row }) => value(row),
+		render: ({ row }) => {
+			const amount = value(row);
+			const text = amount !== null ? formatCompact(amount) : '—';
+			return strong ? { html: `<strong>${escapeHtml(text)}</strong>` } : text;
+		},
+	};
+}
+
+function buildTurnsOverviewColumns(flags: TurnsOverviewTableFlags): DataTableColumn<TurnsOverviewItem>[] {
+	const columns: DataTableColumn<TurnsOverviewItem>[] = [
+		{
+			id: 'step', label: 'Step', className: 'turns-overview-num',
+			sortValue: ({ row }) => row.turnNumber,
+			render: item => ({ html: renderTurnOverviewStepCell(item) }),
+		},
+		{
+			id: 'mode', label: 'Mode', sortValue: ({ row }) => row.mode,
+			render: ({ row }) => ({ html: `<span class="turn-mode" style="background: ${getModeColor(row.mode)};">${getModeIcon(row.mode)} ${escapeHtml(row.mode)}</span>` }),
+		},
+		{
+			id: 'model', label: 'Model', sortValue: ({ row }) => row.model ? getModelDisplayName(row.model) : null,
+			render: ({ row }) => ({ html: renderModelOverviewBadge(row.model) }),
+		},
+		overviewCountColumn('input', 'Input', row => row.input),
+	];
+	if (flags.hasCached) { columns.push(overviewCountColumn('cached', 'Cached', row => row.cached)); }
+	columns.push(
+		overviewCountColumn('output', 'Output', row => row.output),
+		overviewCountColumn('total', 'Total', row => row.total, true),
+	);
+	if (flags.hasCost) {
+		columns.push({
+			id: 'cost', label: localize('logviewer.hydrafusion.cost'), align: 'right', className: 'count-cell',
+			sortValue: ({ row }) => row.cost,
+			render: ({ row }) => row.cost !== null ? formatCost(row.cost) : '—',
+		});
+	}
+	columns.push({
+		id: 'source', label: 'Src', headerHtml: '<span title="✓ actual API usage, ~ estimated from text">Src</span>',
+		align: 'center', className: 'turns-overview-actual',
+		sortValue: ({ row }) => row.isActual ? 1 : 0,
+		render: ({ row }) => ({ html: `<span title="${row.isActual ? 'Actual API usage' : 'Estimated from text'}">${row.isActual ? '✓' : '~'}</span>` }),
+	});
+	return columns;
+}
+
 /**
  * Renders the turns-overview table shown above the chat-turns list: one compact,
  * clickable row per turn with its mode, model, and input/cached/output token
@@ -1097,6 +1201,8 @@ function renderModelOverviewBadge(model: string | null): string {
  * at a glance without opening every turn card. A row's model badge differing
  * from the one above it is flagged with ⇄ to spot model switches quickly.
  * Clicking a row scrolls to and briefly highlights the matching turn card.
+ * Rows start in chronological step order; sub-agent rows and expandable legs
+ * travel with their step when the table is sorted or paged.
  *
  * When a turn was routed through HydraFusion (`hydraTurnMatches` places it), its
  * row also gets a ⚡ toggle that expands the same leg-by-leg table shown in the
@@ -1107,191 +1213,115 @@ function renderModelOverviewBadge(model: string | null): string {
 function renderTurnsOverviewTable(data: SessionLogData, hydraTurnMatches?: Map<number, number>): string {
 	if (data.turns.length === 0) { return ''; }
 	const rows = buildTurnOverviewRows(data.turns, data.hydraFusion, hydraTurnMatches);
-	const hasCached = rows.some(r => r.cached !== null);
-	const hasModelSwitches = rows.some((r, i) => i > 0 && r.model && rows[i - 1].model && r.model !== rows[i - 1].model);
-	const hasCost = rows.some(r => r.cost !== null || r.children.some(c => c.cost !== null));
-	const totalChildren = rows.reduce((sum, r) => sum + r.children.length, 0);
-	const hasLegs = rows.some(r => r.legs.length > 0);
-	const columnCount = 7 + (hasCached ? 1 : 0) + (hasCost ? 1 : 0);
-
-	// Reverse-map chat turn number → this turn's matched HydraFusionTurn, so an expanded
-	// row can reuse the exact same leg table the HydraFusion section renders above
-	// (instead of re-deriving markup from the trimmed TurnOverviewLegRow) and show the
-	// same total: the turn's own rollup `aiu`, not a sum of the legs' individual costs,
-	// which `analyzeHydraFusionSession` can legitimately differ from (it prefers
-	// `session.fusion_completed.totalNanoAiu` and only falls back to summing legs when
-	// that rollup is missing — see buildTurn in src/hydrafusion.ts).
-	const hydraTurnByChatTurn = new Map<number, HydraFusionTurn>();
-	if (data.hydraFusion && hydraTurnMatches) {
-		for (const [hydraIndex, chatTurnNumber] of hydraTurnMatches) {
-			const hydraTurn = data.hydraFusion.turns[hydraIndex];
-			if (hydraTurn) { hydraTurnByChatTurn.set(chatTurnNumber, hydraTurn); }
-		}
-	}
-
-	const costCell = (cost: number | null): string => hasCost ? `<td class="count-cell">${cost !== null ? formatCost(cost) : '—'}</td>` : '';
-
-	const bodyRows = rows.map((row, i) => {
-		const switched = i > 0 && !!row.model && !!rows[i - 1].model && row.model !== rows[i - 1].model;
-		const cachedCell = hasCached ? `<td class="count-cell">${row.cached !== null ? formatCompact(row.cached) : '—'}</td>` : '';
-		const childRows = row.children.map(child => `<tr class="turns-overview-row turns-overview-child-row" data-turn="${row.turnNumber}" title="Sub-agent call from step #${row.turnNumber} — jump to turn">
-<td class="turns-overview-num">↳ 🤖</td>
-<td><span class="turn-mode turns-overview-child-tool" title="${escapeHtml(child.toolName)}">${escapeHtml(child.toolName)}</span></td>
-<td>${renderModelOverviewBadge(child.model)}</td>
-<td class="count-cell">${formatCompact(child.input)}</td>
-${hasCached ? '<td class="count-cell">—</td>' : ''}
-<td class="count-cell">${formatCompact(child.output)}</td>
-<td class="count-cell"><strong>${formatCompact(child.total)}</strong></td>
-${costCell(child.cost)}
-<td class="turns-overview-actual" title="Estimated from text">~</td>
-</tr>`).join('');
-		const legToggle = row.legs.length > 0
-			? `<button type="button" class="turns-overview-leg-toggle" data-turn="${row.turnNumber}" aria-expanded="false" aria-label="${escapeHtml(localizeFormat('logviewer.hydrafusion.toggleLegsAriaLabel', row.turnNumber))}" title="${escapeHtml(localize('logviewer.hydrafusion.showLegsTitle'))}">▸</button> `
-			: '';
-		const hydraTurn = hydraTurnByChatTurn.get(row.turnNumber);
-		const legsRow = row.legs.length > 0 && hydraTurn
-			? `<tr class="turns-overview-legs-row" data-parent-turn="${row.turnNumber}" style="display: none;">
-<td colspan="${columnCount}">
-<div class="turns-overview-legs-wrap">
-<div class="turns-overview-legs-caption">${escapeHtml(localizeFormat('logviewer.hydrafusion.legsCaptionTotal', row.turnNumber))} <strong>${escapeHtml(formatFusionCost(hydraTurn.aiu))}</strong></div>
-${renderLegsTable(hydraTurn.phases)}
-</div>
-</td>
-</tr>`
-			: '';
-		return `<tr class="turns-overview-row${switched ? ' turns-overview-row-switch' : ''}" data-turn="${row.turnNumber}" title="Jump to turn #${row.turnNumber}">
-<td class="turns-overview-num">${legToggle}#${row.turnNumber}${switched ? ` <span class="overview-switch-icon" title="${escapeHtml(localize('logviewer.hydrafusion.modelChangedTitle'))}">⇄</span>` : ''}</td>
-<td><span class="turn-mode" style="background: ${getModeColor(row.mode)};">${getModeIcon(row.mode)} ${escapeHtml(row.mode)}</span></td>
-<td>${renderModelOverviewBadge(row.model)}</td>
-<td class="count-cell">${formatCompact(row.input)}</td>
-${cachedCell}
-<td class="count-cell">${formatCompact(row.output)}</td>
-<td class="count-cell"><strong>${formatCompact(row.total)}</strong></td>
-${costCell(row.cost)}
-<td class="turns-overview-actual" title="${row.isActual ? 'Actual API usage' : 'Estimated from text'}">${row.isActual ? '✓' : '~'}</td>
-</tr>${childRows}${legsRow}`;
-	}).join('');
+	const flags = computeTurnsOverviewTableFlags(rows);
+	const hydraTurnByChatTurn = buildHydraTurnByChatTurnMap(data, hydraTurnMatches);
+	const items: TurnsOverviewItem[] = rows.map((row, i) => {
+		const preceding = rows[i - 1];
+		return {
+			row,
+			switched: !!preceding && !!row.model && !!preceding.model && row.model !== preceding.model,
+			hydraTurn: hydraTurnByChatTurn.get(row.turnNumber),
+		};
+	});
+	const columns = buildTurnsOverviewColumns(flags);
 
 	return `
 <div class="turns-overview">
 <div class="turns-overview-header">
 <span>🧭 Session Steps Overview (${rows.length})</span>
-${hasModelSwitches ? '<span class="overview-switch-note">⇄ marks a model change from the previous step</span>' : ''}
-${totalChildren > 0 ? `<span class="overview-switch-note">🤖 ↳ marks a sub-agent/child session delegated from that step</span>` : ''}
-${hasLegs ? `<span class="overview-switch-note">${escapeHtml(localize('logviewer.hydrafusion.expandStepNote'))}</span>` : ''}
+${flags.hasModelSwitches ? '<span class="overview-switch-note">⇄ marks a model change from the previous step</span>' : ''}
+${flags.totalChildren > 0 ? `<span class="overview-switch-note">🤖 ↳ marks a sub-agent/child session delegated from that step</span>` : ''}
+${flags.hasLegs ? `<span class="overview-switch-note">${escapeHtml(localize('logviewer.hydrafusion.expandStepNote'))}</span>` : ''}
 </div>
-<div class="turns-overview-table-wrap">
-<table class="turns-overview-table">
-<thead>
-<tr>
-<th scope="col">Step</th>
-<th scope="col">Mode</th>
-<th scope="col">Model</th>
-<th scope="col">Input</th>
-${hasCached ? '<th scope="col">Cached</th>' : ''}
-<th scope="col">Output</th>
-<th scope="col">Total</th>
-${hasCost ? `<th scope="col">${localize('logviewer.hydrafusion.cost')}</th>` : ''}
-<th scope="col" title="✓ actual API usage, ~ estimated from text">Src</th>
-</tr>
-</thead>
-<tbody>
-${bodyRows}
-</tbody>
-</table>
-</div>
+${renderDataTable({
+	tableId: TURNS_OVERVIEW_TABLE_ID,
+	ariaLabel: 'Session Steps Overview',
+	rows: items,
+	columns,
+	className: 'turns-overview-table data-table--nowrap',
+	rowOptions: ({ row, switched }) => ({
+		className: `turns-overview-row${switched ? ' turns-overview-row-switch' : ''}`,
+		attributes: { 'data-turn': String(row.turnNumber), title: `Jump to turn #${row.turnNumber}` },
+	}),
+	afterRow: item => renderTurnOverviewChildRows(item.row, flags) + renderTurnOverviewLegsRow(item, flags.columnCount),
+})}
 </div>
 `;
 }
 
-/**
- * Wires up all DOM event handlers after the layout has been injected into
- * `#root`. Must be called once immediately after `root.innerHTML` is set.
- */
-function wireUpToolCallHandlers(): void {
-// Wire tool call clicks after DOM render so listeners bind correctly
-document.querySelectorAll('.tool-call-link').forEach(link => {
-link.addEventListener('click', (e) => {
-e.preventDefault();
-const turnNumber  = parseInt(link.getAttribute('data-turn')     || '0', 10);
-const toolCallIdx = parseInt(link.getAttribute('data-toolcall') || '0', 10);
-vscode.postMessage({ command: 'revealToolCallSource', turnNumber, toolCallIdx });
-});
-});
-
-// Pretty JSON view for a single tool call
-document.querySelectorAll('.tool-call-pretty').forEach(link => {
-link.addEventListener('click', (e) => {
-e.preventDefault();
-const turnNumber  = parseInt(link.getAttribute('data-turn')     || '0', 10);
-const toolCallIdx = parseInt(link.getAttribute('data-toolcall') || '0', 10);
-vscode.postMessage({ command: 'showToolCallPretty', turnNumber, toolCallIdx });
-});
-});
-
-// Tool pill filter: clicking a pill filters the tool rows in that turn
-document.querySelectorAll<HTMLElement>('.tool-summary-item[data-tool-filter], .sub-agent-summary-item[data-tool-filter]').forEach(pill => {
-pill.addEventListener('click', (e) => {
-const turnNumber = pill.getAttribute('data-turn');
-const filter     = pill.getAttribute('data-tool-filter');
-const isActive   = pill.classList.contains('active');
-
-const turnCard = document.querySelector<HTMLElement>(`.turn-card[data-turn="${turnNumber}"]`);
-if (!turnCard) { return; }
-
-// Clear active state from all pills in this turn
-turnCard.querySelectorAll<HTMLElement>('.tool-summary-item, .sub-agent-summary-item').forEach(p => p.classList.remove('active'));
-
-const rows      = turnCard.querySelectorAll<HTMLElement>('tr.tool-row');
-const detailsEl = turnCard.querySelector<HTMLDetailsElement>('details.tool-calls-details');
-
-if (isActive) {
-// Second click: clear filter, show all rows
-rows.forEach(row => { row.style.display = ''; });
-} else {
-// Activate filter
-pill.classList.add('active');
-if (detailsEl) { detailsEl.open = true; }
-rows.forEach(row => {
-row.style.display = row.getAttribute('data-tool-name') === filter ? '' : 'none';
-});
-}
-});
-});
-
-// Prevent <details> from toggling when a filter pill inside <summary> is clicked
-document.querySelectorAll<HTMLElement>('summary.tool-calls-summary').forEach(summary => {
-summary.addEventListener('click', (e) => {
-if ((e.target as HTMLElement).closest('.tool-summary-item, .sub-agent-summary-item')) {
-e.preventDefault();
-}
-});
-});
+/** Moves the overview to the page that shows `turnNumber` under its current sort, when it is not on screen. */
+function showTurnsOverviewPageFor(turnNumber: number): void {
+	revealDataTableRow<TurnsOverviewItem>(TURNS_OVERVIEW_TABLE_ID, item => item.row.turnNumber === turnNumber);
 }
 
 /**
- * Clicking a turns-overview row jumps to and briefly highlights the matching turn card.
- * A row with HydraFusion legs also gets a ▸ toggle that expands them in place — its
- * clicks are excluded here (via stopPropagation in its own handler below) so they
- * don't also trigger the jump-to-turn-card behavior.
+ * Applies a click on a tool-summary pill: narrows that turn's tool table to the pill's tool,
+ * or shows every call again when the pill was already active.
  */
-function wireUpTurnsOverviewHandlers(): void {
-document.querySelectorAll<HTMLElement>('.turns-overview-row').forEach(row => {
-row.addEventListener('click', (e) => {
-if ((e.target as HTMLElement).closest('.turns-overview-leg-toggle')) { return; }
-const turnNumber = parseInt(row.getAttribute('data-turn') || '0', 10);
-if (turnNumber > 0) { scrollAndFocusTurn(turnNumber); }
-});
-});
+function handleToolPillClick(pill: HTMLElement): void {
+	const turnNumber = pill.getAttribute('data-turn');
+	const filter = pill.getAttribute('data-tool-filter');
+	const turnCard = document.querySelector<HTMLElement>(`.turn-card[data-turn="${turnNumber}"]`);
+	if (!turnCard || turnNumber === null || filter === null) { return; }
 
-document.querySelectorAll<HTMLElement>('.turns-overview-leg-toggle').forEach(toggle => {
-toggle.addEventListener('click', (e) => {
-e.stopPropagation();
-const turnNumber = toggle.getAttribute('data-turn') || '';
-const expanded = toggle.getAttribute('aria-expanded') === 'true';
-setOverviewLegsExpanded(turnNumber, !expanded);
-});
-});
+	const isActive = pill.classList.contains('active');
+	turnCard.querySelectorAll<HTMLElement>('.tool-summary-item, .sub-agent-summary-item').forEach(p => p.classList.remove('active'));
+	if (isActive) {
+		applyToolCallFilter(turnNumber, null);
+		return;
+	}
+	pill.classList.add('active');
+	const detailsEl = turnCard.querySelector<HTMLDetailsElement>('details.tool-calls-details');
+	if (detailsEl) { detailsEl.open = true; }
+	applyToolCallFilter(turnNumber, filter);
+}
+
+function toolCallTarget(link: HTMLElement): { turnNumber: number; toolCallIdx: number } {
+	return {
+		turnNumber: parseInt(link.getAttribute('data-turn') || '0', 10),
+		toolCallIdx: parseInt(link.getAttribute('data-toolcall') || '0', 10),
+	};
+}
+
+/**
+ * One delegated click listener for everything inside the tables (tool calls, tool pills,
+ * overview rows and their leg toggles). The tables re-render their rows on every sort or
+ * page change, so listeners bound to the rows themselves would be lost.
+ */
+function handleLogViewerClick(e: MouseEvent): void {
+	const target = e.target instanceof Element ? e.target : null;
+	if (!target) { return; }
+
+	const sourceLink = target.closest<HTMLElement>('.tool-call-link');
+	if (sourceLink) {
+		e.preventDefault();
+		vscode.postMessage({ command: 'revealToolCallSource', ...toolCallTarget(sourceLink) });
+		return;
+	}
+	const prettyLink = target.closest<HTMLElement>('.tool-call-pretty');
+	if (prettyLink) {
+		e.preventDefault();
+		vscode.postMessage({ command: 'showToolCallPretty', ...toolCallTarget(prettyLink) });
+		return;
+	}
+	const pill = target.closest<HTMLElement>('.tool-summary-item[data-tool-filter], .sub-agent-summary-item[data-tool-filter]');
+	if (pill) {
+		// The pills sit inside the <summary>; filtering must not also toggle the <details>.
+		e.preventDefault();
+		handleToolPillClick(pill);
+		return;
+	}
+	// A leg toggle expands its row in place instead of jumping to the turn card.
+	const legToggle = target.closest<HTMLElement>('.turns-overview-leg-toggle');
+	if (legToggle) {
+		setOverviewLegsExpanded(legToggle.getAttribute('data-turn') || '', legToggle.getAttribute('aria-expanded') !== 'true');
+		return;
+	}
+	const overviewRow = target.closest<HTMLElement>('.turns-overview-row');
+	if (overviewRow) {
+		const turnNumber = parseInt(overviewRow.getAttribute('data-turn') || '0', 10);
+		if (turnNumber > 0) { scrollAndFocusTurn(turnNumber); }
+	}
 }
 
 /** Clicking (or activating with the keyboard) a HydraFusion turn's "jump to step" link scrolls to and expands its row in the Session Steps Overview table below. */
@@ -1310,19 +1340,9 @@ if ((e as KeyboardEvent).key === 'Enter' || (e as KeyboardEvent).key === ' ') { 
 });
 }
 
+let logViewerClicksBound = false;
+
 function wireUpEventHandlers(): void {
-document.getElementById('btn-raw')?.addEventListener('click', () => {
-vscode.postMessage({ command: 'openRawFile' });
-});
-document.getElementById('btn-diagnostics')?.addEventListener('click', () => {
-vscode.postMessage({ command: 'showDiagnostics' });
-});
-document.getElementById('btn-usage')?.addEventListener('click', () => {
-vscode.postMessage({ command: 'showUsageAnalysis' });
-});
-document.getElementById('btn-details')?.addEventListener('click', () => {
-vscode.postMessage({ command: 'showDetails' });
-});
 document.getElementById('btn-refresh-session')?.addEventListener('click', () => {
 vscode.postMessage({ command: 'refreshSession' });
 });
@@ -1334,8 +1354,11 @@ document.getElementById('open-file-link')?.addEventListener('click', () => {
 vscode.postMessage({ command: 'openRawFile' });
 });
 
-wireUpToolCallHandlers();
-wireUpTurnsOverviewHandlers();
+// Bound once: the document outlives every in-place table re-render.
+if (!logViewerClicksBound) {
+logViewerClicksBound = true;
+document.addEventListener('click', handleLogViewerClick);
+}
 wireUpHydraFusionHandlers();
 }
 
@@ -1409,119 +1432,6 @@ ${actualUsageHtml}
 `;
 }
 
-type TokenStats = {
-	totalTokens: number;
-	totalThinkingTokens: number;
-	totalSubAgentCalls: number;
-	turnsWithThinking: number;
-	usageToolTotal: number;
-	usageTopTools: { key: string; value: number }[];
-	usageMcpTotal: number;
-	usageTopMcpTools: { key: string; value: number }[];
-	usageContextTotal: number;
-	usageContextImplicit: number;
-	usageContextExplicit: number;
-	sessionEffort: ThinkingEffortUsage | undefined;
-	effortDefaultLabel: string;
-	effortSummary: string;
-};
-
-function resolveSessionEffort(sessionEffort: any): { effortDefaultLabel: string; effortSummary: string } {
-	const effortDefault = sessionEffort?.defaultEffort ?? (sessionEffort ? Object.keys(sessionEffort.byEffort)[0] : undefined);
-	const effortDefaultLabel = effortDefault ? getEffortDisplayName(effortDefault) : '—';
-	const effortSummary = sessionEffort
-		? Object.entries(sessionEffort.byEffort).map(([k, v]) => `${getEffortDisplayName(k)}: ${v}`).join(', ')
-		: '';
-	return { effortDefaultLabel, effortSummary };
-}
-
-function aggregateTokenStats(data: SessionLogData): TokenStats {
-	const totalTokens = data.turns.reduce((sum, t) => sum + t.inputTokensEstimate + t.outputTokensEstimate + t.thinkingTokensEstimate, 0);
-	const totalThinkingTokens = data.turns.reduce((sum, t) => sum + t.thinkingTokensEstimate, 0);
-	const totalToolCalls = data.turns.reduce((sum, t) => sum + t.toolCalls.filter(tc => !tc.isSubAgent).length, 0);
-	const totalSubAgentCalls = data.turns.reduce((sum, t) => sum + t.toolCalls.filter(tc => tc.isSubAgent).length, 0);
-	const totalMcpTools = data.turns.reduce((sum, t) => sum + t.mcpTools.length, 0);
-	const turnsWithThinking = data.turns.filter(t => t.thinkingTokensEstimate > 0).length;
-	const usage = data.usageAnalysis;
-	const sessionEffort = usage?.thinkingEffort;
-	const usageToolTotal = usage?.toolCalls?.total ?? totalToolCalls;
-	const usageTopTools = usage ? getTopEntries(usage.toolCalls.byTool, 3) : [];
-	const usageMcpTotal = usage?.mcpTools?.total ?? totalMcpTools;
-	const usageTopMcpTools = usage ? getTopEntries(usage.mcpTools.byTool, 3) : [];
-	const usageContextRefs = usage?.contextReferences || data.contextReferences;
-	const usageContextTotal = getTotalContextRefs(usageContextRefs);
-	const usageContextImplicit = getImplicitContextRefs(usageContextRefs);
-	const usageContextExplicit = getExplicitContextRefs(usageContextRefs);
-	const { effortDefaultLabel, effortSummary } = resolveSessionEffort(sessionEffort);
-	return {
-		totalTokens, totalThinkingTokens, totalSubAgentCalls, turnsWithThinking,
-		usageToolTotal, usageTopTools, usageMcpTotal, usageTopMcpTools,
-		usageContextTotal, usageContextImplicit, usageContextExplicit,
-		sessionEffort, effortDefaultLabel, effortSummary,
-	};
-}
-
-type ActualUsageStats = {
-	turnsWithActual: ChatTurn[];
-	hasAnyActualUsage: boolean;
-	actualPromptTotal: number;
-	actualCompletionTotal: number;
-	actualTotal: number;
-	sessionActualTokens: number;
-	hasSessionActualOnly: boolean;
-	aggregatedBreakdown: { [key: string]: BreakdownEntry };
-};
-
-function aggregateActualUsageStats(data: SessionLogData): ActualUsageStats {
-	const turnsWithActual = data.turns.filter(t => t.actualUsage);
-	const hasAnyActualUsage = turnsWithActual.length > 0;
-	const actualPromptTotal = turnsWithActual.reduce((s, t) => s + (t.actualUsage?.promptTokens || 0), 0);
-	const actualCompletionTotal = turnsWithActual.reduce((s, t) => s + (t.actualUsage?.completionTokens || 0), 0);
-	const actualTotal = actualPromptTotal + actualCompletionTotal;
-	const sessionActualTokens = data.actualTokens || 0;
-	const hasSessionActualOnly = !hasAnyActualUsage && sessionActualTokens > 0;
-	const aggregatedBreakdown: { [key: string]: BreakdownEntry } = {};
-	for (const turn of turnsWithActual) {
-		if (turn.actualUsage?.promptTokenDetails) {
-			for (const detail of turn.actualUsage.promptTokenDetails) {
-				const key = `${detail.category}|${detail.label}`;
-				if (!aggregatedBreakdown[key]) {
-					aggregatedBreakdown[key] = { category: detail.category, label: detail.label, totalTokens: 0, totalPct: 0, count: 0 };
-				}
-				const deducedTokens = Math.round((turn.actualUsage?.promptTokens || 0) * detail.percentageOfPrompt / 100);
-				aggregatedBreakdown[key].totalTokens += deducedTokens;
-				aggregatedBreakdown[key].totalPct += detail.percentageOfPrompt;
-				aggregatedBreakdown[key].count++;
-			}
-		}
-	}
-	return { turnsWithActual, hasAnyActualUsage, actualPromptTotal, actualCompletionTotal, actualTotal, sessionActualTokens, hasSessionActualOnly, aggregatedBreakdown };
-}
-
-type ModeStats = {
-	modeEntries: [keyof ModeUsage, number][];
-	totalModeTurns: number;
-	primaryModeLabel: string;
-	modeSubLabel: string;
-};
-
-function aggregateModeStats(data: SessionLogData): ModeStats {
-	const modeUsage: ModeUsage = { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0, cli: 0 };
-	for (const turn of data.turns) {
-		modeUsage[turn.mode]++;
-	}
-	const modeEntries = (Object.entries(modeUsage) as [keyof typeof modeUsage, number][])
-		.filter(([, n]) => n > 0)
-		.sort((a, b) => b[1] - a[1]);
-	const totalModeTurns = modeEntries.reduce((s, [, n]) => s + n, 0);
-	const primaryMode = modeEntries[0];
-	const primaryModeLabel = primaryMode ? `${getModeIcon(primaryMode[0])} ${MODE_LABELS[primaryMode[0]]}` : '—';
-	const modeSubLabel = modeEntries.length <= 1
-		? (totalModeTurns === 1 ? '1 turn' : `${totalModeTurns} turns`)
-		: `mixed across ${totalModeTurns} turns`;
-	return { modeEntries, totalModeTurns, primaryModeLabel, modeSubLabel };
-}
-
 function renderLayout(data: SessionLogData): void {
 	setCompactNumbers(data.compactNumbers !== false);
 	const root = document.getElementById('root');
@@ -1531,33 +1441,18 @@ function renderLayout(data: SessionLogData): void {
 	const actualStats = aggregateActualUsageStats(data);
 	const modeStats = aggregateModeStats(data);
 
-	const summaryStats: SummaryStats = {
-		totalTokens: tokenStats.totalTokens,
-		totalThinkingTokens: tokenStats.totalThinkingTokens,
-		totalSubAgentCalls: tokenStats.totalSubAgentCalls,
-		turnsWithThinking: tokenStats.turnsWithThinking,
-		usageToolTotal: tokenStats.usageToolTotal,
-		usageTopTools: tokenStats.usageTopTools,
-		usageMcpTotal: tokenStats.usageMcpTotal,
-		usageTopMcpTools: tokenStats.usageTopMcpTools,
-		usageContextTotal: tokenStats.usageContextTotal,
-		usageContextImplicit: tokenStats.usageContextImplicit,
-		usageContextExplicit: tokenStats.usageContextExplicit,
-		sessionEffort: tokenStats.sessionEffort,
-		effortDefaultLabel: tokenStats.effortDefaultLabel,
-		effortSummary: tokenStats.effortSummary,
-		hasAnyActualUsage: actualStats.hasAnyActualUsage,
-		hasSessionActualOnly: actualStats.hasSessionActualOnly,
-		actualTotal: actualStats.actualTotal,
-		actualPromptTotal: actualStats.actualPromptTotal,
-		actualCompletionTotal: actualStats.actualCompletionTotal,
-		sessionActualTokens: actualStats.sessionActualTokens,
-		modeEntries: modeStats.modeEntries,
-		totalModeTurns: modeStats.totalModeTurns,
-		primaryModeLabel: modeStats.primaryModeLabel,
-		modeSubLabel: modeStats.modeSubLabel,
-	};
+	const summaryStats = buildSummaryStats(tokenStats, actualStats, modeStats);
 
+	_renderLayoutBody(root, data, summaryStats, tokenStats.totalTokens, actualStats);
+}
+
+function _renderLayoutBody(
+	root: HTMLElement,
+	data: SessionLogData,
+	summaryStats: SummaryStats,
+	totalTokens: number,
+	actualStats: ActualUsageStats<ChatTurn>,
+): void {
 	// Computed once and shared by both renderers below so the HydraFusion section's
 	// "jump to step" links and the Session Steps Overview table's expandable legs
 	// agree on which turn is which. `undefined` for the overwhelming majority of
@@ -1565,7 +1460,7 @@ function renderLayout(data: SessionLogData): void {
 	const hydraTurnMatches = data.hydraFusion ? matchHydraFusionTurnsToChatTurns(data.turns, data.hydraFusion.turns) : undefined;
 
 	setHtml(root, `
-<style>${themeStyles}</style>
+<style>${themeStyles}</style><style>${dataTableStyles}</style>
 <style>${styles}</style>
 
 <div class="container">
@@ -1574,7 +1469,7 @@ ${renderEditorInfoPanel(data)}
 ${renderSummaryCards(data, summaryStats)}
 
 ${renderSessionActualUsage(
-	data, tokenStats.totalTokens, actualStats.turnsWithActual,
+	data, totalTokens, actualStats.turnsWithActual,
 	actualStats.actualPromptTotal, actualStats.actualCompletionTotal, actualStats.actualTotal,
 	actualStats.aggregatedBreakdown,
 )}
@@ -1617,6 +1512,8 @@ function scrollAndFocusTurn(turnNumber: number): void {
 
 /** Shows or hides the HydraFusion legs nested under a Session Steps Overview row, syncing its toggle button. */
 function setOverviewLegsExpanded(turnNumber: string, expanded: boolean): void {
+	const step = Number(turnNumber);
+	if (expanded) { expandedOverviewLegs.add(step); } else { expandedOverviewLegs.delete(step); }
 	const toggle = document.querySelector<HTMLElement>(`.turns-overview-leg-toggle[data-turn="${turnNumber}"]`);
 	const legsRow = document.querySelector<HTMLElement>(`.turns-overview-legs-row[data-parent-turn="${turnNumber}"]`);
 	if (!toggle || !legsRow) { return; }
@@ -1627,6 +1524,7 @@ function setOverviewLegsExpanded(turnNumber: string, expanded: boolean): void {
 
 /** Scrolls to and briefly highlights a Session Steps Overview row, expanding its legs if it has any. */
 function scrollAndFocusOverviewRow(turnNumber: number): void {
+	showTurnsOverviewPageFor(turnNumber);
 	const row = document.querySelector<HTMLElement>(`.turns-overview-row:not(.turns-overview-child-row)[data-turn="${turnNumber}"]`);
 	if (!row) { return; }
 	setOverviewLegsExpanded(String(turnNumber), true);
