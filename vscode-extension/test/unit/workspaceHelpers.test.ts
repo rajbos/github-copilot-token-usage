@@ -2154,3 +2154,54 @@ test('resolveDebugLogCandidatePaths: returns undefined for a UUID-named file out
     const sessionFile = path.join('home', 'user', '.copilot', 'session-state', `${TTFT_SESSION_ID}.jsonl`);
     assert.equal(resolveDebugLogCandidatePaths(sessionFile), undefined);
 });
+
+// ---------------------------------------------------------------------------
+// Mutation-survivor coverage for workspaceHelpers (refs #2341)
+// ---------------------------------------------------------------------------
+
+import { extractWorkspaceIdFromSessionPath as extractWsIdForMutants } from '../../../src/workspaceHelpers';
+
+function isStaleAfterAgeDays(ageDays: number): boolean {
+    const tmpDir = fs.mkdtempSync(path.join(process.cwd(), 'wh-stale-edge-'));
+    try {
+        const githubDir = path.join(tmpDir, '.github');
+        fs.mkdirSync(githubDir);
+        const filePath = path.join(githubDir, 'copilot-instructions.md');
+        fs.writeFileSync(filePath, '# Instructions');
+        const mtime = new Date(Date.now() - ageDays * 24 * 60 * 60 * 1000);
+        fs.utimesSync(filePath, mtime, mtime);
+        const file = scanWorkspaceCustomizationFiles(tmpDir).find(f => f.path.includes('copilot-instructions.md'));
+        assert.ok(file, 'should find the file');
+        return file!.isStale;
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+}
+
+test('scanWorkspaceCustomizationFiles: staleness window is 90 days (89.9 fresh, 90.1 stale)', () => {
+    // Pins each unit factor (24 * 60 * 60 * 1000) and the > comparison direction
+    assert.equal(isStaleAfterAgeDays(89.9), false);
+    assert.equal(isStaleAfterAgeDays(90.1), true);
+});
+
+test('scanWorkspaceCustomizationFiles: entry exposes exact icon and label from the pattern', () => {
+    const tmpDir = fs.mkdtempSync(path.join(process.cwd(), 'wh-label-'));
+    try {
+        fs.mkdirSync(path.join(tmpDir, '.github'));
+        fs.writeFileSync(path.join(tmpDir, '.github', 'copilot-instructions.md'), '# x');
+        const file = scanWorkspaceCustomizationFiles(tmpDir).find(f => f.path.includes('copilot-instructions.md'));
+        assert.ok(file);
+        assert.equal(file!.icon, '📋');
+        assert.equal(file!.label, 'Instructions');
+        assert.equal(file!.name, 'copilot-instructions.md');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('extractWorkspaceIdFromSessionPath: marker as final segment yields undefined, following segment is returned', () => {
+    assert.equal(extractWsIdForMutants('/home/u/Code/User/workspaceStorage'), undefined);
+    assert.equal(extractWsIdForMutants('/home/u/Code/User/workspaceStorage/abc'), 'abc');
+    assert.equal(extractWsIdForMutants('/home/u/Code/User/WorkspaceStorage/abc/x.json'), 'abc');
+    assert.equal(extractWsIdForMutants('/home/u/Code/User/globalStorage/x.json'), undefined);
+});
