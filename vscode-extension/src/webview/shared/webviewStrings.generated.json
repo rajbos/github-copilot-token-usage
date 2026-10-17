@@ -323,6 +323,7 @@
   "efficiency.models.controls.baseline": "Baseline",
   "efficiency.models.controls.comparedWith": "Compared with",
   "efficiency.models.controls.window": "Window",
+  "efficiency.models.verdict.wins": "🏆 {0} ({1}) wins {2} of {3} decisive metrics.",
   "efficiency.models.controls.outliers": "Outliers",
   "efficiency.models.controls.includeMixed": "Include mixed-model sessions",
   "efficiency.models.outliers.none": "Keep all sessions",

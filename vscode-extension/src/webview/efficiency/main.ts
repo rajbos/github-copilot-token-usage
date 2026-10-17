@@ -1118,7 +1118,8 @@ function verdictHtml(cmp: ModelComparison): string {
 	const side = winner === 'a' ? cmp.a : cmp.b;
 	const count = winner === 'a' ? wins.a : wins.b;
 	const other = winner === 'a' ? wins.b : wins.a;
-	return `<div class="model-verdict win-${winner}">🏆 ${escapeHtml(side.displayName)} (${escapeHtml(side.periodLabel)}) wins ${count} of ${count + other} decisive metrics.</div>`;
+	const text = localizeFormat('efficiency.models.verdict.wins', side.displayName, side.periodLabel, String(count), String(count + other));
+	return `<div class="model-verdict win-${winner}">${escapeHtml(text)}</div>`;
 }
 
 function caveatsHtml(cmp: ModelComparison): string {

@@ -323,6 +323,7 @@
   "efficiency.models.controls.baseline",
   "efficiency.models.controls.comparedWith",
   "efficiency.models.controls.window",
+  "efficiency.models.verdict.wins",
   "efficiency.models.controls.outliers",
   "efficiency.models.controls.includeMixed",
   "efficiency.models.outliers.none",

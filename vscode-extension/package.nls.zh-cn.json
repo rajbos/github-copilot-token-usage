@@ -518,6 +518,7 @@
   "efficiency.models.controls.baseline": "基准时段",
   "efficiency.models.controls.comparedWith": "对比时段",
   "efficiency.models.controls.window": "时间窗口",
+  "efficiency.models.verdict.wins": "🏆 {0}（{1}）在 {3} 项决定性指标中胜出 {2} 项。",
   "efficiency.models.controls.outliers": "异常值",
   "efficiency.models.controls.includeMixed": "包含混合模型会话",
   "efficiency.models.outliers.none": "保留所有会话",
