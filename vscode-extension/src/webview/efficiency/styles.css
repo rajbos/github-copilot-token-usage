@@ -616,25 +616,117 @@
 }
 
 /* ── Selected-period drill-down ─────────────────────────────────────── */
-.bucket-controls { margin: 12px 0 8px; }
-.bucket-detail { border: 1px solid var(--vscode-widget-border, rgba(128,128,128,0.35)); border-radius: 6px; padding: 12px 16px; margin: 8px 0 16px; }
-.bucket-detail h3, .bucket-detail h4 { margin: 0 0 4px; }
-.bucket-range { margin: 0 0 8px; color: var(--vscode-descriptionForeground); }
-.bucket-partial { font-weight: normal; color: var(--vscode-editorWarning-foreground, #cca700); }
-.bucket-raw { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 8px 0; }
-.bucket-raw div { min-width: 90px; }
-.bucket-raw dt { font-size: 0.85em; color: var(--vscode-descriptionForeground); }
-.bucket-raw dd { margin: 0; font-weight: 600; }
-.bucket-metrics { width: 100%; border-collapse: collapse; margin: 8px 0; }
-.bucket-metrics th, .bucket-metrics td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--vscode-widget-border, rgba(128,128,128,0.2)); }
-.bucket-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.bucket-reason { font-size: 0.85em; color: var(--vscode-descriptionForeground); }
-.bucket-notes { margin: 8px 0 0; padding-left: 18px; color: var(--vscode-descriptionForeground); }
-.bucket-models { display: flex; flex-wrap: wrap; gap: 16px; }
-.bucket-model { flex: 1 1 260px; }
-.bucket-drill, .eff-context-btn {
-	background: transparent; color: var(--vscode-textLink-foreground); border: 1px solid var(--vscode-widget-border, rgba(128,128,128,0.4));
-	border-radius: 4px; padding: 2px 8px; cursor: pointer; font: inherit; font-size: 0.9em;
+.bucket-controls {
+	margin: 12px 0 8px;
 }
-.bucket-drill:hover, .eff-context-btn:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.15)); }
-.bucket-drill:focus-visible, .eff-context-btn:focus-visible, .bucket-pick select:focus-visible, .trend-card:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: 2px; }
+
+.bucket-detail {
+	border: 1px solid var(--vscode-widget-border);
+	border-radius: 6px;
+	padding: 12px 16px;
+	margin: 8px 0 16px;
+}
+
+.bucket-detail h3,
+.bucket-detail h4 {
+	margin: 0 0 4px;
+}
+
+.bucket-range {
+	margin: 0 0 8px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.bucket-partial {
+	font-weight: normal;
+	color: var(--vscode-editorWarning-foreground);
+}
+
+.bucket-raw {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 24px;
+	margin: 8px 0;
+}
+
+.bucket-raw div {
+	min-width: 90px;
+}
+
+.bucket-raw dt {
+	font-size: 0.85em;
+	color: var(--vscode-descriptionForeground);
+}
+
+.bucket-raw dd {
+	margin: 0;
+	font-weight: 600;
+}
+
+.bucket-metrics {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 8px 0;
+}
+
+.bucket-metrics th,
+.bucket-metrics td {
+	text-align: left;
+	padding: 4px 8px;
+	border-bottom: 1px solid var(--vscode-widget-border);
+}
+
+.bucket-sr {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.bucket-reason {
+	font-size: 0.85em;
+	color: var(--vscode-descriptionForeground);
+}
+
+.bucket-notes {
+	margin: 8px 0 0;
+	padding-left: 18px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.bucket-models {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 16px;
+}
+
+.bucket-model {
+	flex: 1 1 260px;
+}
+
+.bucket-drill,
+.eff-context-btn {
+	background: transparent;
+	color: var(--vscode-textLink-foreground);
+	border: 1px solid var(--vscode-widget-border);
+	border-radius: 4px;
+	padding: 2px 8px;
+	cursor: pointer;
+	font: inherit;
+	font-size: 0.9em;
+}
+
+.bucket-drill:hover,
+.eff-context-btn:hover {
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
+.bucket-drill:focus-visible,
+.eff-context-btn:focus-visible,
+.bucket-pick select:focus-visible,
+.trend-card:focus-visible {
+	outline: 2px solid var(--vscode-focusBorder);
+	outline-offset: 2px;
+}
