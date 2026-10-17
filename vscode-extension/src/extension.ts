@@ -23,6 +23,7 @@ import { getToolFamilies, DEFAULT_TOOL_FAMILIES } from './toolFamilies';
 import { getEditorIconByName } from '../../src/editorIcons';
 import { createWindsurfHost, createSessionDiscoveryHost } from './srcHostAdapters';
 import * as loadingHtml from '../../src/loadingHtml';
+import { timedStep, timedStepSync } from './stepTimer';
 
 // --- Core types ---
 import type {
@@ -7392,23 +7393,24 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const { results: usageResults, totalFiles } = await this.loadUsageSessionFiles(preloaded, cutoffMs);
 			const periods = { todayStats, last30DaysStats, monthStats, lastMonthStats, todayUtcKey, last30DaysUtcStartKey, monthUtcStartKey, lastMonthUtcStartKey, lastMonthUtcEndKey };
 			const wsMaps = { workspaceSessionCounts, workspaceInteractionCounts, unresolvedWorkspaceIds, unresolvedWorkspaceInteractionCounts };
-			this.aggregateUsageFileResults(usageResults, periods, wsMaps, todaySessionsList, totalFiles);
-			recentSessions = this.buildRecentSessionBuckets(usageResults, now);
-			autoCompactionsLast7Days = this.buildAutoCompactionStats(usageResults, now);
-			correctionReport = this.buildCorrectionReport(usageResults);
-			repeatedTasks = this.buildRepeatedTaskReport(usageResults);
+			const lg = (m: string) => this.log(m);
+			timedStepSync(lg, 'aggregate files', () => this.aggregateUsageFileResults(usageResults, periods, wsMaps, todaySessionsList, totalFiles));
+			recentSessions = timedStepSync(lg, 'recent session buckets', () => this.buildRecentSessionBuckets(usageResults, now));
+			autoCompactionsLast7Days = timedStepSync(lg, 'auto-compaction stats', () => this.buildAutoCompactionStats(usageResults, now));
+			correctionReport = timedStepSync(lg, 'correction report', () => this.buildCorrectionReport(usageResults));
+			repeatedTasks = timedStepSync(lg, 'repeated-task report', () => this.buildRepeatedTaskReport(usageResults));
 			this._lastSkillCallsByEditor = {};
 			for (const [skillName, byEditor] of this._skillCallsByEditorAccum) {
 				this._lastSkillCallsByEditor[skillName] = Object.fromEntries(byEditor);
 			}
-			await this.deduplicateWorkspacePathsWithScans(workspaceSessionCounts, workspaceInteractionCounts);
-			this.buildUsageCustomizationMatrix(workspaceSessionCounts, workspaceInteractionCounts, unresolvedWorkspaceIds, unresolvedWorkspaceInteractionCounts);
-			await this.enrichMultiAgentParentCount(usageResults, last30DaysStats, last30DaysUtcStartKey);
-			agenticDailyTrend = await this._computeAgenticDailyTrend(usageResults, last30DaysUtcStartKey);
+			await timedStep(lg, 'workspace dedup + customization scans', () => this.deduplicateWorkspacePathsWithScans(workspaceSessionCounts, workspaceInteractionCounts));
+			timedStepSync(lg, 'customization matrix', () => this.buildUsageCustomizationMatrix(workspaceSessionCounts, workspaceInteractionCounts, unresolvedWorkspaceIds, unresolvedWorkspaceInteractionCounts));
+			await timedStep(lg, 'multi-agent parent count (data.db)', () => this.enrichMultiAgentParentCount(usageResults, last30DaysStats, last30DaysUtcStartKey));
+			agenticDailyTrend = await timedStep(lg, 'agentic daily trend (data.db)', () => this._computeAgenticDailyTrend(usageResults, last30DaysUtcStartKey));
 			// The Recent Sessions buckets are stamped alongside today's list so the
 			// "near context limit" column and filter work for every lookback, not just today.
 			const contextSessionLists = [todaySessionsList, ...(recentSessions ? [recentSessions.last7, recentSessions.last30, recentSessions.currentMonth] : [])];
-			await this.enrichContextWindowFromAppData(usageResults, periods, contextSessionLists);
+			await timedStep(lg, 'context window enrichment (data.db)', () => this.enrichContextWindowFromAppData(usageResults, periods, contextSessionLists));
 		} catch (error) {
 			this.error('Error calculating usage analysis stats:', error);
 		}
@@ -7429,8 +7431,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			curationAnalysis: this.computeCurationAnalysis(last30DaysStats, startedAtGeneration),
 			agenticDailyTrend,
 			autoCompactionsLast7Days,
-			memoryFilesAnalysis: this.computeMemoryFilesAnalysis(startedAtGeneration),
-			claudeDesktopCoverage: await this.computeClaudeDesktopCoverage(),
+			memoryFilesAnalysis: timedStepSync(this.log.bind(this), 'memory files analysis', () => this.computeMemoryFilesAnalysis(startedAtGeneration)),
+			claudeDesktopCoverage: await timedStep(this.log.bind(this), 'Claude Desktop coverage', () => this.computeClaudeDesktopCoverage()),
 			toolCallsByEditor: this._buildToolCallsByEditor(),
 		};
 		this.lastUsageAnalysisStats = stats;
@@ -15731,6 +15733,7 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
       console.error("Error disposing webview panels:", err);
     }
     this.openCode.dispose();
+    this.copilotAppData.dispose();
     this.statusBarItem.dispose();
     this.insightsStatusBarItem.dispose();
     this._disposed = true;
