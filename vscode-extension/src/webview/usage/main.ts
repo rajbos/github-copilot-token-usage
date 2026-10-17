@@ -3,8 +3,16 @@ import { el, setHtml } from '../shared/domUtils';
 import { createPeriodSelector, PERIOD_LABELS, type Period } from '../shared/periodSelector';
 import { navButtonsHtml } from '../shared/buttonConfig';
 import { ContextReferenceUsage, getTotalContextRefs } from '../shared/contextRefUtils';
+import {
+	AGENT_SESSIONS_PARTIAL_NOTE_KEY,
+	REFRESH_GITHUB_ACTIVITY_ACTION,
+	REPO_PR_PARTIAL_NOTE_KEY,
+	isEmptyActivitySnapshot,
+	shouldRenderErrorOnlyRow,
+	snapshotFreshnessHtml,
+} from './snapshotFreshness';
 import { buildFilterPillGroupHtml, type SessionFilterOption } from './sessionFilterBar';
-import { escapeHtml, formatCompact, formatCost, formatDurationShort, formatFileSize, formatFixed, formatNumber, formatPercent, getTimeSince, safeSectionHtml, setFormatLocale } from '../shared/formatUtils';
+import { escapeHtml, formatCompact, formatCost, formatDurationShort, formatFileSize, formatFixed, formatNumber, formatPercent, safeSectionHtml, setFormatLocale } from '../shared/formatUtils';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
 import { localize, localizeFormat } from '../shared/localization';
 import { createViewStateManager } from '../shared/viewState';
@@ -614,6 +622,8 @@ type RepoPrInfo = {
   aiDetails: RepoPrDetail[];
   userAuthoredPrs?: number;
   userMergedPrs?: number;
+  /** True when this repo's PR listing was incomplete — its counts are a lower bound. */
+  partial?: boolean;
   error?: string;
 };
 
@@ -626,6 +636,8 @@ type RepoPrStatsResult = {
   fetchedAt?: string;
   /** How often the snapshot is refreshed, so the UI can say when the next refresh is due. */
   refreshIntervalMs?: number;
+  /** True when at least one repo's listing was incomplete — the totals are lower bounds. */
+  partial?: boolean;
 };
 
 const EFFORT_DISPLAY_NAMES: Record<string, string> = {
@@ -2345,6 +2357,31 @@ function reportTabOpened(tab: string): void {
 }
 
 /**
+ * Wire the freshness banners' **Refresh now** button. Delegated from `document` because both
+ * banners are re-rendered from scratch on every snapshot update, which would drop a listener bound
+ * to the button itself. The host applies its own cooldown and cross-window lock, so a click is a
+ * request to revalidate, not a guarantee of an immediate API call.
+ */
+let githubActivityRefreshWired = false;
+
+function wireGitHubActivityRefresh(): void {
+	// renderLayout() runs again on every stats update, so without this guard each rerender would
+	// add another document-level listener and one click would post N identical messages.
+	if (githubActivityRefreshWired) { return; }
+	githubActivityRefreshWired = true;
+	document.addEventListener('click', (event) => {
+		// `event.target` is only guaranteed to be an EventTarget — a non-Element target has no
+		// closest(), so calling it unguarded would throw instead of ignoring the click.
+		const target = event.target;
+		if (!(target instanceof Element)) { return; }
+		if (!target.closest(`[data-action="${REFRESH_GITHUB_ACTIVITY_ACTION}"]`)) { return; }
+		// A literal, not the REFRESH_GITHUB_ACTIVITY_COMMAND constant: the desktop contract check can only
+		// see the commands a view sends when the name is written out at the call site.
+		vscode.postMessage({ command: 'refreshGitHubActivity' });
+	});
+}
+
+/**
  * Work a tab's first visit does once: fetching data it needs, or clearing its badge. Also run,
  * once, for whichever tab the layout first renders on: a tab the host requested while the tab bar
  * did not exist yet (see `handleSwitchTab`) has no button to click, so nothing else would ever
@@ -2501,6 +2538,7 @@ function sanitizeRepoPrStatsData(input: unknown): RepoPrStatsResult {
 		error: typeof src.error === 'string' ? escapeHtml(src.error) : undefined,
 		fetchedAt: typeof src.fetchedAt === 'string' ? src.fetchedAt : '',
 		refreshIntervalMs: toSafeNumber(src.refreshIntervalMs),
+		partial: Boolean(src.partial),
 		repos: repos.map((repo) => {
 			const r = (repo && typeof repo === 'object') ? (repo as Record<string, unknown>) : {};
 			const aiDetails = Array.isArray(r.aiDetails) ? r.aiDetails : [];
@@ -2514,6 +2552,7 @@ function sanitizeRepoPrStatsData(input: unknown): RepoPrStatsResult {
 				aiReviewRequestedPrs: toSafeNumber(r.aiReviewRequestedPrs),
 				userAuthoredPrs: toSafeNumber(r.userAuthoredPrs),
 				userMergedPrs: toSafeNumber(r.userMergedPrs),
+				partial: Boolean(r.partial),
 				aiDetails: aiDetails.map((d) => {
 					const detail = (d && typeof d === 'object') ? (d as Record<string, unknown>) : {};
 					const validAiTypes = ['copilot', 'claude', 'openai', 'other-ai'] as const;
@@ -2550,11 +2589,20 @@ const openRepoPrDetails = new Set<string>();
 
 /** Repository cell: the repo link plus its collapsible AI PR detail list, or the fetch error. */
 function repoPrRepositoryCellHtml(r: RepoPrInfo): string {
+	// r.error is already HTML-escaped by sanitizeRepoPrStatsData (like the agent rows' error), so it is
+	// rendered as-is: escaping it again would turn `&` into `&amp;amp;` on screen.
 	const repoLink = `<a href="${escapeHtml(r.repoUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--link-color); font-family:'Courier New',monospace; font-size:12px;">${escapeHtml(r.owner)}/${escapeHtml(r.repo)}</a>`;
-	if (r.error) {
-		return `${repoLink}<div style="color:var(--text-secondary); font-style:italic; font-size:12px;">${escapeHtml(r.error)}</div>`;
+	// Only take the error-only form when the listing produced nothing. A listing that got some pages
+	// and then failed keeps those PRs on purpose, and the freshness banner is already telling the
+	// user the figures are a lower bound — blanking the counts here would contradict it, and would
+	// throw away the one piece of information the failed pass did manage to collect.
+	if (shouldRenderErrorOnlyRow(r.error, r.totalPrs)) {
+		return `${repoLink}<div style="color:var(--text-secondary); font-style:italic; font-size:12px;">${r.error ?? ''}</div>`;
 	}
-	if (r.aiDetails.length === 0) { return repoLink; }
+	const errorNote = r.error
+		? `<div style="margin-top:2px; color:var(--text-secondary); font-style:italic; font-size:11px;">${r.error}</div>`
+		: '';
+	if (r.aiDetails.length === 0) { return `${repoLink}${errorNote}`; }
 	const items = r.aiDetails.map(d => {
 		const ccrButton = (d.role === 'reviewer-requested' && d.aiType === 'copilot')
 			? renderCcrCheckButtonHtml(r.owner, r.repo, d.number)
@@ -2563,22 +2611,27 @@ function repoPrRepositoryCellHtml(r: RepoPrInfo): string {
 		return `<li><a href="${escapeHtml(d.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--link-color);">#${d.number} ${escapeHtml(d.title)}</a> — ${AI_PR_LABEL[d.aiType] ?? escapeHtml(String(d.aiType))} (${escapeHtml(roleLabel)})${ccrButton}</li>`;
 	}).join('');
 	const key = `${r.owner}/${r.repo}`;
-	return `${repoLink}
+	return `${repoLink}${errorNote}
 		<details data-repo-pr-details="${escapeHtml(key)}" style="margin-top:4px; font-size:11px;"${openRepoPrDetails.has(key) ? ' open' : ''}>
 			<summary style="cursor:pointer; color:var(--text-secondary);">Show ${r.aiDetails.length} detail(s)</summary>
 			<ul style="margin:4px 0 0 16px; padding:0; list-style:disc;">${items}</ul>
 		</details>`;
 }
 
-/** A centred count column; error rows have no counts, so they render a dash and sort last. */
+/**
+ * A centred count column; rows that produced no counts at all render a dash and sort last.
+ * `errorOnly` says which rows those are: a row with an error but some counts (a listing that
+ * collected pages and then failed) keeps its counts, since the banner already marks them a lower bound.
+ */
 function githubCountColumn<Row extends { error?: string }>(
 	id: string, label: string, tip: string | undefined, value: (row: Row) => number, cell: (row: Row) => string,
+	errorOnly: (row: Row) => boolean,
 ): DataTableColumn<Row> {
 	return {
 		id, label, align: 'center', firstSortDirection: 'desc',
 		headerHtml: tip ? `<span title="${escapeHtml(tip)}">${escapeHtml(label)}</span>` : undefined,
-		sortValue: row => row.error ? null : value(row),
-		render: row => row.error ? '—' : { html: cell(row) },
+		sortValue: row => errorOnly(row) ? null : value(row),
+		render: row => errorOnly(row) ? '—' : { html: cell(row) },
 	};
 }
 
@@ -2586,6 +2639,8 @@ const boldCount = (value: number): string => value > 0 ? `<span style="font-weig
 
 /** No initialSort: repositories keep the order the host lists them in. */
 function renderRepoPrTable(repos: RepoPrInfo[]): string {
+	const col = (id: string, label: string, tip: string | undefined, value: (r: RepoPrInfo) => number, cell: (r: RepoPrInfo) => string) =>
+		githubCountColumn<RepoPrInfo>(id, label, tip, value, cell, r => shouldRenderErrorOnlyRow(r.error, r.totalPrs));
 	return renderDataTable<RepoPrInfo>({
 		tableId: 'repo-prs',
 		ariaLabel: 'AI Activity in Repository PRs',
@@ -2593,45 +2648,33 @@ function renderRepoPrTable(repos: RepoPrInfo[]): string {
 		onRender: replayCcrActivityResults,
 		columns: [
 			{ id: 'repo', label: '📂 Repository', sortValue: r => `${r.owner}/${r.repo}`, render: r => ({ html: repoPrRepositoryCellHtml(r) }) },
-			githubCountColumn<RepoPrInfo>('prs', 'PRs', undefined, r => r.totalPrs, r => `<span style="font-weight:600;">${r.totalPrs}</span>`),
-			githubCountColumn<RepoPrInfo>('yours', '🚢 Yours (merged / opened)', 'PRs you opened yourself, shown as merged / opened. Work driven by a local AI assistant lands here, not under Cloud Agent Authored.',
+			col('prs', 'PRs', undefined, r => r.totalPrs, r => `<span style="font-weight:600;">${r.totalPrs}</span>`),
+			col('yours', '🚢 Yours (merged / opened)', 'PRs you opened yourself, shown as merged / opened. Work driven by a local AI assistant lands here, not under Cloud Agent Authored.',
 				r => r.userAuthoredPrs ?? 0,
 				r => (r.userAuthoredPrs ?? 0) > 0 ? `<span style="font-weight:600;">${r.userMergedPrs ?? 0} / ${r.userAuthoredPrs}</span>` : '0'),
-			githubCountColumn<RepoPrInfo>('aiAuthored', '🤖 Cloud Agent Authored', 'PRs where the PR author\'s GitHub login matches a known AI agent (e.g. copilot-swe-agent, claude-code-action, openai-code-agent)',
+			col('aiAuthored', '🤖 Cloud Agent Authored', 'PRs where the PR author\'s GitHub login matches a known AI agent (e.g. copilot-swe-agent, claude-code-action, openai-code-agent)',
 				r => r.aiAuthoredPrs, r => boldCount(r.aiAuthoredPrs)),
-			githubCountColumn<RepoPrInfo>('aiReview', '👁 Copilot Review Agent requested†', 'Open PRs where an AI agent was listed as a requested reviewer',
+			col('aiReview', '👁 Copilot Review Agent requested†', 'Open PRs where an AI agent was listed as a requested reviewer',
 				r => r.aiReviewRequestedPrs, r => boldCount(r.aiReviewRequestedPrs)),
 		],
 	});
 }
 
-/**
- * Freshness line for the snapshot. The data is fetched at most once an hour, by whichever VS Code
- * window holds the repo-PRs lock, so the panel always says how old what it shows is.
- */
+/** Freshness line for the Repository PRs snapshot. */
 function repoPrSnapshotFreshnessHtml(data: RepoPrStatsResult): string {
-  const box = 'margin-bottom:12px; padding:8px 10px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:6px; font-size:11px; color:var(--text-secondary);';
-  if (!data.fetchedAt) {
-    return `<div style="${box}">🕒 <strong>Not fetched yet.</strong> The snapshot is refreshed hourly by the main VS Code window — it will appear here once that first refresh completes.</div>`;
-  }
-  const fetchedMs = Date.parse(data.fetchedAt);
-  const nextRefresh = Number.isFinite(fetchedMs) && data.refreshIntervalMs
-    ? new Date(fetchedMs + data.refreshIntervalMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : 'unknown';
-  return `<div style="${box}">
-    🕒 Updated <strong>${escapeHtml(getTimeSince(data.fetchedAt))}</strong> · next refresh after ${escapeHtml(nextRefresh)}.
-    Cached and refreshed at most once an hour, by a single VS Code window, to keep GitHub API usage low.
-  </div>`;
+  return snapshotFreshnessHtml(data, { partialNoteKey: REPO_PR_PARTIAL_NOTE_KEY });
 }
 
 function renderReposPrContent(data: RepoPrStatsResult): string {
 	const sinceDate = escapeHtml(new Date(data.since).toLocaleDateString());
 	if (data.error) {
-		return `
+		// Keep the freshness banner here too: it carries the Refresh now action, and the error state
+		// is exactly when a user wants to retry without hunting for another way to trigger one.
+		return `${repoPrSnapshotFreshnessHtml(data)}
 			<div style="margin-top:12px; padding:12px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:6px; font-size:12px; color:var(--text-secondary);">
 				<strong>⚠️ Failed to load repository PR activity</strong><br/>
 				${data.error}<br/>
-				Switch to another tab and back to retry — details are in the extension Output channel.
+				${escapeHtml(localize('usage.githubActivity.retryHint'))}
 			</div>`;
 	}
 	if (!data.authenticated) {
@@ -2697,8 +2740,29 @@ function agentRepoLabelHtml(r: AgentRepoSummary): string {
   return `${link}${accountOnly}`;
 }
 
+/**
+ * The account-wide listing's own status line.
+ *
+ * Two distinct outcomes: a listing that produced *nothing* is unavailable, while one that
+ * collected some pages and then failed is available but incomplete — `accountTasksError` is set in
+ * both cases. Reporting only the first would reduce a partial account listing to the generic
+ * lower-bound note, leaving the user with no idea that tasks outside their workspace repositories
+ * were the part that went missing.
+ */
+function accountTasksNoteHtml(data: AgentSessionsResult): string {
+	if (!data.accountTasksAvailable) {
+		const reason = data.accountTasksError || localize('usage.githubActivity.accountTasksUnknownReason');
+		return `<strong>${escapeHtml(localizeFormat('usage.githubActivity.accountTasksUnavailable', reason))}</strong>`;
+	}
+	if (!data.accountTasksError) { return ''; }
+	return escapeHtml(localizeFormat('usage.githubActivity.accountTasksIncomplete', data.accountTasksError));
+}
+
 /** No initialSort: repositories keep the order the host lists them in. */
 function renderAgentSessionsTable(repos: AgentRepoSummary[]): string {
+	const errorOnly = (r: AgentRepoSummary): boolean => shouldRenderErrorOnlyRow(r.error, r.totalTasks + r.totalSessions);
+	const col = (id: string, label: string, tip: string | undefined, value: (r: AgentRepoSummary) => number, cell: (r: AgentRepoSummary) => string) =>
+		githubCountColumn<AgentRepoSummary>(id, label, tip, value, cell, errorOnly);
 	return renderDataTable<AgentRepoSummary>({
 		tableId: 'agent-sessions',
 		ariaLabel: 'Copilot Cloud Agent Sessions',
@@ -2708,20 +2772,29 @@ function renderAgentSessionsTable(repos: AgentRepoSummary[]): string {
 				id: 'repo', label: '📂 Repository', sortValue: r => r.unassigned ? null : `${r.owner}/${r.repo}`,
 				// r.owner, r.repo, r.repoUrl and r.error are pre-sanitized by sanitizeAgentSessionsData
 				render: r => {
-					if (r.error) {
+					// Error-only row only when the listing produced nothing. A listing that collected some
+					// pages and then failed keeps those tasks deliberately, and the banner already calls
+					// the figures a lower bound — blanking them here would discard what the pass did collect.
+					if (errorOnly(r)) {
 						return { html: `${agentRepoLabelHtml(r)}<div style="color:var(--text-secondary); font-style:italic; font-size:12px;">${r.error}</div>` };
 					}
-					const partialNote = r.partial
-						? ` <span title="Showing ${r.tasksScanned} of ${r.tasksTotal} tasks — capped to limit API usage" style="color:var(--text-muted); font-size:10px;">(${r.tasksScanned}/${r.tasksTotal} tasks scanned)</span>`
+					const errorNote = r.error
+						? `<div style="margin-top:2px; color:var(--text-secondary); font-style:italic; font-size:11px;">${r.error}</div>`
 						: '';
-					return { html: `${agentRepoLabelHtml(r)}${partialNote}` };
+					// `partial` covers three different shortfalls — the detail budget, a detail call that
+					// failed, and a listing that did not enumerate fully — so the tooltip states the
+					// shortfall rather than naming the budget, which was only ever one of the three.
+					const partialNote = r.partial
+						? ` <span title="${escapeHtml(localizeFormat('usage.githubActivity.tasksScannedTooltip', String(r.tasksScanned), String(r.tasksTotal)))}" style="color:var(--text-muted); font-size:10px;">${escapeHtml(localizeFormat('usage.githubActivity.tasksScannedLabel', String(r.tasksScanned), String(r.tasksTotal)))}</span>`
+						: '';
+					return { html: `${agentRepoLabelHtml(r)}${partialNote}${errorNote}` };
 				},
 			},
-			githubCountColumn<AgentRepoSummary>('tasks', 'Tasks', 'Number of Copilot cloud agent tasks (each task = one user prompt to the agent)',
+			col('tasks', 'Tasks', 'Number of Copilot cloud agent tasks (each task = one user prompt to the agent)',
 				r => r.totalTasks, r => `<span style="font-weight:600;">${r.totalTasks}</span>`),
-			githubCountColumn<AgentRepoSummary>('sessions', 'Sessions', 'Number of agent sessions (each session = one autonomous coding run)',
+			col('sessions', 'Sessions', 'Number of agent sessions (each session = one autonomous coding run)',
 				r => r.totalSessions, r => `<span style="font-weight:600;">${r.totalSessions}</span>`),
-			githubCountColumn<AgentRepoSummary>('credits', 'AI Credits', 'AI credits consumed (1 credit = $0.01). Only available when the API reports usage data.',
+			col('credits', 'AI Credits', 'AI credits consumed (1 credit = $0.01). Only available when the API reports usage data.',
 				r => r.totalCredits > 0 ? r.totalCredits : r.totalPremiumRequests,
 				r => r.totalCredits > 0
 					? r.totalCredits.toFixed(1)
@@ -2730,23 +2803,9 @@ function renderAgentSessionsTable(repos: AgentRepoSummary[]): string {
 	});
 }
 
-/**
- * Freshness line for the snapshot. The data is fetched at most once an hour, by whichever VS Code
- * window holds the agent-tasks lock, so the panel always says how old what it shows is.
- */
+/** Freshness line for the Cloud Agent snapshot. */
 function agentSnapshotFreshnessHtml(data: AgentSessionsResult): string {
-  const box = 'margin-bottom:12px; padding:8px 10px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:6px; font-size:11px; color:var(--text-secondary);';
-  if (!data.fetchedAt) {
-    return `<div style="${box}">🕒 <strong>Not fetched yet.</strong> The snapshot is refreshed hourly by the main VS Code window — it will appear here once that first refresh completes.</div>`;
-  }
-  const fetchedMs = Date.parse(data.fetchedAt);
-  const nextRefresh = Number.isFinite(fetchedMs)
-    ? new Date(fetchedMs + data.refreshIntervalMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : 'unknown';
-  return `<div style="${box}">
-    🕒 Updated <strong>${escapeHtml(getTimeSince(data.fetchedAt))}</strong> · next refresh after ${escapeHtml(nextRefresh)}.
-    Cached and refreshed at most once an hour, by a single VS Code window, to keep GitHub API usage low.
-  </div>`;
+  return snapshotFreshnessHtml(data, { partialNoteKey: AGENT_SESSIONS_PARTIAL_NOTE_KEY });
 }
 
 function renderAgentSessionsContent(data: AgentSessionsResult): string {
@@ -2766,17 +2825,17 @@ function renderAgentSessionsContent(data: AgentSessionsResult): string {
 
 	const sinceDate = new Date(data.since).toLocaleDateString();
 
+	// An errored repo can still carry the tasks it collected before the failure, so its totals are
+	// summed like any other. They are a lower bound, which is exactly what the banner says.
 	const summaryTotals = data.repos.reduce((acc, r) => {
-		if (!r.error) {
-			acc.tasks += r.totalTasks;
-			acc.sessions += r.totalSessions;
-			acc.credits += r.totalCredits;
-			acc.premiumRequests += r.totalPremiumRequests;
-		}
+		acc.tasks += r.totalTasks;
+		acc.sessions += r.totalSessions;
+		acc.credits += r.totalCredits;
+		acc.premiumRequests += r.totalPremiumRequests;
 		return acc;
 	}, { tasks: 0, sessions: 0, credits: 0, premiumRequests: 0 });
 
-	const hasPartial = data.repos.some(r => r.partial && !r.error);
+	const hasPartial = data.repos.some(r => r.partial || r.error);
 	const tile = 'background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:6px; padding:12px 20px; text-align:center; min-width:80px;';
 
 	return `
@@ -2802,10 +2861,8 @@ function renderAgentSessionsContent(data: AgentSessionsResult): string {
 		</div>
 		<div style="font-size:11px; color:var(--text-secondary); margin-bottom:12px;">
 			Showing cloud-agent sessions from ${sinceDate} to now.
-			${hasPartial ? '<strong>Note:</strong> Some repos were capped — totals are lower bounds. ' : ''}
-			${data.accountTasksAvailable
-				? ''
-				: `<strong>Account-wide tasks unavailable:</strong> ${data.accountTasksError ?? 'the /agents/tasks endpoint could not be read'} — only workspace repositories are shown.`}
+			${hasPartial ? `${escapeHtml(localize('usage.githubActivity.lowerBoundNote'))} ` : ''}
+			${accountTasksNoteHtml(data)}
 		</div>
 		${renderAgentSessionsTable(data.repos)}
 		<div style="margin-top:8px; font-size:10px; color:var(--text-muted); border-top:1px solid var(--border-subtle); padding-top:8px;">
@@ -5239,6 +5296,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	// replay would iterate an empty array and silently mark nothing.
 	currentInsights = stats.insights ?? [];
 	setupTabs();
+	wireGitHubActivityRefresh();
 	darkFactoryTab.attach();
 	setupModelEfficiencySection();
 	setupContextRefSection();
@@ -5521,7 +5579,7 @@ function handleHighlightUnknownTools(): void {
 
 function handleRepoPrStatsLoaded(data: any): void {
 	repoPrStatsData = sanitizeRepoPrStatsData(data);
-	if (!repoPrStatsData.authenticated) { repoPrStatsLoaded = false; }
+	if (isEmptyActivitySnapshot(repoPrStatsData)) { repoPrStatsLoaded = false; }
 	// Only the failure is worth a log line: a successful render is visible in the panel, but a
 	// payload that arrives and renders nothing looks identical to one that never arrived.
 	if (!updateReposPrPanel(repoPrStatsData)) {
@@ -5535,7 +5593,7 @@ function handleRepoPrStatsLoaded(data: any): void {
 function handleAgentSessionsLoaded(data: any): void {
 	if (!data || typeof data !== 'object') { return; }
 	agentSessionsData = sanitizeAgentSessionsData(data);
-	if (!agentSessionsData.authenticated) { agentSessionsLoaded = false; }
+	if (isEmptyActivitySnapshot(agentSessionsData)) { agentSessionsLoaded = false; }
 	if (!updateAgentSessionsPanel(agentSessionsData)) {
 		traceToHost('agentSessionsLoaded.notRendered', { authenticated: agentSessionsData.authenticated });
 	}

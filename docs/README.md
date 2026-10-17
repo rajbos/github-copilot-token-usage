@@ -96,6 +96,7 @@ Detailed documentation for individual features.
 | [features/COPILOT-MEMORY-FILES-INSIGHT.md](features/COPILOT-MEMORY-FILES-INSIGHT.md) | Copilot memory-files hygiene: shared analysis module, insight card, CLI `memory-files` command, and a Tools-tab UI section |
 | [features/COPILOT-SERVER-MEMORIES.md](features/COPILOT-SERVER-MEMORIES.md) | Copilot's server-side per-repository memory store: undocumented API contract, and turning re-learned facts into `AGENTS.md` entries |
 | [features/CLOUD-AGENT-COST.md](features/CLOUD-AGENT-COST.md) | Cloud Agent tab — per-repository AI credits, and the hourly cached snapshot behind it |
+| [features/GITHUB-ACTIVITY-CACHE.md](features/GITHUB-ACTIVITY-CACHE.md) | The per-entity cache behind the Repository PRs and Cloud Agent tabs — scope, retention, TTL/manual refresh, partial results, migration |
 | [features/DARK-FACTORY-READINESS.md](features/DARK-FACTORY-READINESS.md) | Dark Factory Readiness — per-repository governance control scan on the Fluency Score view |
 | [features/WORKSPACE-GROUPING.md](features/WORKSPACE-GROUPING.md) | Workspace grouping — folding worktrees, clones and remote spellings of one repository into one workspace, shared by the extension and the CLI |
 | [features/TTFT-TRENDS.md](features/TTFT-TRENDS.md) | Research > TTFT diagnostics tab — time-to-first-token averages and per-model trendlines from VS Code Chat's debug log |

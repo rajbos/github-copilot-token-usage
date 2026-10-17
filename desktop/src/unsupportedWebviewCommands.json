@@ -143,6 +143,7 @@
     "checkCcrActivity": { "status": "gap", "reason": "Usage Analysis: Copilot code review lookup needs GitHub auth." },
     "loadRepoPrStats": { "status": "gap", "reason": "Usage Analysis: the repository PR tab never loads (needs GitHub auth)." },
     "loadAgentSessions": { "status": "gap", "reason": "Usage Analysis: the cloud-agent tab never loads (needs GitHub auth)." },
+    "refreshGitHubActivity": { "status": "gap", "reason": "Usage Analysis: the Refresh now button on the repository PR and cloud-agent freshness banners; those tabs never load in the desktop app (needs GitHub auth)." },
     "loadReadiness": { "status": "gap", "reason": "Usage Analysis: the readiness tab never loads." },
     "loadRecentSessions": { "status": "gap", "reason": "Usage Analysis: changing the sessions look-back period never loads." },
     "draftCopilotChatWithPrompt": { "status": "gap", "reason": "Usage Analysis: opens Copilot Chat, which only exists in VS Code." },

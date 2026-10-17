@@ -76,6 +76,16 @@ export class WebviewMessageReplay {
 		return { delivered, wasReady };
 	}
 
+	/**
+	 * Forget the retained message for these features, so a later `markReady()` cannot replay them.
+	 * Used when the data behind a message has been deliberately discarded (Clear Cache, sign-out):
+	 * without this, recreating the webview would repopulate the panel from a snapshot that no
+	 * longer exists.
+	 */
+	public forget(...keys: string[]): void {
+		for (const key of keys) { this.latest.delete(key); }
+	}
+
 	/** Re-posts the latest message per feature; called every time the webview announces readiness. */
 	public async markReady(): Promise<string[]> {
 		this.ready = true;

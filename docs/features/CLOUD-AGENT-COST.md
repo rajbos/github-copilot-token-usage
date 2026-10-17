@@ -77,11 +77,18 @@ lookup per distinct unresolved repo, and one detail call per task, so it is deli
   kicked off from the leader-elected cache refresh cycle — so it also runs shortly after the
   extension starts. Other windows read the snapshot the leader wrote; a heartbeat keeps the lock
   alive so a slow API pass is never mistaken for a stale lock.
-- **Capped at `MAX_TASK_DETAILS_PER_REFRESH` detail calls** per pass, spent on the most recently
-  updated tasks. Repositories with tasks left over are flagged, and their totals are shown as
-  lower bounds.
+- **Capped at `MAX_TASK_DETAILS_PER_REFRESH` detail calls** per pass. Tasks whose `updated_at` still
+  matches the cached record are served from the cache and cost nothing, so the budget is spent on
+  recently invalidated work: new, changed, uncacheable and previously failed tasks, newest first.
+  Repositories with tasks left over are flagged, and their totals are shown as lower bounds.
 
-The tab always states how old the snapshot is and when the next refresh becomes due.
+The tab always states how old the snapshot is, when the next refresh becomes due, whether it is
+revalidating, and whether the figures are a lower bound — and offers a **Refresh now** action that
+bypasses the hourly TTL (but not the cross-window lock or a short cooldown).
+
+The per-task records behind that reuse — what they hold, how they are scoped to one account and
+host, how they are bounded and evicted, and what happens on Clear Cache or sign-out — are documented
+in [GITHUB-ACTIVITY-CACHE.md](GITHUB-ACTIVITY-CACHE.md).
 
 ## What is still missing
 

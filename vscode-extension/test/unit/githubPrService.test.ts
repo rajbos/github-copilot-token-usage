@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import * as childProcess from 'node:child_process';
 import type * as http from 'node:http';
 import { EventEmitter } from 'node:events';
-import { detectAiType, detectCoAuthorAiType, fetchPrCommitMessages, fetchRepoPrs, fetchRepoPrsPage, fetchCopilotPlanInfo, fetchCopilotTokenEndpointInfo, fetchUserEnterprises, fetchEnterprisePremiumBudgets, discoverGitHubRepos, fetchPrCopilotReviews, fetchPrCopilotReviewRequests, fetchPrCopilotReviewActivity, isCompletedCopilotReview, isAttributableCopilotReviewRequest, type CopilotPlanInfo, type CopilotTokenEndpointInfo, type EnterpriseInfo, type EnterpriseBudgetEntry } from '../../src/githubPrService';
+import { detectAiType, detectCoAuthorAiType, normalizeRepoKey, reconcileRepoPrRecords, summarizeRepoPrRecords, toCacheableRepoPrRecords, toRepoPrRecord, fetchPrCommitMessages, fetchRepoPrs, fetchRepoPrsPage, fetchCopilotPlanInfo, fetchCopilotTokenEndpointInfo, fetchUserEnterprises, fetchEnterprisePremiumBudgets, discoverGitHubRepos, fetchPrCopilotReviews, fetchPrCopilotReviewRequests, fetchPrCopilotReviewActivity, isCompletedCopilotReview, isAttributableCopilotReviewRequest, type CopilotPlanInfo, type CopilotTokenEndpointInfo, type EnterpriseInfo, type EnterpriseBudgetEntry } from '../../src/githubPrService';
 
 /**
  * Minimal stand-in for `http.ClientRequest`, exercising exactly the surface
@@ -742,4 +742,289 @@ test('discoverGitHubRepos: matches an ssh://git@ remote', async () => {
 	} finally {
 		fs.rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+// ---------------------------------------------------------------------------
+// Per-PR cache projection and reconciliation (issue #1968)
+// ---------------------------------------------------------------------------
+
+/** One raw PR as the `state=all` listing returns it, with only what the projection reads. */
+function rawPr(overrides: Record<string, any> = {}): any {
+	return {
+		number: 1,
+		title: 'Add a thing',
+		html_url: 'https://github.com/rajbos/repo/pull/1',
+		created_at: '2026-08-01T10:00:00Z',
+		updated_at: '2026-08-02T10:00:00Z',
+		state: 'open',
+		merged_at: null,
+		user: { login: 'octocat', type: 'User' },
+		requested_reviewers: [],
+		...overrides,
+	};
+}
+
+test('normalizeRepoKey is case-insensitive, so a repo cannot be cached under two keys', () => {
+	assert.equal(normalizeRepoKey('Rajbos', 'AI-Engineering-Fluency'), 'rajbos/ai-engineering-fluency');
+	assert.equal(normalizeRepoKey('rajbos', 'ai-engineering-fluency'), normalizeRepoKey('RAJBOS', 'AI-ENGINEERING-FLUENCY'));
+});
+
+test('toRepoPrRecord keeps only the projection the panel renders, with a canonical timestamp', () => {
+	const record = toRepoPrRecord(rawPr({
+		merged_at: '2026-08-03T10:00:00Z',
+		state: 'closed',
+		user: { login: 'Copilot', type: 'Bot' },
+		requested_reviewers: [{ login: 'claude[bot]', type: 'Bot' }, { login: 'a-human', type: 'User' }],
+		body: 'secret body',
+	}));
+	assert.deepEqual(record, {
+		number: 1,
+		title: 'Add a thing',
+		url: 'https://github.com/rajbos/repo/pull/1',
+		createdAt: '2026-08-01T10:00:00.000Z',
+		updatedAt: '2026-08-02T10:00:00.000Z',
+		state: 'closed',
+		merged: true,
+		authorAiType: 'copilot',
+		authorLogin: 'copilot',
+		reviewerAiTypes: ['claude'],
+	});
+	// The PR body (and anything else not in the projection) is never persisted.
+	assert.ok(!JSON.stringify(record).includes('secret body'));
+});
+
+test('toRepoPrRecord refuses to cache a PR with a missing or unparseable updated_at', () => {
+	assert.equal(toRepoPrRecord(rawPr({ updated_at: undefined })), undefined);
+	assert.equal(toRepoPrRecord(rawPr({ updated_at: 'yesterday' })), undefined);
+	assert.equal(toRepoPrRecord(rawPr({ number: undefined })), undefined);
+});
+
+test('summarizeRepoPrRecords counts AI authorship, AI review requests and the user\'s own PRs', () => {
+	const records = [
+		toRepoPrRecord(rawPr({ number: 1, user: { login: 'Copilot', type: 'Bot' } }))!,
+		toRepoPrRecord(rawPr({ number: 2, requested_reviewers: [{ login: 'copilot[bot]', type: 'Bot' }] }))!,
+		toRepoPrRecord(rawPr({ number: 3, merged_at: '2026-08-03T10:00:00Z', state: 'closed' }))!,
+	];
+	const summary = summarizeRepoPrRecords(records, 'OctoCat');
+	assert.equal(summary.totalPrs, 3);
+	assert.equal(summary.aiAuthoredPrs, 1);
+	assert.equal(summary.aiReviewRequestedPrs, 1);
+	assert.equal(summary.userAuthoredPrs, 2);   // #2 and #3, authored by octocat
+	assert.equal(summary.userMergedPrs, 1);     // only #3 merged
+	assert.deepEqual(summary.aiDetails.map((d) => [d.number, d.role]), [[1, 'author'], [2, 'reviewer-requested']]);
+});
+
+test('summarizeRepoPrRecords omits the user columns entirely when the login is unknown', () => {
+	const summary = summarizeRepoPrRecords([toRepoPrRecord(rawPr())!]);
+	assert.equal(summary.userAuthoredPrs, undefined);
+	assert.equal(summary.userMergedPrs, undefined);
+	assert.equal(summary.totalPrs, 1);
+});
+
+test('reconcileRepoPrRecords reuses a cached PR whose updated_at still matches exactly', () => {
+	const cached = toRepoPrRecord(rawPr({ title: 'Cached title' }))!;
+	const result = reconcileRepoPrRecords([cached], [rawPr({ title: 'Cached title' })], { listingComplete: true });
+	assert.equal(result.reused, 1);
+	assert.equal(result.recomputed, 0);
+	assert.equal(result.records[0], cached, 'the cached object itself should be reused');
+});
+
+test('reconcileRepoPrRecords recomputes a PR whose updated_at moved', () => {
+	const cached = toRepoPrRecord(rawPr({ title: 'Old title' }))!;
+	const result = reconcileRepoPrRecords(
+		[cached],
+		[rawPr({ title: 'New title', updated_at: '2026-08-04T10:00:00Z' })],
+		{ listingComplete: true },
+	);
+	assert.equal(result.reused, 0);
+	assert.equal(result.recomputed, 1);
+	assert.equal(result.records[0].title, 'New title');
+	assert.equal(result.records[0].updatedAt, '2026-08-04T10:00:00.000Z');
+});
+
+test('reconcileRepoPrRecords never serves a cached PR for a different PR number', () => {
+	const cached = toRepoPrRecord(rawPr({ number: 7, title: 'PR seven' }))!;
+	const result = reconcileRepoPrRecords([cached], [rawPr({ number: 8, title: 'PR eight' })], { listingComplete: true });
+	assert.equal(result.reused, 0);
+	assert.deepEqual(result.records.map((r) => [r.number, r.title]), [[8, 'PR eight']]);
+});
+
+test('reconcileRepoPrRecords keeps closed and merged PRs represented', () => {
+	const listed = [
+		rawPr({ number: 1, state: 'closed', merged_at: '2026-08-03T10:00:00Z' }),
+		rawPr({ number: 2, state: 'closed', merged_at: null }),
+	];
+	const result = reconcileRepoPrRecords([], listed, { listingComplete: true });
+	assert.deepEqual(result.records.map((r) => [r.number, r.state, r.merged]), [[1, 'closed', true], [2, 'closed', false]]);
+});
+
+test('reconcileRepoPrRecords drops an unseen PR only after a complete listing', () => {
+	const cached = [toRepoPrRecord(rawPr({ number: 1 }))!, toRepoPrRecord(rawPr({ number: 2 }))!];
+	const complete = reconcileRepoPrRecords(cached, [rawPr({ number: 1 })], { listingComplete: true });
+	assert.equal(complete.removed, 1);
+	assert.equal(complete.retainedUnverified, 0);
+	assert.deepEqual(complete.records.map((r) => r.number), [1]);
+});
+
+test('reconcileRepoPrRecords retains unseen PRs when the listing was incomplete', () => {
+	const cached = [toRepoPrRecord(rawPr({ number: 1 }))!, toRepoPrRecord(rawPr({ number: 2 }))!];
+	const partial = reconcileRepoPrRecords(cached, [rawPr({ number: 1 })], { listingComplete: false });
+	assert.equal(partial.removed, 0);
+	assert.equal(partial.retainedUnverified, 1);
+	assert.deepEqual(partial.records.map((r) => r.number).sort(), [1, 2]);
+});
+
+test('reconcileRepoPrRecords counts an uncacheable PR this pass but never caches it', () => {
+	const result = reconcileRepoPrRecords([], [rawPr({ number: 5, updated_at: 'nope' })], { listingComplete: true });
+	assert.equal(result.records.length, 1);
+	assert.equal(result.records[0].updatedAt, '');
+	assert.deepEqual(toCacheableRepoPrRecords(result.records), []);
+
+	// And a record with an empty timestamp can never be matched on a later pass.
+	const next = reconcileRepoPrRecords(result.records, [rawPr({ number: 5, updated_at: 'nope' })], { listingComplete: true });
+	assert.equal(next.reused, 0);
+});
+
+test('reconcileRepoPrRecords ignores malformed cached entries', () => {
+	const cached = [
+		{ number: 1, updatedAt: 'garbage' } as any,
+		{ number: undefined, updatedAt: '2026-08-02T10:00:00Z' } as any,
+	];
+	const result = reconcileRepoPrRecords(cached, [rawPr({ number: 1 })], { listingComplete: true });
+	assert.equal(result.reused, 0);
+	assert.equal(result.recomputed, 1);
+	assert.equal(result.removed, 0);
+});
+
+test('fetchRepoPrs reports a complete listing when pagination runs out naturally', async () => {
+	const since = new Date('2026-08-01T00:00:00Z');
+	const page = async () => ({ prs: [rawPr({ created_at: '2026-08-10T00:00:00Z' })] });
+	const result = await fetchRepoPrs('rajbos', 'repo', 'token', since, page);
+	assert.equal(result.complete, true);
+	assert.equal(result.prs.length, 1);
+});
+
+test('fetchRepoPrs reports an incomplete listing when the five-page cap is hit', async () => {
+	const since = new Date('2026-01-01T00:00:00Z');
+	let pages = 0;
+	const page = async () => {
+		pages++;
+		return { prs: Array.from({ length: 100 }, (_, i) => rawPr({ number: pages * 100 + i, created_at: '2026-08-10T00:00:00Z' })) };
+	};
+	const result = await fetchRepoPrs('rajbos', 'repo', 'token', since, page);
+	assert.equal(pages, 5, 'the page cap should still be five');
+	assert.equal(result.complete, false, 'a capped listing is not authoritative about removals');
+	assert.equal(result.prs.length, 500);
+});
+
+test('fetchRepoPrs reports an incomplete listing on an error', async () => {
+	const since = new Date('2026-08-01T00:00:00Z');
+	const result = await fetchRepoPrs('rajbos', 'repo', 'token', since, async () => ({ prs: [], statusCode: 403, error: 'nope' }));
+	assert.equal(result.complete, false);
+	assert.ok(result.error);
+});
+
+// --- Review follow-ups (PR #2073) -------------------------------------------
+
+test('reconcileRepoPrRecords keeps retained records out of the counted set', () => {
+	// An incomplete listing retains a cached PR so the next pass can still reuse it, but that PR
+	// might have been deleted — counting it would turn the advertised lower bound into an overcount.
+	const cached = [toRepoPrRecord(rawPr({ number: 1 }))!, toRepoPrRecord(rawPr({ number: 2 }))!];
+	const result = reconcileRepoPrRecords(cached, [rawPr({ number: 1 })], { listingComplete: false });
+	assert.deepEqual(result.listed.map((r) => r.number), [1], 'only the listing is counted');
+	assert.deepEqual(result.records.map((r) => r.number).sort(), [1, 2], 'both are still cached');
+	assert.equal(summarizeRepoPrRecords(result.listed).totalPrs, 1);
+});
+
+test('reconcileRepoPrRecords does not count an uncacheable PR twice', () => {
+	// The listing reports PR #1 with a broken timestamp, so it cannot be cached — but it has been
+	// spoken for, and an incomplete listing must not also retain the older cached record for it.
+	const cached = [toRepoPrRecord(rawPr({ number: 1, title: 'Cached' }))!];
+	const result = reconcileRepoPrRecords(cached, [rawPr({ number: 1, updated_at: 'nope' })], { listingComplete: false });
+	assert.equal(result.listed.length, 1);
+	assert.equal(result.records.length, 1);
+	assert.equal(result.retainedUnverified, 0);
+});
+
+test('reconcileRepoPrRecords reuses a cached record stored with an alternate ISO spelling', () => {
+	// Reuse goes through entityTimestampsMatch(), which compares canonicalized timestamps. A record
+	// that reached the cache spelled `...:00+00:00` still names the same instant as the listing's
+	// `...:00.000Z`, and re-fetching it would be work done for a difference that does not exist.
+	const cached = [{ ...toRepoPrRecord(rawPr({ number: 1, title: 'Cached' }))!, updatedAt: '2026-08-20T10:00:00+00:00' }];
+	const result = reconcileRepoPrRecords(cached, [rawPr({ number: 1, title: 'Fresh', updated_at: '2026-08-20T10:00:00.000Z' })], { listingComplete: true });
+	assert.equal(result.reused, 1);
+	assert.equal(result.recomputed, 0);
+	assert.equal(result.listed[0].title, 'Cached');
+});
+
+test('reconcileRepoPrRecords drops a retained record that has aged out of the window', () => {
+	const since = new Date('2026-08-01T00:00:00Z');
+	const inWindow = toRepoPrRecord(rawPr({ number: 1, created_at: '2026-08-10T00:00:00Z' }))!;
+	const expired = toRepoPrRecord(rawPr({ number: 2, created_at: '2026-06-01T00:00:00Z' }))!;
+	const result = reconcileRepoPrRecords([inWindow, expired], [], { listingComplete: false, since });
+	assert.deepEqual(result.records.map((r) => r.number), [1], 'the expired PR is not carried forward');
+	assert.equal(result.removed, 1);
+	assert.equal(result.retainedUnverified, 1);
+});
+
+test('reconcileRepoPrRecords still retains an in-window record with no since given', () => {
+	const cached = [toRepoPrRecord(rawPr({ number: 1, created_at: '2020-01-01T00:00:00Z' }))!];
+	const result = reconcileRepoPrRecords(cached, [], { listingComplete: false });
+	assert.equal(result.retainedUnverified, 1);
+});
+
+test('fetchRepoPrs returns the pages it collected before an error, not nothing', () => {
+	// Those PRs are real; discarding them would understate the repo for no gain.
+	const since = new Date('2026-01-01T00:00:00Z');
+	let page = 0;
+	return fetchRepoPrs('rajbos', 'repo', 'token', since, async () => {
+		page++;
+		return page === 1
+			? { prs: Array.from({ length: 100 }, (_, i) => rawPr({ number: i, created_at: '2026-08-10T00:00:00Z' })) }
+			: { prs: [], statusCode: 500, error: 'boom' };
+	}).then((result) => {
+		assert.equal(result.prs.length, 100);
+		assert.equal(result.complete, false);
+		assert.ok(result.error);
+	});
+});
+
+test('toRepoPrRecord refuses a PR with a malformed created_at', () => {
+	// `createdAt` is what decides whether a retained record has aged out. Caching a record without
+	// one would let a single bad timestamp pin it in the cache forever.
+	assert.equal(toRepoPrRecord(rawPr({ created_at: undefined })), undefined);
+	assert.equal(toRepoPrRecord(rawPr({ created_at: 'yesterday' })), undefined);
+});
+
+test('toRepoPrRecord refuses PR numbers GitHub cannot produce', () => {
+	// GitHub's PR numbers are 1-based; 0, negatives and non-finite values are malformed.
+	for (const number of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+		assert.equal(toRepoPrRecord(rawPr({ number })), undefined, `expected ${number} to be uncacheable`);
+	}
+	assert.ok(toRepoPrRecord(rawPr({ number: 1 })));
+});
+
+test('reconcileRepoPrRecords never emits an AI detail row for a numberless PR', () => {
+	// The uncacheable branch used to push a `number: -1` sentinel straight into aiDetails.
+	const listed = [rawPr({ number: undefined, updated_at: 'nope', user: { login: 'Copilot', type: 'Bot' } })];
+	const result = reconcileRepoPrRecords([], listed, { listingComplete: true });
+	assert.deepEqual(result.listed, []);
+	assert.deepEqual(summarizeRepoPrRecords(result.listed).aiDetails, []);
+});
+
+test('reconcileRepoPrRecords still counts a real PR whose timestamp is malformed', () => {
+	const result = reconcileRepoPrRecords([], [rawPr({ number: 7, updated_at: 'nope' })], { listingComplete: true });
+	assert.deepEqual(result.listed.map((r) => r.number), [7]);
+	assert.deepEqual(toCacheableRepoPrRecords(result.records), []);
+});
+
+test('indexCachedPrRecords ignores malformed cached numbers', () => {
+	const malformed = [
+		{ ...toRepoPrRecord(rawPr({ number: 1 }))!, number: Number.NaN },
+		{ ...toRepoPrRecord(rawPr({ number: 1 }))!, number: 0 },
+	];
+	// None of these can be matched by a listing, so none may be retained on an incomplete pass.
+	const result = reconcileRepoPrRecords(malformed, [], { listingComplete: false });
+	assert.deepEqual(result.records, []);
+	assert.equal(result.retainedUnverified, 0);
 });

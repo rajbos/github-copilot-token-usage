@@ -3,6 +3,7 @@ import * as assert from 'node:assert/strict';
 import type * as http from 'node:http';
 import { EventEmitter } from 'node:events';
 import {
+	agentTaskCacheKey,
 	collectAgentSessions,
 	detectSessionSource,
 	fetchAgentSessionsForRepo,
@@ -11,7 +12,10 @@ import {
 	requestGitHubJson,
 	requestGitHubJsonTransport,
 	resolveTaskRepo,
+	toTaskDetailResult,
+	toTaskPageResult,
 	type AgentRepoSummary,
+	type AgentTaskRecord,
 	type FetchAccountTaskPageFn,
 	type FetchRepositoryByIdFn,
 	type FetchTaskPageFn,
@@ -658,4 +662,489 @@ test('collectAgentSessions: reports progress that never exceeds its own total', 
 	assert.ok(progress.every(p => p.done <= p.total), 'progress must never report more done than total');
 	const last = progress[progress.length - 1];
 	assert.equal(last.done, last.total);
+});
+
+// ---------------------------------------------------------------------------
+// collectAgentSessions — per-task cache reuse (issue #1968)
+// ---------------------------------------------------------------------------
+
+/** The cache record a previous pass would have written for `makeAccountTask(id, fullName, at)`. */
+function cachedRecordFor(
+	id: string, repoKey: string, updatedAt: string, overrides: Partial<AgentTaskRecord> = {},
+): AgentTaskRecord {
+	const [owner, repo] = repoKey ? repoKey.split('/') : [undefined, undefined];
+	return {
+		key: agentTaskCacheKey(repoKey, id),
+		id,
+		repoKey,
+		owner,
+		repo,
+		discovery: 'account',
+		updatedAt: new Date(Date.parse(updatedAt)).toISOString(),
+		aggregate: { tasks: 1, sessions: 1, credits: 7, premiumRequests: 0 },
+		detailOk: true,
+		detailAttempts: 0,
+		lastSeenAt: '2026-08-29T12:00:00.000Z',
+		...overrides,
+	};
+}
+
+/** Run one account-only collection over `tasks`, recording which tasks cost a detail call. */
+async function collectWithCache(
+	tasks: any[],
+	cachedTasks: AgentTaskRecord[],
+	options: { sessions?: any[]; detailFails?: boolean; maxTaskDetails?: number } = {},
+): Promise<{ result: Awaited<ReturnType<typeof collectAgentSessions>>; detailed: string[] }> {
+	const detailed: string[] = [];
+	const accountPage = firstPageOnly(tasks);
+	const detail = async (...args: any[]): Promise<any> => {
+		detailed.push(String(args[args.length - 2]));
+		if (options.detailFails) { return { error: 'HTTP 500', statusCode: 500 }; }
+		return { sessions: options.sessions ?? [makeSession('cloud-model', 4)] };
+	};
+	const result = await collectAgentSessions({
+		token: 'token',
+		since: SINCE,
+		workspaceRepos: [],
+		cachedTasks,
+		maxTaskDetails: options.maxTaskDetails,
+		fetchTaskPage: NO_TASKS,
+		fetchAccountTaskPage: async ({ page, archived }) => (archived ? { tasks: [] } : accountPage(page)),
+		fetchTaskDetail: async (owner, repo, taskId) => detail(owner, repo, taskId, 'token'),
+		fetchAccountTaskDetail: async (taskId) => detail(taskId, 'token'),
+	});
+	return { result, detailed };
+}
+
+test('collectAgentSessions: an unchanged task is served from the cache with no detail call', async () => {
+	const task = makeAccountTask('a1', 'octo/remote-repo', '2026-08-01T00:00:00Z');
+	const cached = [cachedRecordFor('a1', 'octo/remote-repo', '2026-08-01T00:00:00Z')];
+	const { result, detailed } = await collectWithCache([task], cached);
+
+	assert.deepEqual(detailed, [], 'an unchanged task must cost no API call');
+	assert.equal(result.totalCredits, 7, 'the cached aggregate is what gets folded in');
+	assert.equal(result.repos[0].tasksScanned, 1, 'a cache hit still counts as scanned');
+	assert.equal(result.repos[0].partial, false);
+	assert.equal(result.taskRecords.length, 1);
+	assert.equal(result.taskRecords[0].detailOk, true);
+});
+
+test('collectAgentSessions: a task whose updated_at moved is refetched', async () => {
+	const task = makeAccountTask('a1', 'octo/remote-repo', '2026-08-02T00:00:00Z');
+	const cached = [cachedRecordFor('a1', 'octo/remote-repo', '2026-08-01T00:00:00Z')];
+	const { result, detailed } = await collectWithCache([task], cached);
+
+	assert.deepEqual(detailed, ['a1'], 'a changed task must be refetched');
+	assert.equal(result.totalCredits, 4, 'the fresh detail wins, not the stale aggregate');
+	assert.equal(result.taskRecords[0].updatedAt, '2026-08-02T00:00:00.000Z');
+});
+
+test('collectAgentSessions: a cached record never satisfies a task in another repository', async () => {
+	const task = makeAccountTask('a1', 'octo/moved-repo', '2026-08-01T00:00:00Z');
+	const cached = [cachedRecordFor('a1', 'octo/remote-repo', '2026-08-01T00:00:00Z')];
+	const { result, detailed } = await collectWithCache([task], cached);
+
+	assert.deepEqual(detailed, ['a1'], 'a moved task must not reuse its old repo-scoped aggregate');
+	assert.equal(result.repos[0].repo, 'moved-repo');
+	assert.equal(result.totalCredits, 4);
+});
+
+test('collectAgentSessions: a task with no usable updated_at is never cached and always refetched', async () => {
+	const task = { id: 'a1', name: 'Task a1', state: 'completed', repository: { full_name: 'octo/remote-repo' } };
+	const first = await collectWithCache([task], []);
+	assert.deepEqual(first.detailed, ['a1']);
+	assert.deepEqual(first.result.taskRecords, [], 'an unstamped task is uncacheable');
+
+	const second = await collectWithCache([task], first.result.taskRecords);
+	assert.deepEqual(second.detailed, ['a1'], 'and so it is refetched on every pass');
+});
+
+test('collectAgentSessions: a previously failed detail is retried and its attempt count grows', async () => {
+	const task = makeAccountTask('a1', 'octo/remote-repo', '2026-08-01T00:00:00Z');
+	const failed = await collectWithCache([task], [], { detailFails: true });
+	assert.deepEqual(failed.detailed, ['a1']);
+	assert.equal(failed.result.taskRecords[0].detailOk, false);
+	assert.equal(failed.result.taskRecords[0].aggregate, undefined, 'a failure must not be remembered as zero usage');
+	assert.equal(failed.result.taskRecords[0].detailAttempts, 1);
+	assert.equal(failed.result.totalCredits, 0);
+
+	const retried = await collectWithCache([task], failed.result.taskRecords, { detailFails: true });
+	assert.deepEqual(retried.detailed, ['a1'], 'a task still owing its detail must be retried');
+	assert.equal(retried.result.taskRecords[0].detailAttempts, 2);
+
+	const recovered = await collectWithCache([task], retried.result.taskRecords);
+	assert.equal(recovered.result.taskRecords[0].detailOk, true);
+	assert.equal(recovered.result.taskRecords[0].detailAttempts, 0);
+	assert.equal(recovered.result.totalCredits, 4);
+});
+
+test('collectAgentSessions: the detail budget is spent on invalidated tasks, newest first', async () => {
+	const tasks = [
+		makeAccountTask('old', 'octo/remote-repo', '2026-08-01T00:00:00Z'),
+		makeAccountTask('new', 'octo/remote-repo', '2026-08-05T00:00:00Z'),
+		makeAccountTask('cached', 'octo/remote-repo', '2026-08-03T00:00:00Z'),
+	];
+	const cached = [cachedRecordFor('cached', 'octo/remote-repo', '2026-08-03T00:00:00Z')];
+	const { result, detailed } = await collectWithCache(tasks, cached, { maxTaskDetails: 1 });
+
+	assert.deepEqual(detailed, ['new'], 'the budget goes to the most recent task that actually changed');
+	assert.equal(result.partial, true, 'one task was left undetailed, so totals are a lower bound');
+	assert.equal(result.repos[0].tasksTotal, 3);
+	assert.equal(result.repos[0].tasksScanned, 2, 'the cache hit plus the one fresh detail');
+	assert.equal(result.totalCredits, 11, 'cached 7 + fresh 4');
+});
+
+test('collectAgentSessions: a complete account listing is reported as such', async () => {
+	const { result } = await collectWithCache([makeAccountTask('a1', 'octo/remote-repo')], []);
+	assert.equal(result.listingComplete, true);
+	assert.equal(result.partial, false);
+});
+
+test('collectAgentSessions: a failed account listing is incomplete and marked partial', async () => {
+	const result = await collectAgentSessions({
+		token: 'token',
+		since: SINCE,
+		workspaceRepos: [],
+		fetchTaskPage: NO_TASKS,
+		fetchAccountTaskPage: async () => ({ tasks: [], statusCode: 500, error: 'boom' }),
+		fetchTaskDetail: async () => ({ sessions: [] }),
+		fetchAccountTaskDetail: async () => ({ sessions: [] }),
+	});
+	assert.equal(result.accountTasksAvailable, false);
+	assert.equal(result.listingComplete, false);
+	assert.equal(result.partial, true, 'an incomplete listing must show as a lower bound');
+});
+
+test('collectAgentSessions: a capped task listing is reported as incomplete', async () => {
+	// Five full pages of 100 tasks each means the page cap was hit — absence proves nothing.
+	const fullPage = (page: number) => ({
+		tasks: Array.from({ length: 100 }, (_, i) => makeAccountTask(`p${page}-${i}`, 'octo/remote-repo')),
+	});
+	const result = await collectAgentSessions({
+		token: 'token',
+		since: SINCE,
+		workspaceRepos: [],
+		maxTaskDetails: 0,
+		fetchTaskPage: NO_TASKS,
+		fetchAccountTaskPage: async ({ page, archived }) => (archived ? { tasks: [] } : fullPage(page)),
+		fetchTaskDetail: async () => ({ sessions: [] }),
+		fetchAccountTaskDetail: async () => ({ sessions: [] }),
+	});
+	assert.equal(result.listingComplete, false);
+	assert.equal(result.partial, true);
+});
+
+test('collectAgentSessions: a failed workspace listing makes the pass incomplete', async () => {
+	const result = await collectAgentSessions({
+		token: 'token',
+		since: SINCE,
+		workspaceRepos: [{ owner: 'octo', repo: 'local-repo' }],
+		fetchTaskPage: async () => ({ tasks: [], statusCode: 403, error: 'denied' }),
+		fetchAccountTaskPage: NO_ACCOUNT_TASKS,
+		fetchTaskDetail: async () => ({ sessions: [] }),
+		fetchAccountTaskDetail: async () => ({ sessions: [] }),
+	});
+	assert.equal(result.listingComplete, false);
+	assert.equal(result.partial, true);
+	assert.ok(result.repos[0].error);
+});
+
+test('collectAgentSessions: task records never carry prompts, titles or transcripts', async () => {
+	const task = {
+		...makeAccountTask('a1', 'octo/remote-repo'),
+		name: 'Fix the secret login bug',
+		problem_statement: 'the prompt text that must not be cached',
+	};
+	const { result } = await collectWithCache([task], []);
+	const serialized = JSON.stringify(result.taskRecords);
+	assert.ok(!serialized.includes('prompt text'), serialized);
+	assert.ok(!serialized.includes('Fix the secret login bug'), serialized);
+});
+
+test('collectAgentSessions: a task the budget never reached keeps its retry history', async () => {
+	const task = makeAccountTask('a1', 'octo/remote-repo', '2026-08-01T00:00:00Z');
+	const failed = await collectWithCache([task], [], { detailFails: true });
+	assert.equal(failed.result.taskRecords[0].detailAttempts, 1);
+
+	// Budget of zero: the task is listed but never attempted this pass. Its previous failure must
+	// still be on the record, or a permanently broken task would look brand new forever.
+	const capped = await collectWithCache([task], failed.result.taskRecords, { maxTaskDetails: 0 });
+	assert.deepEqual(capped.detailed, []);
+	assert.equal(capped.result.taskRecords[0].detailAttempts, 1);
+	assert.equal(capped.result.taskRecords[0].detailOk, false);
+	assert.equal(capped.result.partial, true);
+});
+
+// --- Review follow-ups (PR #2073) -------------------------------------------
+
+test('collectAgentSessions: a failed detail marks its row and the result partial', () => {
+	// Otherwise the only outstanding task failing would still report `partial: false`, presenting an
+	// under-counted total as complete.
+	return collectWithCache([makeAccountTask('a1', 'octo/remote-repo')], [], { detailFails: true })
+		.then(({ result }) => {
+			assert.equal(result.partial, true, 'a failed detail leaves the totals short');
+			assert.equal(result.repos[0].partial, true, 'and the row says so too');
+			assert.equal(result.totalCredits, 0);
+		});
+});
+
+test('collectAgentSessions: a fully successful pass is not marked partial', () => {
+	return collectWithCache([makeAccountTask('a1', 'octo/remote-repo')], [])
+		.then(({ result }) => {
+			assert.equal(result.partial, false);
+			assert.equal(result.repos[0].partial, false);
+		});
+});
+
+test('collectAgentSessions: an unparseable updated_at falls back to created_at for priority', async () => {
+	// A task with a broken timestamp is uncacheable, so it always needs a detail call — losing its
+	// newest-first priority and being dropped by the budget is the worst outcome for it.
+	const broken = { id: 'broken', name: 'Task broken', state: 'completed', updated_at: 'not-a-date', created_at: '2026-08-20T00:00:00Z', repository: { full_name: 'octo/remote-repo' } };
+	const older = makeAccountTask('older', 'octo/remote-repo', '2026-08-01T00:00:00Z');
+	const { detailed } = await collectWithCache([older, broken], [], { maxTaskDetails: 1 });
+	assert.deepEqual(detailed, ['broken'], 'the recently created task wins the budget');
+});
+
+test('toTaskPageResult: a body with no tasks array is an error, not an empty page', () => {
+	// A 200 whose body carries no task array must not look like "this repo has no tasks". The
+	// short-page check would call the listing complete and reconciliation — which may delete only
+	// after a full enumeration — would drop every cached task and publish a confident zero.
+	for (const body of [{ unexpected: true }, {}, null, 'nonsense', 42]) {
+		const page = toTaskPageResult({ body, statusCode: 200 });
+		assert.equal(page.error, 'Unexpected response format', `${JSON.stringify(body)} must be an error`);
+		assert.deepEqual(page.tasks, []);
+	}
+});
+
+test('toTaskPageResult: an explicitly empty listing is still authoritative', () => {
+	// The guard above has to distinguish "no tasks" from "no task array" — `{ tasks: [] }` and a
+	// bare `[]` are real answers, and erroring on them would stop reconciliation ever converging.
+	for (const body of [{ tasks: [] }, []]) {
+		const page = toTaskPageResult({ body, statusCode: 200 });
+		assert.equal(page.error, undefined, `${JSON.stringify(body)} is a valid empty listing`);
+		assert.deepEqual(page.tasks, []);
+	}
+	assert.deepEqual(toTaskPageResult({ body: { tasks: [{ id: 't1' }] }, statusCode: 200 }).tasks, [{ id: 't1' }]);
+});
+
+test('toTaskDetailResult: a body with no sessions array is an error, never zero usage', () => {
+	// The caller caches a successful detail as this task's aggregate, so a malformed response read
+	// as zero sessions would remember a failure as zero usage — and reuse it for as long as the
+	// task's updated_at holds still.
+	for (const body of [{ unexpected: true }, {}, null]) {
+		const detail = toTaskDetailResult({ body, statusCode: 200 });
+		assert.equal(detail.error, 'Unexpected response format', `${JSON.stringify(body)} must be an error`);
+		assert.equal(detail.sessions, undefined);
+	}
+	// A task genuinely without cloud sessions says so, and that *is* a real zero.
+	const empty = toTaskDetailResult({ body: { sessions: [] }, statusCode: 200 });
+	assert.equal(empty.error, undefined);
+	assert.deepEqual(empty.sessions, []);
+});
+
+test('collectAgentSessions: a task timestamped differently in the active and archived slices is uncacheable', async () => {
+	// A task archived between the two requests comes back from both listings with different
+	// timestamps. Keeping the first object is right — it must not be counted twice — but reusing an
+	// aggregate matching that value would ignore the other listing having reported it changed.
+	const task = (updatedAt: string) => ({
+		id: 't1', name: 'Task t1', state: 'completed',
+		updated_at: updatedAt, created_at: '2026-08-01T00:00:00Z',
+		repository: { full_name: 'octo/local-repo' },
+	});
+	const detailed: string[] = [];
+	const cached = [cachedRecordFor('t1', 'octo/local-repo', '2026-08-01T00:00:00Z')];
+	const result = await collectAgentSessions({
+		token: 'token',
+		since: SINCE,
+		workspaceRepos: [{ owner: 'octo', repo: 'local-repo' }],
+		cachedTasks: cached,
+		fetchTaskPage: async ({ page, archived }) => (
+			page === 1 ? { tasks: [task(archived ? '2026-08-02T00:00:00Z' : '2026-08-01T00:00:00Z')] } : { tasks: [] }
+		),
+		fetchAccountTaskPage: async () => ({ tasks: [] }),
+		fetchTaskDetail: async (_owner, _repo, taskId) => { detailed.push(taskId); return { sessions: [makeSession('cloud-model', 4)] }; },
+		fetchAccountTaskDetail: async (taskId) => { detailed.push(taskId); return { sessions: [] }; },
+	});
+	assert.deepEqual(detailed, ['t1'], 'the conflicting timestamp forces a fresh detail fetch');
+	assert.equal(result.totalTasks, 1, 'and the task is still counted exactly once');
+	assert.equal(result.totalCredits, 4);
+});
+
+test('collectAgentSessions: the same task in both slices with one timestamp still hits the cache', async () => {
+	// An unchanged task legitimately appears in both slices. Treating that as a conflict would cost
+	// a detail call for every task that happens to be listed twice.
+	const task = () => ({
+		id: 't1', name: 'Task t1', state: 'completed',
+		updated_at: '2026-08-01T00:00:00Z', created_at: '2026-08-01T00:00:00Z',
+		repository: { full_name: 'octo/local-repo' },
+	});
+	const detailed: string[] = [];
+	const cached = [cachedRecordFor('t1', 'octo/local-repo', '2026-08-01T00:00:00Z')];
+	const result = await collectAgentSessions({
+		token: 'token',
+		since: SINCE,
+		workspaceRepos: [{ owner: 'octo', repo: 'local-repo' }],
+		cachedTasks: cached,
+		fetchTaskPage: async ({ page }) => (page === 1 ? { tasks: [task()] } : { tasks: [] }),
+		fetchAccountTaskPage: async () => ({ tasks: [] }),
+		fetchTaskDetail: async (_owner, _repo, taskId) => { detailed.push(taskId); return { sessions: [makeSession('cloud-model', 4)] }; },
+		fetchAccountTaskDetail: async (taskId) => { detailed.push(taskId); return { sessions: [] }; },
+	});
+	assert.deepEqual(detailed, []);
+	assert.equal(result.totalCredits, 7);
+});
+
+test('collectAgentSessions: an account slice conflict invalidates a task the workspace already claimed', async () => {
+	// The conflicting set was only consulted when *creating* a candidate. A task the workspace
+	// listing already claimed reached contestCandidate with no repo disagreement, and when the
+	// account timestamp it happened to compare against matched, the conflict was lost — so the
+	// cached aggregate was reused even though the other account slice reported a change.
+	const detailed: string[] = [];
+	const cached = [cachedRecordFor('t1', 'octo/local-repo', '2026-08-01T00:00:00Z')];
+	const base = { id: 't1', name: 'Task t1', state: 'completed', created_at: '2026-08-01T00:00:00Z', repository: { full_name: 'octo/local-repo' } };
+	const result = await collectAgentSessions({
+		token: 'token',
+		since: SINCE,
+		workspaceRepos: [{ owner: 'octo', repo: 'local-repo' }],
+		cachedTasks: cached,
+		fetchTaskPage: async ({ page, archived }) => (!archived && page === 1 ? { tasks: [{ ...base, updated_at: '2026-08-01T00:00:00Z' }] } : { tasks: [] }),
+		// The account listing agrees on the active slice but its archived slice does not: the task
+		// was archived between the two requests.
+		fetchAccountTaskPage: async ({ page, archived }) => (
+			page === 1 ? { tasks: [{ ...base, updated_at: archived ? '2026-08-02T00:00:00Z' : '2026-08-01T00:00:00Z' }] } : { tasks: [] }
+		),
+		fetchTaskDetail: async (_owner, _repo, taskId) => { detailed.push(taskId); return { sessions: [makeSession('cloud-model', 4)] }; },
+		fetchAccountTaskDetail: async (taskId) => { detailed.push(taskId); return { sessions: [] }; },
+	});
+	assert.deepEqual(detailed, ['t1'], 'the conflict must reach the existing candidate, not only a new one');
+	assert.equal(result.totalCredits, 4, 'the fresh detail is what counts, not the stale 7 credits');
+});
+
+test('collectAgentSessions: two workspace repos listing the same task make it uncacheable', async () => {
+	// Deduplicating by task ID is what stops one task being counted twice, but it silently threw
+	// away the second repo's attribution and timestamp. Whichever of the two is stale, its cached
+	// aggregate must not be folded in without a fresh detail call — the same rule already applied
+	// to a workspace-vs-account disagreement.
+	const task = (repoFullName: string) => ({
+		id: 't1', name: 'Task t1', state: 'completed',
+		updated_at: '2026-08-01T00:00:00Z', created_at: '2026-08-01T00:00:00Z',
+		repository: { full_name: repoFullName },
+	});
+	const detailed: string[] = [];
+	const cached = [cachedRecordFor('t1', 'octo/repo-a', '2026-08-01T00:00:00Z')];
+	const result = await collectAgentSessions({
+		token: 'token',
+		since: SINCE,
+		workspaceRepos: [{ owner: 'octo', repo: 'repo-a' }, { owner: 'octo', repo: 'repo-b' }],
+		cachedTasks: cached,
+		fetchTaskPage: async ({ repo, page, archived }) => (
+			!archived && page === 1 ? { tasks: [task(`octo/${repo}`)] } : { tasks: [] }
+		),
+		fetchAccountTaskPage: async () => ({ tasks: [] }),
+		fetchTaskDetail: async (_owner, _repo, taskId) => { detailed.push(taskId); return { sessions: [makeSession('cloud-model', 4)] }; },
+		fetchAccountTaskDetail: async (taskId) => { detailed.push(taskId); return { sessions: [] }; },
+	});
+	assert.deepEqual(detailed, ['t1'], 'the contested task must be refetched, not served from cache');
+	assert.equal(result.totalCredits, 4, 'the fresh detail is what counts, not the stale 7 credits');
+});
+
+test('collectAgentSessions: one repo listing a task twice is not a disagreement', async () => {
+	// The same repo returning a task on two pages (or in both the active and archived slices) must
+	// not trip the guard above, or a perfectly ordinary duplicate would cost a detail call.
+	const task = () => ({
+		id: 't1', name: 'Task t1', state: 'completed',
+		updated_at: '2026-08-01T00:00:00Z', created_at: '2026-08-01T00:00:00Z',
+		repository: { full_name: 'octo/repo-a' },
+	});
+	const detailed: string[] = [];
+	const cached = [cachedRecordFor('t1', 'octo/repo-a', '2026-08-01T00:00:00Z')];
+	const result = await collectAgentSessions({
+		token: 'token',
+		since: SINCE,
+		workspaceRepos: [{ owner: 'octo', repo: 'repo-a' }],
+		cachedTasks: cached,
+		fetchTaskPage: async ({ page }) => (page === 1 ? { tasks: [task()] } : { tasks: [] }),
+		fetchAccountTaskPage: async () => ({ tasks: [] }),
+		fetchTaskDetail: async (_owner, _repo, taskId) => { detailed.push(taskId); return { sessions: [makeSession('cloud-model', 4)] }; },
+		fetchAccountTaskDetail: async (taskId) => { detailed.push(taskId); return { sessions: [] }; },
+	});
+	assert.deepEqual(detailed, [], 'the cached aggregate is still valid');
+	assert.equal(result.totalCredits, 7);
+});
+
+test('collectAgentSessions: a task the two listings timestamp differently is refetched, not reused', async () => {
+	// The two listings are fetched moments apart, so a task updated in between reports two
+	// different `updated_at` values. The repo-scoped one keeps the row, but reusing its cached
+	// aggregate would break the contract this cache rests on — the account listing has already
+	// said the task changed, so the cached state is superseded.
+	const task = (updatedAt: string) => ({
+		id: 't1', name: 'Task t1', state: 'completed',
+		updated_at: updatedAt, created_at: '2026-08-01T00:00:00Z',
+		repository: { full_name: 'octo/local-repo' },
+	});
+	const detailed: string[] = [];
+	const cached = [cachedRecordFor('t1', 'octo/local-repo', '2026-08-01T00:00:00Z')];
+	const result = await collectAgentSessions({
+		token: 'token',
+		since: SINCE,
+		workspaceRepos: [{ owner: 'octo', repo: 'local-repo' }],
+		cachedTasks: cached,
+		fetchTaskPage: async ({ page, archived }) => (!archived && page === 1 ? { tasks: [task('2026-08-01T00:00:00Z')] } : { tasks: [] }),
+		fetchAccountTaskPage: async ({ page, archived }) => (!archived && page === 1 ? { tasks: [task('2026-08-02T00:00:00Z')] } : { tasks: [] }),
+		fetchTaskDetail: async (_owner, _repo, taskId) => { detailed.push(taskId); return { sessions: [makeSession('cloud-model', 4)] }; },
+		fetchAccountTaskDetail: async (taskId) => { detailed.push(taskId); return { sessions: [] }; },
+	});
+	assert.deepEqual(detailed, ['t1'], 'a contested timestamp must force a fresh detail fetch');
+	assert.equal(result.totalCredits, 4, 'the fresh detail is what counts, not the stale 7 credits');
+});
+
+test('collectAgentSessions: a task both listings agree on completely is still served from cache', async () => {
+	// The guard above must not fire on agreement, or every task seen by both listings would be
+	// refetched and the cache would save nothing on exactly the tasks it sees twice.
+	const task = () => ({
+		id: 't1', name: 'Task t1', state: 'completed',
+		updated_at: '2026-08-01T00:00:00Z', created_at: '2026-08-01T00:00:00Z',
+		repository: { full_name: 'octo/local-repo' },
+	});
+	const detailed: string[] = [];
+	const cached = [cachedRecordFor('t1', 'octo/local-repo', '2026-08-01T00:00:00Z')];
+	const result = await collectAgentSessions({
+		token: 'token',
+		since: SINCE,
+		workspaceRepos: [{ owner: 'octo', repo: 'local-repo' }],
+		cachedTasks: cached,
+		fetchTaskPage: async ({ page, archived }) => (!archived && page === 1 ? { tasks: [task()] } : { tasks: [] }),
+		fetchAccountTaskPage: async ({ page, archived }) => (!archived && page === 1 ? { tasks: [task()] } : { tasks: [] }),
+		fetchTaskDetail: async (_owner, _repo, taskId) => { detailed.push(taskId); return { sessions: [makeSession('cloud-model', 4)] }; },
+		fetchAccountTaskDetail: async (taskId) => { detailed.push(taskId); return { sessions: [] }; },
+	});
+	assert.deepEqual(detailed, [], 'no detail call — the cached aggregate is still valid');
+	assert.equal(result.totalCredits, 7, 'the cached 7 credits are reused');
+});
+
+test('collectAgentSessions: a task both listings disagree about is refetched, not reused', async () => {
+	// The repo-scoped listing puts the task in `local-repo`; the account listing resolves it to
+	// `moved-repo`. The cached aggregate under the contested key can no longer be trusted to
+	// describe current usage, so it must not be folded into either row.
+	const task = (repoFullName: string) => ({
+		id: 't1', name: 'Task t1', state: 'completed',
+		updated_at: '2026-08-01T00:00:00Z', created_at: '2026-08-01T00:00:00Z',
+		repository: { full_name: repoFullName },
+	});
+	const detailed: string[] = [];
+	const cached = [cachedRecordFor('t1', 'octo/local-repo', '2026-08-01T00:00:00Z')];
+	const result = await collectAgentSessions({
+		token: 'token',
+		since: SINCE,
+		workspaceRepos: [{ owner: 'octo', repo: 'local-repo' }],
+		cachedTasks: cached,
+		fetchTaskPage: async ({ page, archived }) => (!archived && page === 1 ? { tasks: [task('octo/local-repo')] } : { tasks: [] }),
+		fetchAccountTaskPage: async ({ page, archived }) => (!archived && page === 1 ? { tasks: [task('octo/moved-repo')] } : { tasks: [] }),
+		fetchTaskDetail: async (_owner, _repo, taskId) => { detailed.push(taskId); return { sessions: [makeSession('cloud-model', 4)] }; },
+		fetchAccountTaskDetail: async (taskId) => { detailed.push(taskId); return { sessions: [] }; },
+	});
+	assert.deepEqual(detailed, ['t1'], 'the contested task must be refetched, not served from cache');
+	assert.equal(result.totalCredits, 4, 'the fresh detail is what counts, not the stale 7 credits');
+	// An uncacheable candidate is never persisted, so the contested aggregate cannot be reused later.
+	assert.deepEqual(result.taskRecords, []);
 });

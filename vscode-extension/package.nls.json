@@ -1,7 +1,6 @@
 {
   "displayName": "AI Engineering Fluency",
   "description": "Track your AI Engineering Fluency — daily and monthly token usage, cost estimates, and AI fluency insights in VS Code.",
-
   "command.refresh.title": "Refresh Token Usage",
   "command.showDetails.title": "Show Token Usage Details",
   "command.showChart.title": "Show Token Usage Chart",
@@ -31,13 +30,10 @@
   "command.authenticateGitHub.title": "Authenticate with GitHub",
   "command.signOutGitHub.title": "Disconnect GitHub",
   "command.checkWindsurfStatus.title": "Check Windsurf Status",
-
   "config.title": "AI Engineering Fluency",
-
   "config.display.compactNumbers.description": "Show token counts in compact format using K/M suffixes (e.g. 1.5K, 1.2M). When disabled, full numbers are shown (e.g. 1,500, 1,200,000).",
   "config.display.use24HourTime.description": "Show times in 24-hour format (e.g. 14:30). When disabled, 12-hour AM/PM format is used (e.g. 2:30 PM).",
   "config.display.hideAutomaticToolCalls.description": "In the Tool Usage view, hide tools marked \"auto\" (tools Copilot calls automatically, e.g. file reads and searches) so purposeful/intentional tool calls stand out. Disable to show automatic tool calls again.",
-
   "config.display.statusBar.showTokens.description": "Controls which token counts are shown in the status bar. Token counts are estimated from session log files.",
   "config.display.statusBar.showTokens.enum.none": "Do not show token counts in the status bar",
   "config.display.statusBar.showTokens.enum.today": "Show today's token count only",
@@ -45,7 +41,6 @@
   "config.display.statusBar.showTokens.enum.currentMonth": "Show the current calendar month's token count only",
   "config.display.statusBar.showTokens.enum.both": "Show both today's and last 30 days' token counts (default)",
   "config.display.statusBar.showTokens.enum.todayAndCurrentMonth": "Show both today's and current calendar month's token counts",
-
   "config.display.statusBar.showCost.description": "Controls which estimated costs (in USD) are shown in the status bar. Cost is estimated using GitHub Copilot AI-Credit rates (Usage Based Billing).",
   "config.display.statusBar.showCost.enum.none": "Do not show estimated cost in the status bar (default)",
   "config.display.statusBar.showCost.enum.today": "Show today's estimated cost only",
@@ -53,9 +48,7 @@
   "config.display.statusBar.showCost.enum.currentMonth": "Show the current calendar month's estimated cost only",
   "config.display.statusBar.showCost.enum.both": "Show both today's and last 30 days' estimated costs",
   "config.display.statusBar.showCost.enum.todayAndCurrentMonth": "Show both today's and current calendar month's estimated costs",
-
   "config.display.statusBar.monthlyBudget.description": "Monthly AI spend budget in USD. When set above 0, the status bar will change color as you approach the limit: yellow at 75%, orange at 90%, red at 100% or over. Set to 0 to disable budget coloring. Cost is estimated using GitHub Copilot AI-Credit rates.",
-
   "config.backend.enabled.description": "Enable backend sync to an Azure-backed store (default: Azure Storage Tables).",
   "config.backend.backend.description": "Backend sync backend. Supports Azure Storage Tables and self-hosted sharing server.",
   "config.backend.backend.enum.storageTables": "Azure Storage Tables (requires Azure subscription + RBAC setup)",
@@ -94,7 +87,6 @@
   "config.backend.blobCompressFiles.description": "Compress session log files with gzip before uploading to blob storage to reduce storage costs and bandwidth.",
   "config.backend.sharingServer.enabled.description": "Enable syncing to the self-hosted Team Server backend. Can run simultaneously with Azure Storage (backend.enabled). Requires backend.sharingServer.endpointUrl to be configured.",
   "config.backend.sharingServer.endpointUrl.description": "Base URL of the self-hosted sharing server (e.g. https://copilot-sharing.example.com). Authentication is handled automatically via your existing GitHub session — no API key needed.",
-
   "config.sampleDataDirectory.description": "Screenshot/demo mode: when set to a folder path, overrides all session file scanning and returns only .json/.jsonl files from this directory. Leave empty for normal operation.",
   "config.suppressedUnknownTools.description": "List of tool names to suppress from the 'Unknown Tools Found' section in the Usage Analysis dashboard. Useful for tools you are testing that don't yet have friendly display names.",
   "config.curation.timeWindowDays.description": "Number of days to look back when determining which tools are unused for the Tool Curation analysis.",
@@ -112,7 +104,6 @@
   "config.copilotTokenTracker.windsurf.enabled.description": "Enable Windsurf session tracking when running inside Windsurf editor.",
   "config.copilotTokenTracker.windsurf.includeCascadeDetails.description": "Include detailed Cascade trajectory information in Windsurf session analysis.",
   "config.copilotTokenTracker.windsurf.cacheCredentials.description": "Cache Windsurf API credentials to reduce authentication overhead. Credentials are automatically invalidated when Windsurf restarts.",
-
   "statusBar.name": "AI Engineering Fluency",
   "statusBar.nameInsights": "AI Engineering Fluency — Insights",
   "statusBar.tooltip": "AI Engineering Fluency — daily and 30-day token usage - Click to open details",
@@ -201,7 +192,6 @@
   "htmlTitleLoading": "AI Engineering Fluency — Loading",
   "htmlTitle": "AI Engineering Fluency",
   "htmlTitleChart": "AI Engineering Fluency — Chart",
-
   "button.refresh": "Refresh",
   "button.details": "Details",
   "button.chart": "Chart",
@@ -359,21 +349,17 @@
   "onboarding.welcome.learnMore": "Learn More",
   "onboarding.diagnostics.message": "AI Engineering Fluency: session files could not be found. Open Diagnostics to investigate.",
   "onboarding.diagnostics.openDiagnostics": "Open Diagnostics",
-
   "news.fluencyScoreBanner.message": "🎯 New: AI Engineering Fluency Score dashboard — track how deeply your team uses GitHub Copilot across 6 categories and 4 stages.",
   "news.fluencyScoreBanner.open": "Open Fluency Score",
   "news.fluencyScoreBanner.dismiss": "Dismiss",
   "news.efficiencyTabBanner.message": "⚡ New: Efficiency view — see whether you're working more efficiently with AI over time.",
   "news.efficiencyTabBanner.open": "Open Efficiency",
   "news.efficiencyTabBanner.dismiss": "Dismiss",
-
   "insights.enabled": "Enable personalized AI usage insights and nudges in the Usage Analysis dashboard and status bar.",
   "insights.toastsEnabled": "Show occasional toast notifications for high-value insights",
   "insights.cadenceDays": "Minimum number of days between insight toast notifications",
-
   "usage.copyFailed": "Could not copy the path to the clipboard.",
   "usage.copyFailed.retry": "Copy Again",
-
   "logviewer.summary.interactions": "Interactions",
   "logviewer.summary.editorMode": "Editor Mode",
   "logviewer.summary.estimatedTokens": "Estimated Tokens",
@@ -406,7 +392,6 @@
   "logviewer.summary.timeline": "Timeline",
   "logviewer.summary.started": "Started",
   "logviewer.summary.lastActivity": "Last activity",
-
   "efficiency.attribution.costEffect": "Estimated cost effect",
   "efficiency.attribution.costEffectLine": "Estimated cost effect: {0}",
   "efficiency.attribution.change": "Change",
@@ -551,7 +536,6 @@
   "serverMemories.draftRowChanged": "Not drafting a prompt: the repository memories changed since this list was shown. The section has been refreshed.",
   "serverMemories.draftNoLiveSource": "Not drafting a prompt: none of this memory's cited files exists in this checkout any more. The section will refresh.",
   "serverMemories.openRefused": "Not opening {0}: it is no longer a cited file inside this checkout.",
-
   "insight.shared.listSeparator": ", ",
   "insight.shared.and": " and ",
   "insight.shared.quoted": "\"{0}\"",
@@ -731,7 +715,6 @@
   "insight.repeatedTaskSkillCandidate.more.other": "{0} more repeated tasks found — see Tools & Integrations → Skill Suggestions.",
   "insight.repeatedTaskSkillCandidate.seeDetails": "See Tools & Integrations → Skill Suggestions for details.",
   "insight.repeatedTaskSkillCandidate.body": "You started {0} sessions with a similar prompt: \"{1}\". Turning a repeated task like this into a skill or prompt file saves you from re-explaining it and makes the outcome more consistent. {2}",
-
   "//": "── Personalized Insights catalog (insightsEngine.ts) — see issue #2081 ──",
   "whatsNew.release.0.19.1.headline": "The Tools & Integrations tab now shows how reliable and how slow each tool is, which MCP servers fail, and a cost-vs-speed map of your built-in, subagent and skill tools.",
   "whatsNew.feature.usage.tool-execution-stats.title": "Tool reliability, latency and MCP health",
@@ -978,7 +961,6 @@
   "usage.worktreeCleanup.progress": "{0} / {1} processed",
   "usage.worktreeCleanup.progressWaiting": "{0} / {1} processed · {2} waiting in the queue",
   "usage.worktreeCleanup.revealMissing": "\"{0}\" no longer exists on disk.",
-
   "efficiency.detail.up": "up {0}%",
   "efficiency.detail.down": "down {0}%",
   "efficiency.detail.flat": "no change",
@@ -1036,5 +1018,24 @@
   "efficiency.context.viewTrend": "View trend",
   "efficiency.context.viewTrendAria": "Open the trend chart for {0}",
   "efficiency.context.viewModel": "View in Models",
-  "efficiency.context.viewModelAria": "Open {0} in the Models tab"
+  "efficiency.context.viewModelAria": "Open {0} in the Models tab",
+  "usage.githubActivity.refreshNow": "🔄 Refresh now",
+  "usage.githubActivity.refreshNowTooltip": "Revalidate the cached GitHub data now instead of waiting for the next hourly refresh",
+  "usage.githubActivity.notFetchedTitle": "Not fetched yet.",
+  "usage.githubActivity.notFetchedBody": "The snapshot is refreshed hourly by whichever VS Code window takes it on — it will appear here once that first refresh completes.",
+  "usage.githubActivity.revalidatingTitle": "Revalidating.",
+  "usage.githubActivity.revalidatingBody": "Showing the cached snapshot from {0} while it is refreshed.",
+  "usage.githubActivity.updated": "🕒 Updated {0} · next refresh after {1}.",
+  "usage.githubActivity.unknownNextRefresh": "unknown",
+  "usage.githubActivity.cachePolicy": "Automatically revalidated at most once an hour, by a single VS Code window, to keep GitHub API usage low — Refresh now asks for one straight away.",
+  "usage.githubActivity.partialTitle": "Partial data — the figures below are a lower bound.",
+  "usage.githubActivity.retryHint": "Use Refresh now above to retry — details are in the extension Output channel.",
+  "usage.githubActivity.partialRepoPrs": "At least one repository listing did not complete (an error, a timeout, or the page cap), so some pull requests in the window are not counted.",
+  "usage.githubActivity.partialAgentTasks": "Some tasks were not detailed this pass — the task-detail budget was exhausted, or a task listing did not complete.",
+  "usage.githubActivity.tasksScannedTooltip": "Showing {0} of {1} tasks — the rest could not be counted this pass, so these figures are a lower bound",
+  "usage.githubActivity.tasksScannedLabel": "({0}/{1} tasks scanned)",
+  "usage.githubActivity.lowerBoundNote": "Note: some figures could not be counted this pass — a listing did not complete, a detail call failed, or the detail budget ran out — so these totals are lower bounds.",
+  "usage.githubActivity.accountTasksIncomplete": "The account-wide task listing stopped early ({0}) — tasks outside your workspace repositories may be missing.",
+  "usage.githubActivity.accountTasksUnavailable": "Account-wide tasks unavailable ({0}) — only workspace repositories are shown.",
+  "usage.githubActivity.accountTasksUnknownReason": "the /agents/tasks endpoint could not be read"
 }

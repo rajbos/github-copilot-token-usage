@@ -547,10 +547,13 @@ export class CacheManager {
 	 * Held by the single window that refreshes the hourly Copilot cloud-agent snapshot from the
 	 * GitHub API, so the other windows never duplicate those API calls. Kept separate from the
 	 * cache-refresh leader lock because the two run on different schedules.
+	 *
+	 * Pass the caller's GitHub-activity scope (see `githubActivityCache.ts`): the snapshot this lock
+	 * protects is per account and host, so a mode-only lock would let a window signed in as one
+	 * account block a window signed in as another from refreshing its own, independent snapshot.
 	 */
-	getAgentTasksLockPath(): string {
-		const cacheId = this.getCacheIdentifier();
-		return path.join(this.context.globalStorageUri.fsPath, `agenttasks_${cacheId}.lock`);
+	getAgentTasksLockPath(activityScope?: string): string {
+		return path.join(this.context.globalStorageUri.fsPath, `agenttasks_${activityScope ?? this.getCacheIdentifier()}.lock`);
 	}
 
 	/**
@@ -559,10 +562,11 @@ export class CacheManager {
 	 * GitHub API, so the other windows never duplicate those API calls. Kept separate from the
 	 * cache-refresh leader lock and the agent-tasks lock because all three run on independent
 	 * schedules and cost independent sets of GitHub API calls.
+	 *
+	 * Scoped per account/host like the agent-tasks lock — see `getAgentTasksLockPath()`.
 	 */
-	getRepoPrLockPath(): string {
-		const cacheId = this.getCacheIdentifier();
-		return path.join(this.context.globalStorageUri.fsPath, `repoprs_${cacheId}.lock`);
+	getRepoPrLockPath(activityScope?: string): string {
+		return path.join(this.context.globalStorageUri.fsPath, `repoprs_${activityScope ?? this.getCacheIdentifier()}.lock`);
 	}
 
 	/**
@@ -579,34 +583,34 @@ export class CacheManager {
 	 * Try to become the window that refreshes the agent-tasks snapshot. Returns false when another
 	 * window is already refreshing it, in which case this window serves the shared snapshot.
 	 */
-	async acquireAgentTasksLock(): Promise<boolean> {
-		return this.acquireLock(this.getAgentTasksLockPath());
+	async acquireAgentTasksLock(activityScope?: string): Promise<boolean> {
+		return this.acquireLock(this.getAgentTasksLockPath(activityScope));
 	}
 
 	/** Release the agent-tasks refresh lock, but only if we own it. */
-	async releaseAgentTasksLock(): Promise<void> {
-		return this.releaseLock(this.getAgentTasksLockPath());
+	async releaseAgentTasksLock(activityScope?: string): Promise<void> {
+		return this.releaseLock(this.getAgentTasksLockPath(activityScope));
 	}
 
 	/**
 	 * Try to become the window that refreshes the repository-PRs snapshot. Returns false when
 	 * another window is already refreshing it, in which case this window serves the shared snapshot.
 	 */
-	async acquireRepoPrLock(): Promise<boolean> {
-		return this.acquireLock(this.getRepoPrLockPath());
+	async acquireRepoPrLock(activityScope?: string): Promise<boolean> {
+		return this.acquireLock(this.getRepoPrLockPath(activityScope));
 	}
 
 	/** Release the repository-PRs refresh lock, but only if we own it. */
-	async releaseRepoPrLock(): Promise<void> {
-		return this.releaseLock(this.getRepoPrLockPath());
+	async releaseRepoPrLock(activityScope?: string): Promise<void> {
+		return this.releaseLock(this.getRepoPrLockPath(activityScope));
 	}
 
 	/**
 	 * Renew (heartbeat) the repository-PRs lock so a slow GitHub API pass is not mistaken for a
 	 * stale lock by another window, which would let it duplicate the same API calls.
 	 */
-	async renewRepoPrLock(): Promise<boolean> {
-		return this.renewLock(this.getRepoPrLockPath());
+	async renewRepoPrLock(activityScope?: string): Promise<boolean> {
+		return this.renewLock(this.getRepoPrLockPath(activityScope));
 	}
 
 	/**
@@ -631,8 +635,8 @@ export class CacheManager {
 	 * Renew (heartbeat) the agent-tasks lock so a slow GitHub API pass is not mistaken for a stale
 	 * lock by another window, which would let it duplicate the same API calls.
 	 */
-	async renewAgentTasksLock(): Promise<boolean> {
-		return this.renewLock(this.getAgentTasksLockPath());
+	async renewAgentTasksLock(activityScope?: string): Promise<boolean> {
+		return this.renewLock(this.getAgentTasksLockPath(activityScope));
 	}
 
 	/** Refresh a lock file's timestamp, but only while this window still owns it. */

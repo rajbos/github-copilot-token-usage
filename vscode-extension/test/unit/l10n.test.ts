@@ -2142,3 +2142,87 @@ test('l10n: efficiency Skills tab label resolves in English and zh-cn', () => {
 		mock.setLanguage('en');
 	}
 });
+
+// Usage view — the GitHub activity freshness banner shared by the Repository PRs and Cloud Agent
+// tabs. These are rendered webview-side through localize()/localizeFormat(), so a missing or
+// mistranslated key silently shows English to zh-CN users instead of failing anywhere.
+test('l10n: GitHub activity freshness banner labels resolve in English', () => {
+	const expected: Record<string, string> = {
+		'usage.githubActivity.refreshNow': '🔄 Refresh now',
+		'usage.githubActivity.refreshNowTooltip': 'Revalidate the cached GitHub data now instead of waiting for the next hourly refresh',
+		'usage.githubActivity.notFetchedTitle': 'Not fetched yet.',
+		'usage.githubActivity.notFetchedBody': 'The snapshot is refreshed hourly by whichever VS Code window takes it on — it will appear here once that first refresh completes.',
+		'usage.githubActivity.revalidatingTitle': 'Revalidating.',
+		'usage.githubActivity.revalidatingBody': 'Showing the cached snapshot from {0} while it is refreshed.',
+		'usage.githubActivity.updated': '🕒 Updated {0} · next refresh after {1}.',
+		'usage.githubActivity.unknownNextRefresh': 'unknown',
+		'usage.githubActivity.cachePolicy': 'Automatically revalidated at most once an hour, by a single VS Code window, to keep GitHub API usage low — Refresh now asks for one straight away.',
+		'usage.githubActivity.partialTitle': 'Partial data — the figures below are a lower bound.',
+		'usage.githubActivity.retryHint': 'Use Refresh now above to retry — details are in the extension Output channel.',
+		'usage.githubActivity.partialRepoPrs': 'At least one repository listing did not complete (an error, a timeout, or the page cap), so some pull requests in the window are not counted.',
+		'usage.githubActivity.partialAgentTasks': 'Some tasks were not detailed this pass — the task-detail budget was exhausted, or a task listing did not complete.',
+		'usage.githubActivity.tasksScannedTooltip': 'Showing {0} of {1} tasks — the rest could not be counted this pass, so these figures are a lower bound',
+		'usage.githubActivity.tasksScannedLabel': '({0}/{1} tasks scanned)',
+		'usage.githubActivity.lowerBoundNote': 'Note: some figures could not be counted this pass — a listing did not complete, a detail call failed, or the detail budget ran out — so these totals are lower bounds.',
+		'usage.githubActivity.accountTasksIncomplete': 'The account-wide task listing stopped early ({0}) — tasks outside your workspace repositories may be missing.',
+		'usage.githubActivity.accountTasksUnavailable': 'Account-wide tasks unavailable ({0}) — only workspace repositories are shown.',
+		'usage.githubActivity.accountTasksUnknownReason': 'the /agents/tasks endpoint could not be read',
+	};
+	for (const [key, english] of Object.entries(expected)) {
+		assert.equal(t(key), english, `English value for ${key}`);
+	}
+});
+
+test('l10n: GitHub activity freshness banner labels resolve in zh-cn', () => {
+	mock.setLanguage('zh-cn');
+	try {
+		const expected: Record<string, string> = {
+			'usage.githubActivity.refreshNow': '🔄 立即刷新',
+			'usage.githubActivity.refreshNowTooltip': '立即重新校验已缓存的 GitHub 数据，无需等待下一次每小时刷新',
+			'usage.githubActivity.notFetchedTitle': '尚未获取。',
+			'usage.githubActivity.notFetchedBody': '快照由取得刷新权的任一 VS Code 窗口每小时刷新一次 — 首次刷新完成后会显示在这里。',
+			'usage.githubActivity.revalidatingTitle': '正在重新校验。',
+			'usage.githubActivity.revalidatingBody': '刷新期间显示 {0} 的缓存快照。',
+			'usage.githubActivity.updated': '🕒 更新于 {0} · 下次刷新在 {1} 之后。',
+			'usage.githubActivity.unknownNextRefresh': '未知',
+			'usage.githubActivity.cachePolicy': '由单个 VS Code 窗口最多每小时自动重新校验一次，以降低 GitHub API 用量 —「立即刷新」会马上请求一次。',
+			'usage.githubActivity.partialTitle': '数据不完整 — 下方数字为下限值。',
+			'usage.githubActivity.retryHint': '使用上方的「立即刷新」重试 — 详细信息见扩展的输出通道。',
+			'usage.githubActivity.partialRepoPrs': '至少有一个仓库的列表未能完整枚举（出错、超时或达到分页上限），因此时间窗口内的部分拉取请求未被计入。',
+			'usage.githubActivity.partialAgentTasks': '本次未获取全部任务的明细 — 任务明细预算已用尽，或任务列表未能完整枚举。',
+			'usage.githubActivity.tasksScannedTooltip': '显示 {1} 个任务中的 {0} 个 — 其余任务本次无法统计，因此以下数字为下限',
+			'usage.githubActivity.tasksScannedLabel': '(已扫描 {0}/{1} 个任务)',
+			'usage.githubActivity.lowerBoundNote': '注意：本次有部分数据无法统计 — 列表未能完整枚举、明细调用失败，或明细预算已用尽 — 因此以下合计为下限值。',
+			'usage.githubActivity.accountTasksIncomplete': '账户级任务列表提前中断（{0}）— 工作区仓库之外的任务可能缺失。',
+			'usage.githubActivity.accountTasksUnavailable': '无法获取账户级任务（{0}）— 仅显示工作区仓库。',
+			'usage.githubActivity.accountTasksUnknownReason': '无法读取 /agents/tasks 接口',
+		};
+		for (const [key, chinese] of Object.entries(expected)) {
+			assert.equal(t(key), chinese, `zh-cn value for ${key}`);
+		}
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
+test('l10n: the banner\'s placeholder templates keep their {0}/{1} slots in both languages', () => {
+	// localizeFormat() fills these webview-side; a translation that drops a slot would silently
+	// swallow the snapshot age or the next-refresh time.
+	for (const key of ['usage.githubActivity.revalidatingBody', 'usage.githubActivity.updated', 'usage.githubActivity.tasksScannedTooltip', 'usage.githubActivity.tasksScannedLabel', 'usage.githubActivity.accountTasksIncomplete', 'usage.githubActivity.accountTasksUnavailable']) {
+		assert.match(t(key), /\{0\}/, `English ${key} keeps its {0} slot`);
+	}
+	for (const key of ['usage.githubActivity.updated', 'usage.githubActivity.tasksScannedTooltip', 'usage.githubActivity.tasksScannedLabel']) {
+		assert.match(t(key), /\{1\}/, `English ${key} keeps its {1} slot`);
+	}
+	mock.setLanguage('zh-cn');
+	try {
+		for (const key of ['usage.githubActivity.revalidatingBody', 'usage.githubActivity.updated', 'usage.githubActivity.tasksScannedTooltip', 'usage.githubActivity.tasksScannedLabel', 'usage.githubActivity.accountTasksIncomplete', 'usage.githubActivity.accountTasksUnavailable']) {
+			assert.match(t(key), /\{0\}/, `zh-cn ${key} keeps its {0} slot`);
+		}
+		for (const key of ['usage.githubActivity.updated', 'usage.githubActivity.tasksScannedTooltip', 'usage.githubActivity.tasksScannedLabel']) {
+			assert.match(t(key), /\{1\}/, `zh-cn ${key} keeps its {1} slot`);
+		}
+	} finally {
+		mock.setLanguage('en');
+	}
+});

@@ -1,7 +1,6 @@
 {
   "displayName": "AI 工程熟练度",
   "description": "在 VS Code 中跟踪您的 AI 工程熟练度——每日和每月令牌使用量、成本估算以及 AI 熟练度洞察。",
-
   "command.refresh.title": "刷新令牌使用量",
   "command.showDetails.title": "显示令牌使用详情",
   "command.showChart.title": "显示令牌使用图表",
@@ -31,13 +30,10 @@
   "command.authenticateGitHub.title": "使用 GitHub 认证",
   "command.signOutGitHub.title": "断开 GitHub 连接",
   "command.checkWindsurfStatus.title": "检查 Windsurf 状态",
-
   "config.title": "AI 工程熟练度",
-
   "config.display.compactNumbers.description": "使用 K/M 后缀显示令牌计数的紧凑格式（例如 1.5K、1.2M）。禁用后，将显示完整数字（例如 1,500、1,200,000）。",
   "config.display.use24HourTime.description": "使用 24 小时格式显示时间（例如 14:30）。禁用后，将使用 12 小时 AM/PM 格式（例如 2:30 PM）。",
   "config.display.hideAutomaticToolCalls.description": "在工具使用视图中，隐藏标记为“auto”的工具（Copilot 自动调用的工具，例如文件读取和搜索），以便突出显示有意图的工具调用。禁用后将再次显示自动工具调用。",
-
   "config.display.statusBar.showTokens.description": "控制状态栏中显示哪些令牌计数。令牌计数是从会话日志文件估算的。",
   "config.display.statusBar.showTokens.enum.none": "不在状态栏中显示令牌计数",
   "config.display.statusBar.showTokens.enum.today": "仅显示今日令牌计数",
@@ -45,7 +41,6 @@
   "config.display.statusBar.showTokens.enum.currentMonth": "仅显示当前日历月的令牌计数",
   "config.display.statusBar.showTokens.enum.both": "显示今日和过去 30 天的令牌计数（默认）",
   "config.display.statusBar.showTokens.enum.todayAndCurrentMonth": "显示今日和当前日历月的令牌计数",
-
   "config.display.statusBar.showCost.description": "控制状态栏中显示哪些估算成本（USD）。成本估算使用 GitHub Copilot AI 积分费率（使用量计费）。",
   "config.display.statusBar.showCost.enum.none": "不在状态栏中显示估算成本（默认）",
   "config.display.statusBar.showCost.enum.today": "仅显示今日估算成本",
@@ -53,9 +48,7 @@
   "config.display.statusBar.showCost.enum.currentMonth": "仅显示当前日历月的估算成本",
   "config.display.statusBar.showCost.enum.both": "显示今日和过去 30 天的估算成本",
   "config.display.statusBar.showCost.enum.todayAndCurrentMonth": "显示今日和当前日历月的估算成本",
-
   "config.display.statusBar.monthlyBudget.description": "每月 AI 支出预算（USD）。设置大于 0 时，状态栏颜色会随着接近限额而变化：75% 时为黄色，90% 时为橙色，100% 或超过时为红色。设置为 0 可禁用预算着色。成本估算使用 GitHub Copilot AI 积分费率。",
-
   "config.backend.enabled.description": "启用到 Azure 支持的存储的后端同步（默认：Azure 存储表）。",
   "config.backend.backend.description": "后端同步后端。支持 Azure 存储表和自托管共享服务器。",
   "config.backend.backend.enum.storageTables": "Azure 存储表（需要 Azure 订阅 + RBAC 设置）",
@@ -94,7 +87,6 @@
   "config.backend.blobCompressFiles.description": "在上传到 Blob 存储之前，使用 gzip 压缩会话日志文件，以减少存储成本和带宽。",
   "config.backend.sharingServer.enabled.description": "启用到自托管团队服务器后端的同步。可以与 Azure 存储（backend.enabled）同时运行。需要配置 backend.sharingServer.endpointUrl。",
   "config.backend.sharingServer.endpointUrl.description": "自托管共享服务器的基础 URL（例如 https://copilot-sharing.example.com）。身份验证会通过现有 GitHub 会话自动处理——无需 API 密钥。",
-
   "config.sampleDataDirectory.description": "截图/演示模式：设置为文件夹路径时，将覆盖所有会话文件扫描，仅返回该目录中的 .json/.jsonl 文件。留空即可正常操作。",
   "config.suppressedUnknownTools.description": "要从使用分析仪表板中的“发现未知工具”部分隐藏的工具名称列表。对于您正在测试且尚无友好显示名称的工具很有用。",
   "config.curation.timeWindowDays.description": "确定工具未使用时回顾的天数，用于工具管理分析。",
@@ -112,7 +104,6 @@
   "config.copilotTokenTracker.windsurf.enabled.description": "在 Windsurf 编辑器内运行时启用 Windsurf 会话跟踪。",
   "config.copilotTokenTracker.windsurf.includeCascadeDetails.description": "在 Windsurf 会话分析中包含详细的 Cascade 轨迹信息。",
   "config.copilotTokenTracker.windsurf.cacheCredentials.description": "缓存 Windsurf API 凭据以减少身份验证开销。Windsurf 重新启动时凭据会自动失效。",
-
   "statusBar.name": "AI 工程熟练度",
   "statusBar.nameInsights": "AI 工程熟练度 —— 洞察",
   "statusBar.tooltip": "AI 工程熟练度 —— 每日和 30 天令牌使用量 - 单击打开详情",
@@ -201,7 +192,6 @@
   "htmlTitleLoading": "AI 工程熟练度 —— 正在加载",
   "htmlTitle": "AI 工程熟练度",
   "htmlTitleChart": "AI 工程熟练度 —— 图表",
-
   "button.refresh": "刷新",
   "button.details": "详情",
   "button.chart": "图表",
@@ -234,7 +224,6 @@
   "worktree.forceDelete": "强制删除",
   "worktree.submoduleForcePrompt": "“{0}”包含已初始化的子模块，Git 无法在不强制执行的情况下删除它。",
   "worktree.submoduleForceDetail": "强制删除将永久移除此工作副本。工作树或其子模块中未提交或未推送的更改可能会丢失。",
-
   "nav.btnRefresh": "刷新",
   "nav.btnDetails": "详情",
   "nav.btnChart": "图表",
@@ -408,27 +397,22 @@
   "efficiency.modelMix.shift": "变化",
   "efficiency.modelMix.shiftPoints": "{0} 个百分点",
   "efficiency.modelMix.canonicalId": "模型 ID：{0}",
-
   "onboarding.welcome.message": "AI 工程熟练度跟踪您的 GitHub Copilot 使用情况——令牌计数、成本估算以及基于您与 AI 工具交互方式的熟练度评分。",
   "onboarding.welcome.openFluencyScore": "打开熟练度评分",
   "onboarding.welcome.learnMore": "了解更多",
   "onboarding.diagnostics.message": "AI 工程熟练度：无法找到会话文件。打开诊断进行调查。",
   "onboarding.diagnostics.openDiagnostics": "打开诊断",
-
   "news.fluencyScoreBanner.message": "🎯 新功能：AI 工程熟练度评分仪表板——跟踪您的团队在 6 个类别和 4 个阶段中对 GitHub Copilot 的深度使用情况。",
   "news.fluencyScoreBanner.open": "打开熟练度评分",
   "news.fluencyScoreBanner.dismiss": "关闭",
   "news.efficiencyTabBanner.message": "⚡ 新功能：效率视图——查看您是否随时间更高效地使用 AI。",
   "news.efficiencyTabBanner.open": "打开效率",
   "news.efficiencyTabBanner.dismiss": "关闭",
-
   "insights.enabled": "在使用分析仪表板和状态栏中启用个性化 AI 使用洞察和提醒。",
   "insights.toastsEnabled": "显示偶尔的高价值洞察通知",
   "insights.cadenceDays": "洞察通知之间的最少天数",
-
   "usage.copyFailed": "无法将路径复制到剪贴板。",
   "usage.copyFailed.retry": "重新复制",
-
   "logviewer.summary.interactions": "交互次数",
   "logviewer.summary.editorMode": "编辑器模式",
   "logviewer.summary.estimatedTokens": "预计令牌数",
@@ -461,7 +445,6 @@
   "logviewer.summary.timeline": "时间线",
   "logviewer.summary.started": "开始",
   "logviewer.summary.lastActivity": "最后活动",
-
   "efficiency.attribution.costEffect": "预计成本影响",
   "efficiency.attribution.costEffectLine": "预计成本影响：{0}",
   "efficiency.attribution.change": "变化",
@@ -606,7 +589,6 @@
   "serverMemories.draftRowChanged": "未起草提示：自显示此列表以来仓库记忆已更改。该板块已刷新。",
   "serverMemories.draftNoLiveSource": "未起草提示：此记忆引用的文件在此检出中均已不存在。该板块将刷新。",
   "serverMemories.openRefused": "未打开 {0}：它已不再是此检出中被引用的文件。",
-
   "insight.shared.listSeparator": "、",
   "insight.shared.and": "，并且",
   "insight.shared.quoted": "“{0}”",
@@ -786,7 +768,6 @@
   "insight.repeatedTaskSkillCandidate.more.other": "另外还发现 {0} 个重复任务——请查看工具与集成 → 技能建议。",
   "insight.repeatedTaskSkillCandidate.seeDetails": "详情请查看工具与集成 → 技能建议。",
   "insight.repeatedTaskSkillCandidate.body": "你用相似的提示开启了 {0} 个会话：“{1}”。把这类重复任务做成技能或提示文件，可以省去反复解释，并让结果更加一致。{2}",
-
   "//": "── Personalized Insights catalog (insightsEngine.ts) — see issue #2081 ──",
   "whatsNew.release.0.19.1.headline": "工具与集成标签页现在可以显示每个工具的可靠性和速度、哪些 MCP 服务器会失败，以及内置、子代理与技能工具的成本与速度图。",
   "whatsNew.feature.usage.tool-execution-stats.title": "工具可靠性、延迟与 MCP 健康度",
@@ -980,7 +961,6 @@
   "usage.worktreeCleanup.progress": "已处理 {0} / {1}",
   "usage.worktreeCleanup.progressWaiting": "已处理 {0} / {1} · 队列中还有 {2} 个等待",
   "usage.worktreeCleanup.revealMissing": "“{0}”在磁盘上已不存在。",
-
   "efficiency.detail.up": "上升 {0}%",
   "efficiency.detail.down": "下降 {0}%",
   "efficiency.detail.flat": "无变化",
@@ -1038,5 +1018,24 @@
   "efficiency.context.viewTrend": "查看趋势",
   "efficiency.context.viewTrendAria": "打开 {0} 的趋势图",
   "efficiency.context.viewModel": "在模型中查看",
-  "efficiency.context.viewModelAria": "在“模型”标签页中打开 {0}"
+  "efficiency.context.viewModelAria": "在“模型”标签页中打开 {0}",
+  "usage.githubActivity.refreshNow": "🔄 立即刷新",
+  "usage.githubActivity.refreshNowTooltip": "立即重新校验已缓存的 GitHub 数据，无需等待下一次每小时刷新",
+  "usage.githubActivity.notFetchedTitle": "尚未获取。",
+  "usage.githubActivity.notFetchedBody": "快照由取得刷新权的任一 VS Code 窗口每小时刷新一次 — 首次刷新完成后会显示在这里。",
+  "usage.githubActivity.revalidatingTitle": "正在重新校验。",
+  "usage.githubActivity.revalidatingBody": "刷新期间显示 {0} 的缓存快照。",
+  "usage.githubActivity.updated": "🕒 更新于 {0} · 下次刷新在 {1} 之后。",
+  "usage.githubActivity.unknownNextRefresh": "未知",
+  "usage.githubActivity.cachePolicy": "由单个 VS Code 窗口最多每小时自动重新校验一次，以降低 GitHub API 用量 —「立即刷新」会马上请求一次。",
+  "usage.githubActivity.partialTitle": "数据不完整 — 下方数字为下限值。",
+  "usage.githubActivity.retryHint": "使用上方的「立即刷新」重试 — 详细信息见扩展的输出通道。",
+  "usage.githubActivity.partialRepoPrs": "至少有一个仓库的列表未能完整枚举（出错、超时或达到分页上限），因此时间窗口内的部分拉取请求未被计入。",
+  "usage.githubActivity.partialAgentTasks": "本次未获取全部任务的明细 — 任务明细预算已用尽，或任务列表未能完整枚举。",
+  "usage.githubActivity.tasksScannedTooltip": "显示 {1} 个任务中的 {0} 个 — 其余任务本次无法统计，因此以下数字为下限",
+  "usage.githubActivity.tasksScannedLabel": "(已扫描 {0}/{1} 个任务)",
+  "usage.githubActivity.lowerBoundNote": "注意：本次有部分数据无法统计 — 列表未能完整枚举、明细调用失败，或明细预算已用尽 — 因此以下合计为下限值。",
+  "usage.githubActivity.accountTasksIncomplete": "账户级任务列表提前中断（{0}）— 工作区仓库之外的任务可能缺失。",
+  "usage.githubActivity.accountTasksUnavailable": "无法获取账户级任务（{0}）— 仅显示工作区仓库。",
+  "usage.githubActivity.accountTasksUnknownReason": "无法读取 /agents/tasks 接口"
 }
