@@ -4655,7 +4655,77 @@
           "linesAdded": 360,
           "linesRemoved": 100,
           "applies": 24,
-          "codeBlocks": 28
+          "codeBlocks": 28,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 1.025,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 1.025,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 1.025,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 1.025,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            }
+          ]
         },
         "gpt-4o": {
           "calls": 18,
@@ -4676,7 +4746,60 @@
           "linesAdded": 210,
           "linesRemoved": 90,
           "applies": 15,
-          "codeBlocks": 24
+          "codeBlocks": 24,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.467,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 2,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.467,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 2,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.467,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 2,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            }
+          ]
         }
       },
       "taskCategoryUsage": {
@@ -4713,7 +4836,60 @@
           "linesAdded": 270,
           "linesRemoved": 75,
           "applies": 18,
-          "codeBlocks": 21
+          "codeBlocks": 21,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 1.017,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 1.017,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 1.017,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            }
+          ]
         },
         "gpt-4o": {
           "calls": 18,
@@ -4734,7 +4910,60 @@
           "linesAdded": 210,
           "linesRemoved": 90,
           "applies": 15,
-          "codeBlocks": 24
+          "codeBlocks": 24,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.433,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            },
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.433,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 337500,
+              "outputTokens": 42750,
+              "cachedReadTokens": 123750,
+              "cost": 3.225,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            }
+          ]
         }
       },
       "taskCategoryUsage": {
@@ -4769,7 +4998,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 45056,
+              "outputTokens": 6308,
+              "cachedReadTokens": 23429,
+              "cost": 0.54,
+              "calls": 6,
+              "editTurns": 5,
+              "oneShotEditTurns": 4,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -4789,7 +5037,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 27112,
+              "outputTokens": 3796,
+              "cachedReadTokens": 14098,
+              "cost": 0.33,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -4829,7 +5096,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 27615,
+              "outputTokens": 3866,
+              "cachedReadTokens": 14360,
+              "cost": 0.33,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         },
         "gpt-5": {
           "calls": 3,
@@ -4849,7 +5135,26 @@
           "linesAdded": 41,
           "linesRemoved": 19,
           "applies": 1,
-          "codeBlocks": 2
+          "codeBlocks": 2,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 16617,
+              "outputTokens": 2326,
+              "cachedReadTokens": 8641,
+              "cost": 0.2,
+              "calls": 3,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 60,
+              "activeDurationMs": 248976,
+              "applies": 1,
+              "codeBlocks": 2
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -4889,7 +5194,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 48102,
+              "outputTokens": 6734,
+              "cachedReadTokens": 25013,
+              "cost": 0.58,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 4,
@@ -4909,7 +5233,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 29318,
+              "outputTokens": 4105,
+              "cachedReadTokens": 15245,
+              "cost": 0.35,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -4949,7 +5292,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 29482,
+              "outputTokens": 4127,
+              "cachedReadTokens": 15331,
+              "cost": 0.36,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -4989,7 +5351,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 41248,
+              "outputTokens": 5775,
+              "cachedReadTokens": 21449,
+              "cost": 0.5,
+              "calls": 8,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -5009,7 +5390,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 33729,
+              "outputTokens": 4722,
+              "cachedReadTokens": 17539,
+              "cost": 0.41,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -5049,7 +5449,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 25281,
+              "outputTokens": 3539,
+              "cachedReadTokens": 13146,
+              "cost": 0.31,
+              "calls": 5,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -5089,7 +5508,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 44294,
+              "outputTokens": 6201,
+              "cachedReadTokens": 23033,
+              "cost": 0.54,
+              "calls": 7,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -5109,7 +5547,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 26561,
+              "outputTokens": 3719,
+              "cachedReadTokens": 13812,
+              "cost": 0.32,
+              "calls": 5,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -5149,7 +5606,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 27148,
+              "outputTokens": 3801,
+              "cachedReadTokens": 14117,
+              "cost": 0.33,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         },
         "gpt-5": {
           "calls": 3,
@@ -5169,7 +5645,26 @@
           "linesAdded": 41,
           "linesRemoved": 19,
           "applies": 1,
-          "codeBlocks": 2
+          "codeBlocks": 2,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 16279,
+              "outputTokens": 2279,
+              "cachedReadTokens": 8465,
+              "cost": 0.2,
+              "calls": 3,
+              "editTurns": 1,
+              "oneShotEditTurns": 1,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 60,
+              "activeDurationMs": 248976,
+              "applies": 1,
+              "codeBlocks": 2
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -5209,7 +5704,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 47340,
+              "outputTokens": 6628,
+              "cachedReadTokens": 24617,
+              "cost": 0.57,
+              "calls": 7,
+              "editTurns": 5,
+              "oneShotEditTurns": 4,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -5229,7 +5743,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 28767,
+              "outputTokens": 4027,
+              "cachedReadTokens": 14959,
+              "cost": 0.35,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -5269,7 +5802,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 29015,
+              "outputTokens": 4062,
+              "cachedReadTokens": 15088,
+              "cost": 0.35,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -5309,7 +5861,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 37441,
+              "outputTokens": 5242,
+              "cachedReadTokens": 19469,
+              "cost": 0.45,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -5329,7 +5900,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 30972,
+              "outputTokens": 4336,
+              "cachedReadTokens": 16105,
+              "cost": 0.37,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -5369,7 +5959,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 22948,
+              "outputTokens": 3213,
+              "cachedReadTokens": 11933,
+              "cost": 0.28,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -5409,7 +6018,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 40487,
+              "outputTokens": 5668,
+              "cachedReadTokens": 21053,
+              "cost": 0.49,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 4,
@@ -5429,7 +6057,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 33178,
+              "outputTokens": 4645,
+              "cachedReadTokens": 17253,
+              "cost": 0.4,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -5469,7 +6116,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 24814,
+              "outputTokens": 3474,
+              "cachedReadTokens": 12903,
+              "cost": 0.3,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -5511,7 +6177,60 @@
           "linesAdded": 270,
           "linesRemoved": 75,
           "applies": 18,
-          "codeBlocks": 21
+          "codeBlocks": 21,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 1,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 1,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 270000,
+              "outputTokens": 31500,
+              "cachedReadTokens": 157500,
+              "cost": 2.25,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            }
+          ]
         },
         "gpt-4o": {
           "calls": 12,
@@ -5532,7 +6251,43 @@
           "linesAdded": 140,
           "linesRemoved": 60,
           "applies": 10,
-          "codeBlocks": 16
+          "codeBlocks": 16,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.45,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.45,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            }
+          ]
         }
       },
       "taskCategoryUsage": {
@@ -5567,7 +6322,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 43533,
+              "outputTokens": 6095,
+              "cachedReadTokens": 22637,
+              "cost": 0.53,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 4,
@@ -5587,7 +6361,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 35384,
+              "outputTokens": 4954,
+              "cachedReadTokens": 18400,
+              "cost": 0.43,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -5627,7 +6420,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 26681,
+              "outputTokens": 3735,
+              "cachedReadTokens": 13874,
+              "cost": 0.32,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         },
         "gpt-5": {
           "calls": 3,
@@ -5647,7 +6459,26 @@
           "linesAdded": 41,
           "linesRemoved": 19,
           "applies": 1,
-          "codeBlocks": 2
+          "codeBlocks": 2,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 21687,
+              "outputTokens": 3036,
+              "cachedReadTokens": 11277,
+              "cost": 0.26,
+              "calls": 3,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 60,
+              "activeDurationMs": 248976,
+              "applies": 1,
+              "codeBlocks": 2
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -5687,7 +6518,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 46579,
+              "outputTokens": 6521,
+              "cachedReadTokens": 24221,
+              "cost": 0.56,
+              "calls": 8,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -5707,7 +6557,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 28215,
+              "outputTokens": 3950,
+              "cachedReadTokens": 14672,
+              "cost": 0.34,
+              "calls": 5,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -5747,7 +6616,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 28548,
+              "outputTokens": 3997,
+              "cachedReadTokens": 14845,
+              "cost": 0.34,
+              "calls": 5,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -5787,7 +6675,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 36679,
+              "outputTokens": 5135,
+              "cachedReadTokens": 19073,
+              "cost": 0.44,
+              "calls": 7,
+              "editTurns": 5,
+              "oneShotEditTurns": 4,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -5807,7 +6714,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 30421,
+              "outputTokens": 4259,
+              "cachedReadTokens": 15819,
+              "cost": 0.37,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -5847,7 +6773,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 22481,
+              "outputTokens": 3147,
+              "cachedReadTokens": 11690,
+              "cost": 0.27,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -5887,7 +6832,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 39725,
+              "outputTokens": 5562,
+              "cachedReadTokens": 20657,
+              "cost": 0.48,
+              "calls": 7,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -5907,7 +6871,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 32627,
+              "outputTokens": 4568,
+              "cachedReadTokens": 16966,
+              "cost": 0.39,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -5947,7 +6930,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 24348,
+              "outputTokens": 3409,
+              "cachedReadTokens": 12661,
+              "cost": 0.29,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -5987,7 +6989,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 42771,
+              "outputTokens": 5988,
+              "cachedReadTokens": 22241,
+              "cost": 0.52,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -6007,7 +7028,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 34832,
+              "outputTokens": 4876,
+              "cachedReadTokens": 18113,
+              "cost": 0.42,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -6047,7 +7087,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 26215,
+              "outputTokens": 3670,
+              "cachedReadTokens": 13632,
+              "cost": 0.32,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         },
         "gpt-5": {
           "calls": 3,
@@ -6067,7 +7126,26 @@
           "linesAdded": 41,
           "linesRemoved": 19,
           "applies": 1,
-          "codeBlocks": 2
+          "codeBlocks": 2,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 21349,
+              "outputTokens": 2989,
+              "cachedReadTokens": 11101,
+              "cost": 0.26,
+              "calls": 3,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 60,
+              "activeDurationMs": 248976,
+              "applies": 1,
+              "codeBlocks": 2
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -6107,7 +7185,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 45817,
+              "outputTokens": 6414,
+              "cachedReadTokens": 23825,
+              "cost": 0.55,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 4,
@@ -6127,7 +7224,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 27664,
+              "outputTokens": 3873,
+              "cachedReadTokens": 14385,
+              "cost": 0.33,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -6167,7 +7283,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 28082,
+              "outputTokens": 3931,
+              "cachedReadTokens": 14603,
+              "cost": 0.34,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -6207,7 +7342,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 48863,
+              "outputTokens": 6841,
+              "cachedReadTokens": 25409,
+              "cost": 0.59,
+              "calls": 6,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 4,
@@ -6227,7 +7381,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 29869,
+              "outputTokens": 4182,
+              "cachedReadTokens": 15532,
+              "cost": 0.36,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -6267,7 +7440,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 29948,
+              "outputTokens": 4193,
+              "cachedReadTokens": 15573,
+              "cost": 0.36,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -6307,7 +7499,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 38964,
+              "outputTokens": 5455,
+              "cachedReadTokens": 20261,
+              "cost": 0.47,
+              "calls": 8,
+              "editTurns": 5,
+              "oneShotEditTurns": 4,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -6327,7 +7538,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 32075,
+              "outputTokens": 4490,
+              "cachedReadTokens": 16679,
+              "cost": 0.39,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -6367,7 +7597,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 23881,
+              "outputTokens": 3343,
+              "cachedReadTokens": 12418,
+              "cost": 0.29,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -6407,7 +7656,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 42010,
+              "outputTokens": 5881,
+              "cachedReadTokens": 21845,
+              "cost": 0.51,
+              "calls": 7,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -6427,7 +7695,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 34281,
+              "outputTokens": 4799,
+              "cachedReadTokens": 17826,
+              "cost": 0.41,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -6467,7 +7754,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 25748,
+              "outputTokens": 3605,
+              "cachedReadTokens": 13389,
+              "cost": 0.31,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         },
         "gpt-5": {
           "calls": 3,
@@ -6487,7 +7793,26 @@
           "linesAdded": 41,
           "linesRemoved": 19,
           "applies": 1,
-          "codeBlocks": 2
+          "codeBlocks": 2,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 21011,
+              "outputTokens": 2942,
+              "cachedReadTokens": 10926,
+              "cost": 0.25,
+              "calls": 3,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 60,
+              "activeDurationMs": 248976,
+              "applies": 1,
+              "codeBlocks": 2
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -6527,7 +7852,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 48102,
+              "outputTokens": 6734,
+              "cachedReadTokens": 25013,
+              "cost": 0.58,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -6547,7 +7891,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 29318,
+              "outputTokens": 4105,
+              "cachedReadTokens": 15245,
+              "cost": 0.35,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -6587,7 +7950,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 29482,
+              "outputTokens": 4127,
+              "cachedReadTokens": 15331,
+              "cost": 0.36,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -6627,7 +8009,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 38202,
+              "outputTokens": 5348,
+              "cachedReadTokens": 19865,
+              "cost": 0.46,
+              "calls": 6,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 4,
@@ -6647,7 +8048,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 31524,
+              "outputTokens": 4413,
+              "cachedReadTokens": 16392,
+              "cost": 0.38,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -6687,7 +8107,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 23414,
+              "outputTokens": 3278,
+              "cachedReadTokens": 12175,
+              "cost": 0.28,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -6727,7 +8166,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 41248,
+              "outputTokens": 5775,
+              "cachedReadTokens": 21449,
+              "cost": 0.5,
+              "calls": 6,
+              "editTurns": 5,
+              "oneShotEditTurns": 4,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 4,
@@ -6747,7 +8205,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 33729,
+              "outputTokens": 4722,
+              "cachedReadTokens": 17539,
+              "cost": 0.41,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -6787,7 +8264,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 25281,
+              "outputTokens": 3539,
+              "cachedReadTokens": 13146,
+              "cost": 0.31,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         },
         "gpt-5": {
           "calls": 3,
@@ -6807,7 +8303,26 @@
           "linesAdded": 41,
           "linesRemoved": 19,
           "applies": 1,
-          "codeBlocks": 2
+          "codeBlocks": 2,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 20673,
+              "outputTokens": 2894,
+              "cachedReadTokens": 10750,
+              "cost": 0.25,
+              "calls": 3,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 60,
+              "activeDurationMs": 248976,
+              "applies": 1,
+              "codeBlocks": 2
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -6849,7 +8364,77 @@
           "linesAdded": 360,
           "linesRemoved": 100,
           "applies": 24,
-          "codeBlocks": 28
+          "codeBlocks": 28,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.975,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.975,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.975,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.975,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            }
+          ]
         },
         "gpt-4o": {
           "calls": 18,
@@ -6870,7 +8455,60 @@
           "linesAdded": 210,
           "linesRemoved": 90,
           "applies": 15,
-          "codeBlocks": 24
+          "codeBlocks": 24,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.45,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 2,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.45,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 2,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            },
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.45,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 2,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            }
+          ]
         }
       },
       "taskCategoryUsage": {
@@ -6905,7 +8543,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 44294,
+              "outputTokens": 6201,
+              "cachedReadTokens": 23033,
+              "cost": 0.54,
+              "calls": 8,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -6925,7 +8582,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 26561,
+              "outputTokens": 3719,
+              "cachedReadTokens": 13812,
+              "cost": 0.32,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -6965,7 +8641,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 27148,
+              "outputTokens": 3801,
+              "cachedReadTokens": 14117,
+              "cost": 0.33,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -7005,7 +8700,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 47340,
+              "outputTokens": 6628,
+              "cachedReadTokens": 24617,
+              "cost": 0.57,
+              "calls": 7,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -7025,7 +8739,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 28767,
+              "outputTokens": 4027,
+              "cachedReadTokens": 14959,
+              "cost": 0.35,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -7065,7 +8798,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 29015,
+              "outputTokens": 4062,
+              "cachedReadTokens": 15088,
+              "cost": 0.35,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -7105,7 +8857,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 40487,
+              "outputTokens": 5668,
+              "cachedReadTokens": 21053,
+              "cost": 0.49,
+              "calls": 6,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -7125,7 +8896,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 33178,
+              "outputTokens": 4645,
+              "cachedReadTokens": 17253,
+              "cost": 0.4,
+              "calls": 5,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -7165,7 +8955,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 24814,
+              "outputTokens": 3474,
+              "cachedReadTokens": 12903,
+              "cost": 0.3,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         },
         "gpt-5": {
           "calls": 3,
@@ -7185,7 +8994,26 @@
           "linesAdded": 41,
           "linesRemoved": 19,
           "applies": 1,
-          "codeBlocks": 2
+          "codeBlocks": 2,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 20335,
+              "outputTokens": 2847,
+              "cachedReadTokens": 10574,
+              "cost": 0.25,
+              "calls": 3,
+              "editTurns": 1,
+              "oneShotEditTurns": 1,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 60,
+              "activeDurationMs": 248976,
+              "applies": 1,
+              "codeBlocks": 2
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -7225,7 +9053,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 43533,
+              "outputTokens": 6095,
+              "cachedReadTokens": 22637,
+              "cost": 0.53,
+              "calls": 6,
+              "editTurns": 5,
+              "oneShotEditTurns": 4,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 4,
@@ -7245,7 +9092,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 35384,
+              "outputTokens": 4954,
+              "cachedReadTokens": 18400,
+              "cost": 0.43,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -7285,7 +9151,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 26681,
+              "outputTokens": 3735,
+              "cachedReadTokens": 13874,
+              "cost": 0.32,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -7325,7 +9210,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 46579,
+              "outputTokens": 6521,
+              "cachedReadTokens": 24221,
+              "cost": 0.56,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 4,
@@ -7345,7 +9249,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 28215,
+              "outputTokens": 3950,
+              "cachedReadTokens": 14672,
+              "cost": 0.34,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -7385,7 +9308,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 28548,
+              "outputTokens": 3997,
+              "cachedReadTokens": 14845,
+              "cost": 0.34,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -7427,7 +9369,26 @@
           "linesAdded": 25,
           "linesRemoved": 6,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 40000,
+              "outputTokens": 5000,
+              "cachedReadTokens": 20000,
+              "cost": 0.3,
+              "calls": 3,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 31,
+              "activeDurationMs": 240000,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         },
         "claude-sonnet-4.5": {
           "calls": 15,
@@ -7448,7 +9409,60 @@
           "linesAdded": 270,
           "linesRemoved": 75,
           "applies": 18,
-          "codeBlocks": 21
+          "codeBlocks": 21,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.95,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.95,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.95,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            }
+          ]
         },
         "gpt-4o": {
           "calls": 18,
@@ -7469,7 +9483,60 @@
           "linesAdded": 210,
           "linesRemoved": 90,
           "applies": 15,
-          "codeBlocks": 24
+          "codeBlocks": 24,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.4,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 2,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.4,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 2,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.4,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 2,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            }
+          ]
         }
       },
       "taskCategoryUsage": {
@@ -7504,7 +9571,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 36679,
+              "outputTokens": 5135,
+              "cachedReadTokens": 19073,
+              "cost": 0.44,
+              "calls": 8,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -7524,7 +9610,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 30421,
+              "outputTokens": 4259,
+              "cachedReadTokens": 15819,
+              "cost": 0.37,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -7564,7 +9669,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 22481,
+              "outputTokens": 3147,
+              "cachedReadTokens": 11690,
+              "cost": 0.27,
+              "calls": 5,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -7604,7 +9728,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 39725,
+              "outputTokens": 5562,
+              "cachedReadTokens": 20657,
+              "cost": 0.48,
+              "calls": 7,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -7624,7 +9767,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 32627,
+              "outputTokens": 4568,
+              "cachedReadTokens": 16966,
+              "cost": 0.39,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -7664,7 +9826,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 24348,
+              "outputTokens": 3409,
+              "cachedReadTokens": 12661,
+              "cost": 0.29,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         },
         "gpt-5": {
           "calls": 3,
@@ -7684,7 +9865,26 @@
           "linesAdded": 41,
           "linesRemoved": 19,
           "applies": 1,
-          "codeBlocks": 2
+          "codeBlocks": 2,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 19997,
+              "outputTokens": 2800,
+              "cachedReadTokens": 10398,
+              "cost": 0.24,
+              "calls": 3,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 60,
+              "activeDurationMs": 248976,
+              "applies": 1,
+              "codeBlocks": 2
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -7724,7 +9924,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 42771,
+              "outputTokens": 5988,
+              "cachedReadTokens": 22241,
+              "cost": 0.52,
+              "calls": 7,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -7744,7 +9963,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 34832,
+              "outputTokens": 4876,
+              "cachedReadTokens": 18113,
+              "cost": 0.42,
+              "calls": 5,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -7784,7 +10022,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 26215,
+              "outputTokens": 3670,
+              "cachedReadTokens": 13632,
+              "cost": 0.32,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -7824,7 +10081,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 45817,
+              "outputTokens": 6414,
+              "cachedReadTokens": 23825,
+              "cost": 0.55,
+              "calls": 6,
+              "editTurns": 5,
+              "oneShotEditTurns": 4,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -7844,7 +10120,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 27664,
+              "outputTokens": 3873,
+              "cachedReadTokens": 14385,
+              "cost": 0.33,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -7884,7 +10179,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 28082,
+              "outputTokens": 3931,
+              "cachedReadTokens": 14603,
+              "cost": 0.34,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -7924,7 +10238,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 48863,
+              "outputTokens": 6841,
+              "cachedReadTokens": 25409,
+              "cost": 0.59,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 4,
@@ -7944,7 +10277,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 29869,
+              "outputTokens": 4182,
+              "cachedReadTokens": 15532,
+              "cost": 0.36,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -7984,7 +10336,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 29948,
+              "outputTokens": 4193,
+              "cachedReadTokens": 15573,
+              "cost": 0.36,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -8024,7 +10395,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 38964,
+              "outputTokens": 5455,
+              "cachedReadTokens": 20261,
+              "cost": 0.47,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 4,
@@ -8044,7 +10434,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 32075,
+              "outputTokens": 4490,
+              "cachedReadTokens": 16679,
+              "cost": 0.39,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -8084,7 +10493,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 23881,
+              "outputTokens": 3343,
+              "cachedReadTokens": 12418,
+              "cost": 0.29,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         },
         "gpt-5": {
           "calls": 3,
@@ -8104,7 +10532,26 @@
           "linesAdded": 41,
           "linesRemoved": 19,
           "applies": 1,
-          "codeBlocks": 2
+          "codeBlocks": 2,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 19659,
+              "outputTokens": 2752,
+              "cachedReadTokens": 10223,
+              "cost": 0.24,
+              "calls": 3,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 60,
+              "activeDurationMs": 248976,
+              "applies": 1,
+              "codeBlocks": 2
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -8144,7 +10591,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 42010,
+              "outputTokens": 5881,
+              "cachedReadTokens": 21845,
+              "cost": 0.51,
+              "calls": 8,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -8164,7 +10630,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 34281,
+              "outputTokens": 4799,
+              "cachedReadTokens": 17826,
+              "cost": 0.41,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -8204,7 +10689,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 25748,
+              "outputTokens": 3605,
+              "cachedReadTokens": 13389,
+              "cost": 0.31,
+              "calls": 5,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -8246,7 +10750,77 @@
           "linesAdded": 360,
           "linesRemoved": 100,
           "applies": 24,
-          "codeBlocks": 28
+          "codeBlocks": 28,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.95,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 4,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.95,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 4,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.95,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 4,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.95,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 4,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            }
+          ]
         },
         "gpt-4o": {
           "calls": 12,
@@ -8267,7 +10841,43 @@
           "linesAdded": 140,
           "linesRemoved": 60,
           "applies": 10,
-          "codeBlocks": 16
+          "codeBlocks": 16,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.425,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 2,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            },
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.425,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 2,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            }
+          ]
         }
       },
       "taskCategoryUsage": {
@@ -8302,7 +10912,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 45056,
+              "outputTokens": 6308,
+              "cachedReadTokens": 23429,
+              "cost": 0.54,
+              "calls": 7,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -8322,7 +10951,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 27112,
+              "outputTokens": 3796,
+              "cachedReadTokens": 14098,
+              "cost": 0.33,
+              "calls": 5,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -8362,7 +11010,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 27615,
+              "outputTokens": 3866,
+              "cachedReadTokens": 14360,
+              "cost": 0.33,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -8402,7 +11069,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 48102,
+              "outputTokens": 6734,
+              "cachedReadTokens": 25013,
+              "cost": 0.58,
+              "calls": 7,
+              "editTurns": 5,
+              "oneShotEditTurns": 4,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -8422,7 +11108,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 29318,
+              "outputTokens": 4105,
+              "cachedReadTokens": 15245,
+              "cost": 0.35,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -8462,7 +11167,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 29482,
+              "outputTokens": 4127,
+              "cachedReadTokens": 15331,
+              "cost": 0.36,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -8502,7 +11226,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 38202,
+              "outputTokens": 5348,
+              "cachedReadTokens": 19865,
+              "cost": 0.46,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -8522,7 +11265,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 31524,
+              "outputTokens": 4413,
+              "cachedReadTokens": 16392,
+              "cost": 0.38,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -8562,7 +11324,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 23414,
+              "outputTokens": 3278,
+              "cachedReadTokens": 12175,
+              "cost": 0.28,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         },
         "gpt-5": {
           "calls": 3,
@@ -8582,7 +11363,26 @@
           "linesAdded": 41,
           "linesRemoved": 19,
           "applies": 1,
-          "codeBlocks": 2
+          "codeBlocks": 2,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 19321,
+              "outputTokens": 2705,
+              "cachedReadTokens": 10047,
+              "cost": 0.23,
+              "calls": 3,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 60,
+              "activeDurationMs": 248976,
+              "applies": 1,
+              "codeBlocks": 2
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -8622,7 +11422,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 41248,
+              "outputTokens": 5775,
+              "cachedReadTokens": 21449,
+              "cost": 0.5,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 4,
@@ -8642,7 +11461,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 33729,
+              "outputTokens": 4722,
+              "cachedReadTokens": 17539,
+              "cost": 0.41,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -8682,7 +11520,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 25281,
+              "outputTokens": 3539,
+              "cachedReadTokens": 13146,
+              "cost": 0.31,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -8722,7 +11579,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 47340,
+              "outputTokens": 6628,
+              "cachedReadTokens": 24617,
+              "cost": 0.57,
+              "calls": 8,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -8742,7 +11618,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 28767,
+              "outputTokens": 4027,
+              "cachedReadTokens": 14959,
+              "cost": 0.35,
+              "calls": 5,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -8782,7 +11677,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 29015,
+              "outputTokens": 4062,
+              "cachedReadTokens": 15088,
+              "cost": 0.35,
+              "calls": 5,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -8822,7 +11736,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 37441,
+              "outputTokens": 5242,
+              "cachedReadTokens": 19469,
+              "cost": 0.45,
+              "calls": 7,
+              "editTurns": 5,
+              "oneShotEditTurns": 4,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -8842,7 +11775,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 30972,
+              "outputTokens": 4336,
+              "cachedReadTokens": 16105,
+              "cost": 0.37,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -8882,7 +11834,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 22948,
+              "outputTokens": 3213,
+              "cachedReadTokens": 11933,
+              "cost": 0.28,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         },
         "gpt-5": {
           "calls": 3,
@@ -8902,7 +11873,26 @@
           "linesAdded": 41,
           "linesRemoved": 19,
           "applies": 1,
-          "codeBlocks": 2
+          "codeBlocks": 2,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 18983,
+              "outputTokens": 2658,
+              "cachedReadTokens": 9871,
+              "cost": 0.23,
+              "calls": 3,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 60,
+              "activeDurationMs": 248976,
+              "applies": 1,
+              "codeBlocks": 2
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -8944,7 +11934,26 @@
           "linesAdded": 25,
           "linesRemoved": 6,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 40000,
+              "outputTokens": 5000,
+              "cachedReadTokens": 20000,
+              "cost": 0.28,
+              "calls": 3,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 31,
+              "activeDurationMs": 240000,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         },
         "claude-sonnet-4.5": {
           "calls": 15,
@@ -8965,7 +11974,60 @@
           "linesAdded": 270,
           "linesRemoved": 75,
           "applies": 18,
-          "codeBlocks": 21
+          "codeBlocks": 21,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.933,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 4,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.933,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 4,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.933,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 4,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            }
+          ]
         },
         "gpt-4o": {
           "calls": 12,
@@ -8986,7 +12048,43 @@
           "linesAdded": 140,
           "linesRemoved": 60,
           "applies": 10,
-          "codeBlocks": 16
+          "codeBlocks": 16,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.4,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.4,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            }
+          ]
         }
       },
       "taskCategoryUsage": {
@@ -9021,7 +12119,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 40487,
+              "outputTokens": 5668,
+              "cachedReadTokens": 21053,
+              "cost": 0.49,
+              "calls": 7,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -9041,7 +12158,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 33178,
+              "outputTokens": 4645,
+              "cachedReadTokens": 17253,
+              "cost": 0.4,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -9081,7 +12217,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 24814,
+              "outputTokens": 3474,
+              "cachedReadTokens": 12903,
+              "cost": 0.3,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -9121,7 +12276,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 43533,
+              "outputTokens": 6095,
+              "cachedReadTokens": 22637,
+              "cost": 0.53,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 5,
@@ -9141,7 +12315,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 35384,
+              "outputTokens": 4954,
+              "cachedReadTokens": 18400,
+              "cost": 0.43,
+              "calls": 5,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -9181,7 +12374,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 26681,
+              "outputTokens": 3735,
+              "cachedReadTokens": 13874,
+              "cost": 0.32,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -9221,7 +12433,26 @@
           "linesAdded": 93,
           "linesRemoved": 43,
           "applies": 3,
-          "codeBlocks": 4
+          "codeBlocks": 4,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 46579,
+              "outputTokens": 6521,
+              "cachedReadTokens": 24221,
+              "cost": 0.56,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 3,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 136,
+              "activeDurationMs": 560976,
+              "applies": 3,
+              "codeBlocks": 4
+            }
+          ]
         },
         "gpt-5": {
           "calls": 4,
@@ -9241,7 +12472,26 @@
           "linesAdded": 68,
           "linesRemoved": 31,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 28215,
+              "outputTokens": 3950,
+              "cachedReadTokens": 14672,
+              "cost": 0.34,
+              "calls": 4,
+              "editTurns": 3,
+              "oneShotEditTurns": 2,
+              "retries": 1,
+              "selfCorrections": 0,
+              "loc": 99,
+              "activeDurationMs": 406224,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "VS Code",
@@ -9281,7 +12531,26 @@
           "linesAdded": 57,
           "linesRemoved": 26,
           "applies": 2,
-          "codeBlocks": 3
+          "codeBlocks": 3,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 28548,
+              "outputTokens": 3997,
+              "cachedReadTokens": 14845,
+              "cost": 0.34,
+              "calls": 4,
+              "editTurns": 2,
+              "oneShotEditTurns": 2,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 83,
+              "activeDurationMs": 343824,
+              "applies": 2,
+              "codeBlocks": 3
+            }
+          ]
         }
       },
       "editor": "Claude Code",
@@ -9323,7 +12592,60 @@
           "linesAdded": 270,
           "linesRemoved": 75,
           "applies": 18,
-          "codeBlocks": 21
+          "codeBlocks": 21,
+          "sessionRecords": [
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.9,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 4,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.9,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 4,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            },
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 120000,
+              "outputTokens": 14000,
+              "cachedReadTokens": 70000,
+              "cost": 0.9,
+              "calls": 5,
+              "editTurns": 4,
+              "oneShotEditTurns": 4,
+              "retries": 0,
+              "selfCorrections": 0,
+              "loc": 115,
+              "activeDurationMs": 660000,
+              "applies": 6,
+              "codeBlocks": 7
+            }
+          ]
         },
         "gpt-4o": {
           "calls": 12,
@@ -9344,7 +12666,43 @@
           "linesAdded": 140,
           "linesRemoved": 60,
           "applies": 10,
-          "codeBlocks": 16
+          "codeBlocks": 16,
+          "sessionRecords": [
+            {
+              "mixed": false,
+              "share": 1,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.375,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 2,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            },
+            {
+              "mixed": true,
+              "share": 0.5,
+              "inputTokens": 150000,
+              "outputTokens": 19000,
+              "cachedReadTokens": 55000,
+              "cost": 1.375,
+              "calls": 6,
+              "editTurns": 4,
+              "oneShotEditTurns": 2,
+              "retries": 2,
+              "selfCorrections": 1,
+              "loc": 100,
+              "activeDurationMs": 840000,
+              "applies": 5,
+              "codeBlocks": 8
+            }
+          ]
         }
       },
       "taskCategoryUsage": {

@@ -12,6 +12,8 @@ import {
 	getTrailingWindowBoundaries,
 	splitTrailingWindows,
 	computeModelPeriodMetrics,
+	computeOutlierCutoffTokens,
+	DEFAULT_MODEL_SESSION_FILTER,
 	listComparableModels,
 	compareModels,
 	buildModelWeeklySeries,
@@ -43,7 +45,7 @@ import {
 	type ModelDailyInput,
 } from '../efficiencyAnalysis';
 import { createEmptyDailyModelEfficiencyEntry } from '../modelEfficiency';
-import type { DailyModelEfficiency, DailyModelEfficiencyEntry, DailyTokenStats, ModelUsage, UsageAnalysisPeriod } from '../types';
+import type { DailyModelEfficiency, DailyModelEfficiencyEntry, DailyTokenStats, ModelSessionRecord, ModelUsage, UsageAnalysisPeriod } from '../types';
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -598,6 +600,74 @@ function solidModel(overrides: Partial<DailyModelEfficiencyEntry>): Partial<Dail
 		...overrides,
 	};
 }
+
+/** A session record with sensible defaults; `tokens` is split 90/10 input/output. */
+function sessionRecord(overrides: Partial<ModelSessionRecord> & { tokens?: number } = {}): ModelSessionRecord {
+	const { tokens = 1000, ...rest } = overrides;
+	return {
+		mixed: false, share: 1, inputTokens: tokens * 0.9, outputTokens: tokens * 0.1, cachedReadTokens: 0,
+		cost: 1, calls: 2, editTurns: 1, oneShotEditTurns: 1, retries: 0, selfCorrections: 0,
+		loc: 10, activeDurationMs: 60_000, applies: 0, codeBlocks: 0,
+		...rest,
+	};
+}
+
+function recordDay(model: string, records: ModelSessionRecord[], date = '2026-07-01'): ModelDailyInput {
+	return modelDay(date, { [model]: { sessionRecords: records, sessions: 99, sessionShare: 99, cost: 999 } });
+}
+
+test('computeModelPeriodMetrics: the default filter drops mixed-model sessions and counts them', () => {
+	const days = [recordDay('a', [sessionRecord(), sessionRecord({ mixed: true, share: 0.5, cost: 50 }), sessionRecord()])];
+	const m = computeModelPeriodMetrics(days, 'a', 'Jul', DEFAULT_MODEL_SESSION_FILTER)!;
+	assert.equal(m.sessions, 2);
+	assert.equal(m.cost, 2);
+	assert.equal(m.filtering.excludedMixed, 1);
+	assert.equal(m.filtering.applied, true);
+});
+
+test('computeModelPeriodMetrics: including mixed sessions with no trim uses the day aggregates untouched', () => {
+	const days = [recordDay('a', [sessionRecord()])];
+	const m = computeModelPeriodMetrics(days, 'a', 'Jul', { includeMixedSessions: true, outlierTrim: 'none' })!;
+	assert.equal(m.sessions, 99);
+	assert.equal(m.filtering.applied, false);
+	assert.equal(m.filtering.unavailable, false);
+});
+
+test('computeModelPeriodMetrics: reports the filter as unavailable when the data has no session records', () => {
+	const days = [modelDay('2026-07-01', { a: solidModel({}) })];
+	const m = computeModelPeriodMetrics(days, 'a', 'Jul', DEFAULT_MODEL_SESSION_FILTER)!;
+	assert.equal(m.sessions, 10);
+	assert.equal(m.filtering.unavailable, true);
+	assert.equal(m.filtering.applied, false);
+	assert.match(compareModels(m, m).caveats.join(' '), /predates per-session records/);
+});
+
+test('computeOutlierCutoffTokens: interpolates the percentile and needs enough sessions', () => {
+	const tokens = Array.from({ length: 21 }, (_, i) => (i + 1) * 100); // 100..2100
+	const days = [recordDay('a', tokens.map(t => sessionRecord({ tokens: t })))];
+	assert.equal(computeOutlierCutoffTokens([{ days, model: 'a' }], { includeMixedSessions: false, outlierTrim: 'p95' }), 2000);
+	assert.equal(computeOutlierCutoffTokens([{ days, model: 'a' }], { includeMixedSessions: false, outlierTrim: 'p90' }), 1900);
+	assert.equal(computeOutlierCutoffTokens([{ days, model: 'a' }], { includeMixedSessions: false, outlierTrim: 'none' }), null);
+	const few = [recordDay('a', tokens.slice(0, 5).map(t => sessionRecord({ tokens: t })))];
+	assert.equal(computeOutlierCutoffTokens([{ days: few, model: 'a' }], DEFAULT_MODEL_SESSION_FILTER), null);
+});
+
+test('computeOutlierCutoffTokens: pools both sides and ignores mixed sessions when they are excluded', () => {
+	const a = [recordDay('a', Array.from({ length: 12 }, () => sessionRecord({ tokens: 100 })))];
+	const b = [recordDay('b', [...Array.from({ length: 8 }, () => sessionRecord({ tokens: 100 })), sessionRecord({ tokens: 10_000_000, mixed: true })])];
+	const pooled = computeOutlierCutoffTokens([{ days: a, model: 'a' }, { days: b, model: 'b' }], DEFAULT_MODEL_SESSION_FILTER);
+	assert.equal(pooled, 100); // the mixed monster does not leak into the cutoff
+});
+
+test('computeModelPeriodMetrics: sessions above the pooled cutoff are trimmed and counted', () => {
+	const records = [...Array.from({ length: 19 }, () => sessionRecord({ tokens: 100 })), sessionRecord({ tokens: 90_000, cost: 500 })];
+	const days = [recordDay('a', records)];
+	const cutoff = computeOutlierCutoffTokens([{ days, model: 'a' }], DEFAULT_MODEL_SESSION_FILTER);
+	const m = computeModelPeriodMetrics(days, 'a', 'Jul', DEFAULT_MODEL_SESSION_FILTER, cutoff)!;
+	assert.equal(m.filtering.excludedOutliers, 1);
+	assert.equal(m.sessions, 19);
+	assert.equal(m.cost, 19);
+});
 
 test('computeModelPeriodMetrics: returns null for a model absent from the window', () => {
 	const days = [modelDay('2026-07-01', { a: solidModel({}) })];

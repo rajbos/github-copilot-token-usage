@@ -558,6 +558,35 @@ test('accumulateDayAndEditorModelCounters: a mixed-model session lands in both t
 	assert.ok(Math.abs(shareTotal - 1) < 1e-9, `sessionShare should total 1, got ${shareTotal}`);
 });
 
+test('accumulateDayAndEditorModelCounters: writes one whole-session record per model, flagged mixed', () => {
+	const entry = emptyDay();
+	accumulateDayAndEditorModelCounters(entry, 'VS Code', {
+		modelEfficiency: { a: { ...createEmptyModelEfficiencyCounters(), calls: 4, editTurns: 3, oneShotEditTurns: 2, retries: 1 }, b: { ...createEmptyModelEfficiencyCounters(), editTurns: 1 } },
+		modelUsage: { a: { inputTokens: 600, outputTokens: 100, cachedReadTokens: 50, sessions: 1 }, b: { inputTokens: 300, outputTokens: 0, sessions: 1 } },
+		linesAdded: 8, linesRemoved: 2, activeDurationMs: 1000,
+	});
+	const [recA] = entry.modelEfficiency!['a'].sessionRecords!;
+	assert.equal(entry.modelEfficiency!['a'].sessionRecords!.length, 1);
+	assert.equal(recA.mixed, true);
+	assert.equal(recA.inputTokens, 600);
+	assert.equal(recA.cachedReadTokens, 50);
+	assert.equal(recA.editTurns, 3);
+	assert.equal(recA.oneShotEditTurns, 2);
+	assert.ok(Math.abs(recA.share - 700 / 1000) < 1e-9);
+	assert.ok(Math.abs(recA.loc - 10 * 0.7) < 1e-9);
+	// The editor slice carries the same record.
+	assert.equal(entry.editorModelEfficiency!['VS Code']['a'].sessionRecords!.length, 1);
+});
+
+test('accumulateDayAndEditorModelCounters: a single-model session is not mixed and has the full share', () => {
+	const entry = emptyDay();
+	accumulateDayAndEditorModelCounters(entry, 'VS Code', { modelUsage: { a: { inputTokens: 10, outputTokens: 5, sessions: 1 } } });
+	const [rec] = entry.modelEfficiency!['a'].sessionRecords!;
+	assert.equal(rec.mixed, false);
+	assert.equal(rec.share, 1);
+	assert.equal(rec.activeDurationMs, 0);
+});
+
 test('accumulateDayAndEditorModelCounters: several editors on one day stay separable and conserved', () => {
 	const entry = emptyDay();
 	const session = (calls: number, tokens: number): SessionEfficiencyAttribution => ({

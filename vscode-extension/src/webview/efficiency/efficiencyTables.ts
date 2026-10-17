@@ -100,7 +100,7 @@ export function renderSkillImpactTable(impact: SkillImpact): string {
 /** The "Better" cell — only decisive wins get a chip, so ties read as ties. */
 function comparisonWinnerCell(r: ModelComparisonRow): string {
 	if (r.significant && (r.winner === 'a' || r.winner === 'b')) {
-		return `<span class="model-win-chip">${r.winner.toUpperCase()}</span>`;
+		return `<span class="model-win-chip model-win-${r.winner}">${r.winner.toUpperCase()}</span>`;
 	}
 	return r.winner === 'tie' ? '<span class="model-win-chip tie">tie</span>' : '';
 }
@@ -114,7 +114,7 @@ function comparisonWinnerSortValue(r: ModelComparisonRow): string | null {
 function comparisonSideHeader(tag: 'A' | 'B', side: ModelComparison['a']): Pick<DataTableColumn<ModelComparisonRow>, 'label' | 'headerHtml'> {
 	return {
 		label: `${tag} · ${side.displayName} ${side.periodLabel}`,
-		headerHtml: `${tag} · ${escapeHtml(side.displayName)}<span class="th-sub">${escapeHtml(side.periodLabel)}</span>`,
+		headerHtml: `<span class="model-th-tag model-th-${tag.toLowerCase()}">${tag} · ${escapeHtml(side.displayName)}</span><span class="th-sub">${escapeHtml(side.periodLabel)}</span>`,
 	};
 }
 
