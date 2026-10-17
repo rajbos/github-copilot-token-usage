@@ -3,6 +3,7 @@ import * as assert from 'node:assert/strict';
 import * as path from 'path';
 import {
 	buildCacheInfo,
+	buildDiagnosticDataLoadedMessage,
 	buildDiagnosticsViewData,
 	buildSessionFolderData,
 	diagnosticsToolCallStats,
@@ -91,4 +92,20 @@ test('Copilot CLI session-state folders collapse into one row', () => {
 	assert.equal(folders.length, 1);
 	assert.equal(folders[0].dir, state);
 	assert.equal(folders[0].count, 2);
+});
+
+test('buildDiagnosticDataLoadedMessage pins the message keys and derives stats from usage stats', () => {
+	const msg = buildDiagnosticDataLoadedMessage({
+		report: 'r', sessionFiles: [], sessionFolders: [], candidatePaths: [], backendStorageInfo: null,
+		githubAuth: { authenticated: false }, accountBudgets: [], quotaEntitlements: null, usageStats: stats,
+		skillCallsByEditor: null, skillDescriptions: { s: 'does s' }, toolFamilies: [], otelComparison: null,
+	});
+	assert.deepEqual(Object.keys(msg).sort(), [
+		'accountBudgets', 'backendStorageInfo', 'candidatePaths', 'command', 'githubAuth', 'otelComparison',
+		'quotaEntitlements', 'report', 'sessionFiles', 'sessionFolders', 'skillCallStats', 'skillCallsByEditor',
+		'skillDescriptions', 'toolCallStats', 'toolFamilies',
+	]);
+	assert.equal(msg.command, 'diagnosticDataLoaded');
+	assert.deepEqual(msg.toolCallStats, toolCalls);
+	assert.deepEqual(msg.skillCallStats, { total: 1, byName: { s: 1 } });
 });

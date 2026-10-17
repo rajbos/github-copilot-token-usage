@@ -231,8 +231,7 @@ import {
   buildCacheInfo,
   buildDiagnosticsViewData,
   buildSessionFolderData as buildSharedSessionFolderData,
-  diagnosticsSkillCallStats,
-  diagnosticsToolCallStats,
+  buildDiagnosticDataLoadedMessage,
   skillDescriptionsFromStats,
   type SessionFolderEntry,
 } from '../../src/diagnosticsViewBuilder';
@@ -14603,8 +14602,7 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
       this.log(
         `Sending backend info to webview: ${backendStorageInfo ? "present" : "missing"}`,
       );
-      panel.webview.postMessage({
-        command: "diagnosticDataLoaded",
+      panel.webview.postMessage(buildDiagnosticDataLoadedMessage({
         report,
         sessionFiles: sessionFileData,
         sessionFolders,
@@ -14612,15 +14610,13 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
         backendStorageInfo,
         githubAuth: githubAuthStatus,
         accountBudgets: this._accountBudgets,
-        // Carried with the list so the webview takes its full quota-card refresh path if a direct update was missed.
         quotaEntitlements: this._copilotQuotaEntitlements,
-        toolCallStats: diagnosticsToolCallStats(this.currentUsageAnalysisStats),
-        skillCallStats: diagnosticsSkillCallStats(this.currentUsageAnalysisStats),
+        usageStats: this.currentUsageAnalysisStats,
         skillCallsByEditor: this._lastSkillCallsByEditor ?? null,
         skillDescriptions: this._buildSkillDescriptions(),
         toolFamilies: getToolFamilies(),
         otelComparison,
-      });
+      }));
 
       this.log("✅ Diagnostic data loaded and sent to webview");
 
