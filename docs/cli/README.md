@@ -31,7 +31,7 @@ Requires **Node.js 22.14 or later**. The first run parses every session file it 
 | [`usage`](#usage--token-usage-report) | Tokens per period, per editor, per model, cost | `-m, --models`, `-c, --cost`, `--json` |
 | [`environmental`](#environmental--environmental-impact) (alias `env`) | CO₂, water and tree estimates | — |
 | [`fluency`](#fluency--fluency-score) | Fluency score per category | `-t, --tips`, `--json` |
-| [`diagnostics`](#diagnostics--search-locations--stats) | Every search location and what was found there | — |
+| [`diagnostics`](#diagnostics--search-locations--stats) | Every search location and what was found there | `--json` |
 | [`memory-files`](#memory-files--copilot-memory-files-hygiene-report) | Copilot agent memory-file hygiene | `--json`, `--stale-days`, `--large-kb`, `--server`, `--repo`, `--limit`, `--promote` |
 | [`curation`](#curation--tool-curation-report) | MCP servers and skills you load but don't use | `--json`, `--window` |
 | [`skill-suggestions`](#skill-suggestions--repeated-tasks) | Tasks you keep prompting for by hand (skill candidates) | `--json`, `--include-prompts` |
@@ -206,7 +206,10 @@ Every location searched for session files, whether it exists on this machine, an
 
 ```bash
 ai-engineering-fluency diagnostics
+ai-engineering-fluency diagnostics --json    # The Diagnostics view payload, built by the shared buildDiagnosticsViewData()
 ```
+
+`--json` emits the same payload shape the extension and desktop app give their Diagnostics view. State only VS Code has (backend sync, quota, budgets, per-editor skill counts) and the per-session detail table are reported as empty/`null`: not available in the CLI.
 
 ```
 🔬 Copilot Token Tracker - Diagnostics

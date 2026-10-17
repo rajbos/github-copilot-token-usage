@@ -139,7 +139,7 @@ The CLI (`cli/`) is a thin consumer of the shared TypeScript modules in the repo
 | Chart webview payload | `buildChartData()` | `chartDataBuilder.ts` |
 | Efficiency webview payload | `buildEfficiencyViewData()` | `efficiencyViewBuilder.ts` |
 | Usage Analysis webview payload | `buildUsageAnalysisViewData()` (+ `buildWorkspaceCustomization()`, `buildCurationAnalysis()`, `evaluateUsageInsights()` for its inputs) | `usageAnalysisViewBuilder.ts`, `customizationMatrix.ts`, `toolCuration.ts`, `insightsEngine.ts` |
-| Diagnostics webview payload | `buildDiagnosticsViewData()` (+ `buildSessionFolderData()`, `buildCacheInfo()`) | `diagnosticsViewBuilder.ts` |
+| Diagnostics webview payload | `buildDiagnosticsViewData()` and its `diagnosticDataLoaded` follow-up `buildDiagnosticDataLoadedMessage()` (+ `buildSessionFolderData()`, `buildCacheInfo()`) | `diagnosticsViewBuilder.ts` |
 
 Webview payloads follow the same rule: one function in `src/` builds a payload and
 every host (extension, CLI, desktop) calls it, differing only in how it gathers inputs

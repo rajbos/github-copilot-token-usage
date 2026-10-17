@@ -193,3 +193,46 @@ export function buildDiagnosticsViewData(inputs: DiagnosticsViewInputs): Diagnos
 		toolFamilies: inputs.toolFamilies,
 	};
 }
+
+/** Host inputs for {@link buildDiagnosticDataLoadedMessage}. */
+export interface DiagnosticDataLoadedInputs {
+	report: string;
+	sessionFiles: DiagnosticsViewInputs['sessionFiles'];
+	sessionFolders: SessionFolderEntry[];
+	candidatePaths: unknown[];
+	backendStorageInfo: unknown | null;
+	githubAuth: unknown;
+	accountBudgets: unknown[];
+	quotaEntitlements: unknown | null;
+	usageStats: UsageAnalysisStats | null | undefined;
+	skillCallsByEditor: Record<string, Record<string, number>> | null;
+	skillDescriptions: Record<string, string>;
+	toolFamilies: unknown[];
+	otelComparison: unknown | null;
+}
+
+/**
+ * The `diagnosticDataLoaded` message a host posts once the slow Diagnostics data is ready
+ * (the follow-up to the initial payload). Tool and skill stats come from the same helpers
+ * as {@link buildDiagnosticsViewData}.
+ */
+export function buildDiagnosticDataLoadedMessage(inputs: DiagnosticDataLoadedInputs) {
+	return {
+		command: 'diagnosticDataLoaded' as const,
+		report: inputs.report,
+		sessionFiles: inputs.sessionFiles,
+		sessionFolders: inputs.sessionFolders,
+		candidatePaths: inputs.candidatePaths,
+		backendStorageInfo: inputs.backendStorageInfo,
+		githubAuth: inputs.githubAuth,
+		accountBudgets: inputs.accountBudgets,
+		// Carried with the list so the webview takes its full quota-card refresh path if a direct update was missed.
+		quotaEntitlements: inputs.quotaEntitlements,
+		toolCallStats: diagnosticsToolCallStats(inputs.usageStats),
+		skillCallStats: diagnosticsSkillCallStats(inputs.usageStats),
+		skillCallsByEditor: inputs.skillCallsByEditor,
+		skillDescriptions: inputs.skillDescriptions,
+		toolFamilies: inputs.toolFamilies,
+		otelComparison: inputs.otelComparison,
+	};
+}

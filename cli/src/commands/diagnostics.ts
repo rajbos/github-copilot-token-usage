@@ -4,8 +4,10 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import * as path from 'path';
-import { discoverSessionFiles, getDiagnosticPaths, processSessionFile, effectiveTokens, fmt, formatTokens } from '../helpers';
+import { discoverSessionFiles, calculateUsageAnalysisStats, getDiagnosticPaths, processSessionFile, effectiveTokens, fmt, formatTokens } from '../helpers';
 import { ProgressTracker } from '../progress';
+import { shouldOutputJson } from '../commandUtils';
+import { createDiagnosticsPayload } from '../diagnosticsView';
 import { normalizePathSeparators } from '../../../src/workspaceHelpers';
 
 interface LocationStats {
@@ -81,7 +83,18 @@ function printTable(headers: string[], rows: string[][], colWidths: number[]): v
 
 export const diagnosticsCommand = new Command('diagnostics')
 	.description('Show session file search locations and per-location usage stats')
-	.action(async () => {
+	.option('--json', 'Output the Diagnostics view payload as JSON (for machine consumption)')
+	.action(async (options) => {
+		if (shouldOutputJson(options)) {
+			const candidates = getDiagnosticPaths();
+			const sessionFiles = await discoverSessionFiles();
+			const usageStats = sessionFiles.length === 0 ? null : await calculateUsageAnalysisStats(sessionFiles);
+			const report = `AI Engineering Fluency CLI - Diagnostic Report
+Session files found: ${sessionFiles.length}
+Timestamp: ${new Date().toISOString()}`;
+			process.stdout.write(JSON.stringify(await createDiagnosticsPayload(sessionFiles, usageStats, report, candidates)));
+			return;
+		}
 		console.log(chalk.bold.cyan('\n🔬 Copilot Token Tracker - Diagnostics\n'));
 
 		// --- Search path candidates ---
