@@ -5891,20 +5891,6 @@
     },
     {
       "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "8e41b2a0cd75",
-      "count": 1,
-      "line": 1104,
-      "sample": "No purposeful tools used yet (automatic tool calls are hidden)"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "2c07c7dc919f",
-      "count": 1,
-      "line": 1105,
-      "sample": "No tools used yet"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
       "hash": "f7b315d176e2",
       "count": 2,
       "line": 1172,
@@ -6360,76 +6346,6 @@
     },
     {
       "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "7340f4114b2b",
-      "count": 1,
-      "line": 3106,
-      "sample": "Total MCP Calls:"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "046c9ee8b06e",
-      "count": 1,
-      "line": 3108,
-      "sample": "By Server:"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "b50417c65838",
-      "count": 3,
-      "line": 3109,
-      "sample": "No MCP tools used yet"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "6a11534b972d",
-      "count": 1,
-      "line": 3115,
-      "sample": "Total MCP Calls:"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "29be781a282c",
-      "count": 1,
-      "line": 3117,
-      "sample": "By Server:"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "6262c027741a",
-      "count": 1,
-      "line": 3124,
-      "sample": "Total MCP Calls:"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "96652a2a8a71",
-      "count": 1,
-      "line": 3126,
-      "sample": "By Server:"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "59548443201a",
-      "count": 1,
-      "line": 3135,
-      "sample": "By Tool:"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "553c73b1ca99",
-      "count": 1,
-      "line": 3142,
-      "sample": "By Tool:"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "04fd825fc41f",
-      "count": 1,
-      "line": 3149,
-      "sample": "By Tool:"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
       "hash": "84466a371814",
       "count": 1,
       "line": 3174,
@@ -6616,48 +6532,6 @@
       "count": 1,
       "line": 3428,
       "sample": "Personalized tips based on your usage patterns. Tips are data-driven — they only"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "1f09d2cdcea6",
-      "count": 1,
-      "line": 3465,
-      "sample": "× repeated"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "9a03fb70c9b9",
-      "count": 2,
-      "line": 3466,
-      "sample": "&ldquo;"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "3e668a3517b0",
-      "count": 1,
-      "line": 3470,
-      "sample": "Sessions ("
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "f5adc9301b12",
-      "count": 1,
-      "line": 3481,
-      "sample": "Skill Suggestions"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "54534cd6a05a",
-      "count": 1,
-      "line": 3483,
-      "sample": "Tasks you keep prompting for across sessions (first prompt per session,"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "2fa1aa7c5451",
-      "count": 1,
-      "line": 3483,
-      "sample": "sessions scanned).\\n\\t\\t\\t\\tA repeated task is a good candidate for a reusable s"
     },
     {
       "file": "vscode-extension/src/webview/usage/main.ts",
@@ -6934,38 +6808,10 @@
     },
     {
       "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "c5e9e5129c67",
-      "count": 1,
-      "line": 4083,
-      "sample": "Open"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "3497e5cffdcf",
-      "count": 2,
-      "line": 4084,
-      "sample": "Remove via git worktree remove (asks for confirmation)"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
       "hash": "f5cf7b9e4065",
       "count": 1,
       "line": 4104,
       "sample": "bytes"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "0825517521dc",
-      "count": 1,
-      "line": 4118,
-      "sample": "Remove this repository's pushed worktrees via git worktree remove (asks for conf"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "17c04a52f557",
-      "count": 1,
-      "line": 4119,
-      "sample": "🧹 Clean up ("
     },
     {
       "file": "vscode-extension/src/webview/usage/main.ts",
@@ -7001,13 +6847,6 @@
       "count": 1,
       "line": 4320,
       "sample": "🧹 Cleaning up pushed worktrees…"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "d568e62cc0af",
-      "count": 1,
-      "line": 4321,
-      "sample": "processed"
     },
     {
       "file": "vscode-extension/src/webview/usage/main.ts",
@@ -7239,55 +7078,6 @@
       "count": 1,
       "line": 4609,
       "sample": "How you're using AI assistants: Ask (chat), Edit (code edits), Agent (autonomous"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "7915511608bf",
-      "count": 3,
-      "line": 4675,
-      "sample": "tokens —"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "c832d3168da2",
-      "count": 1,
-      "line": 4681,
-      "sample": "Default tier fits"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "dc3c3501612a",
-      "count": 1,
-      "line": 4745,
-      "sample": "No data"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "854e41a77dbd",
-      "count": 1,
-      "line": 4771,
-      "sample": "Automatic compactions remove earlier messages to fit the context window and can "
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "a3615f99a808",
-      "count": 1,
-      "line": 4773,
-      "sample": "↩ Automatic compactions (last 7 days)"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "84747518b6b6",
-      "count": 1,
-      "line": 4791,
-      "sample": "Context Window &amp; Long-Context Pricing"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "7f38000d0adc",
-      "count": 1,
-      "line": 4792,
-      "sample": "How close your largest requests come to the long-context price line. Models with"
     },
     {
       "file": "vscode-extension/src/webview/usage/main.ts",
@@ -7627,27 +7417,6 @@
     },
     {
       "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "70ed7beed283",
-      "count": 1,
-      "line": 5359,
-      "sample": "Total Tool Calls:"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "077d3850ad4c",
-      "count": 1,
-      "line": 5366,
-      "sample": "Total Tool Calls:"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
-      "hash": "2e56ab9f4559",
-      "count": 1,
-      "line": 5373,
-      "sample": "Total Tool Calls:"
-    },
-    {
-      "file": "vscode-extension/src/webview/usage/main.ts",
       "hash": "8bf767d5b73b",
       "count": 1,
       "line": 5388,
@@ -7974,6 +7743,76 @@
       "count": 1,
       "line": 270,
       "sample": "No release information available."
+    },
+    {
+      "file": "vscode-extension/src/webview/usage/contextWindowSection.ts",
+      "hash": "7915511608bf",
+      "count": 3,
+      "line": 54,
+      "sample": "tokens —"
+    },
+    {
+      "file": "vscode-extension/src/webview/usage/contextWindowSection.ts",
+      "hash": "c832d3168da2",
+      "count": 1,
+      "line": 60,
+      "sample": "Default tier fits"
+    },
+    {
+      "file": "vscode-extension/src/webview/usage/contextWindowSection.ts",
+      "hash": "dc3c3501612a",
+      "count": 1,
+      "line": 124,
+      "sample": "No data"
+    },
+    {
+      "file": "vscode-extension/src/webview/usage/contextWindowSection.ts",
+      "hash": "854e41a77dbd",
+      "count": 1,
+      "line": 150,
+      "sample": "Automatic compactions remove earlier messages to fit the context window and can "
+    },
+    {
+      "file": "vscode-extension/src/webview/usage/contextWindowSection.ts",
+      "hash": "a3615f99a808",
+      "count": 1,
+      "line": 152,
+      "sample": "↩ Automatic compactions (last 7 days)"
+    },
+    {
+      "file": "vscode-extension/src/webview/usage/contextWindowSection.ts",
+      "hash": "84747518b6b6",
+      "count": 1,
+      "line": 170,
+      "sample": "Context Window &amp; Long-Context Pricing"
+    },
+    {
+      "file": "vscode-extension/src/webview/usage/contextWindowSection.ts",
+      "hash": "7f38000d0adc",
+      "count": 1,
+      "line": 171,
+      "sample": "How close your largest requests come to the long-context price line. Models with"
+    },
+    {
+      "file": "vscode-extension/src/webview/usage/contextWindowSection.ts",
+      "hash": "4ee19f3f0f12",
+      "count": 1,
+      "line": 174,
+      "sample": "📅 Today"
+    },
+    {
+      "file": "vscode-extension/src/webview/usage/contextWindowSection.ts",
+      "hash": "0f947d0d282e",
+      "count": 1,
+      "line": 178,
+      "sample": "📆 Last 30 Days"
+    },
+    {
+      "file": "vscode-extension/src/webview/usage/contextWindowSection.ts",
+      "hash": "0ca077f93883",
+      "count": 1,
+      "line": 182,
+      "sample": "📅 Previous Month"
     }
   ]
 }
