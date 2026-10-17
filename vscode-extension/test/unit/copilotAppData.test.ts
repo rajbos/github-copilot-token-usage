@@ -76,8 +76,50 @@ test('getSessionContextInfo returns parsed context window data when no WAL file 
 			contextWindowLimit: 128000,
 		});
 		assert.equal(harness.opened.length, 1);
+		// The loaded copy is shared for a short while; it is released on dispose.
+		assert.equal(harness.opened[0].closed, false);
+		harness.access.dispose();
 		assert.equal(harness.opened[0].closed, true);
 	} finally {
+		harness.cleanup();
+	}
+});
+
+test('repeated queries reuse one loaded copy of data.db instead of re-reading it each time', async () => {
+	const harness = createHarness();
+	try {
+		fs.writeFileSync(harness.dbPath, 'fake-db-bytes');
+
+		await Promise.all([
+			harness.access.getSessionContextInfo(['session-1']),
+			harness.access.getSessionHierarchy(['session-1']),
+			harness.access.getSessionContextInfo(['session-1']),
+		]);
+		await harness.access.getSessionHierarchy(['session-1']);
+
+		assert.equal(harness.opened.length, 1, 'concurrent and follow-up queries must share one load');
+		harness.access.dispose();
+		assert.equal(harness.opened[0].closed, true);
+	} finally {
+		harness.access.dispose();
+		harness.cleanup();
+	}
+});
+
+test('separate access instances (different screens) share one process-wide loaded data.db', async () => {
+	const harness = createHarness();
+	try {
+		fs.writeFileSync(harness.dbPath, 'fake-db-bytes');
+		const other = new CopilotAppDataAccess();
+		other.getDbPath = () => harness.dbPath;
+		(other as any).initSqlJs = (harness.access as any).initSqlJs;
+
+		await harness.access.getSessionContextInfo(['session-1']);
+		await other.getSessionContextInfo(['session-1']);
+
+		assert.equal(harness.opened.length, 1, 'the second screen must reuse the loaded copy of the first');
+	} finally {
+		harness.access.dispose();
 		harness.cleanup();
 	}
 });

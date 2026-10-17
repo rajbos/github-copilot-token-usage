@@ -57,6 +57,43 @@ export interface SessionContextWindow {
 	contextWindowLimit: number | null;
 }
 
+/**
+ * Process-wide cache of the loaded data.db (sql.js database), keyed by path. Every screen that
+ * needs hierarchy / context info (usage analysis, fluency, diagnostics) goes through it, so the
+ * file — 100+ MB for a heavy Copilot CLI user — is read and rebuilt on the extension host thread
+ * once, not once per query. This enrichment is optional, so reasonably old data is fine.
+ *
+ * - Idle TTL (sliding): each use resets it; the handle is closed after this long unused so the
+ *   large WASM copy does not stay resident.
+ * - Max age: a handle in constant use is still reloaded after this long, so it cannot go stale.
+ * - Concurrent first callers share one in-flight load.
+ */
+export const DATA_DB_IDLE_TTL_MS = 60_000;
+export const DATA_DB_MAX_AGE_MS = 5 * 60_000;
+
+interface SharedDbEntry { db: initSqlJs.Database; loadedAt: number; idleTimer: ReturnType<typeof setTimeout> }
+const sharedDbs = new Map<string, SharedDbEntry>();
+const sharedDbLoads = new Map<string, Promise<initSqlJs.Database>>();
+
+function releaseSharedDb(dbPath: string): void {
+	const entry = sharedDbs.get(dbPath);
+	if (!entry) { return; }
+	clearTimeout(entry.idleTimer);
+	sharedDbs.delete(dbPath);
+	try { entry.db.close(); } catch { /* already closed */ }
+}
+
+/** Closes the shared copy of `dbPath` (or every one); for extension dispose and tests. */
+export function releaseSharedDataDbs(dbPath?: string): void {
+	for (const key of dbPath ? [dbPath] : [...sharedDbs.keys()]) { releaseSharedDb(key); }
+}
+
+function armIdleTimer(dbPath: string, entry: SharedDbEntry): void {
+	clearTimeout(entry.idleTimer);
+	entry.idleTimer = setTimeout(() => releaseSharedDb(dbPath), DATA_DB_IDLE_TTL_MS);
+	entry.idleTimer.unref?.();
+}
+
 export class CopilotAppDataAccess {
 	private _sqlJsModule: SqlJsStatic | null = null;
 
@@ -64,6 +101,34 @@ export class CopilotAppDataAccess {
 	getDbPath(): string {
 		return path.join(os.homedir(), '.copilot', 'data.db');
 	}
+
+	/** The process-wide loaded data.db, loaded at most once per idle/max-age window. */
+	private async getSharedDb(dbPath: string): Promise<initSqlJs.Database> {
+		const entry = sharedDbs.get(dbPath);
+		if (entry && Date.now() - entry.loadedAt < DATA_DB_MAX_AGE_MS) {
+			armIdleTimer(dbPath, entry);
+			return entry.db;
+		}
+		const inFlight = sharedDbLoads.get(dbPath);
+		if (inFlight) { return inFlight; }
+		const loading = (async () => {
+			const SQL = await this.initSqlJs();
+			// Merge any pending WAL frames first — the Copilot app may still hold data.db
+			// open in WAL mode, so a bare file read can silently miss its most recent writes.
+			const buffer = await readDbBufferWithWal(dbPath);
+			const db = new SQL.Database(buffer);
+			releaseSharedDb(dbPath);
+			const fresh: SharedDbEntry = { db, loadedAt: Date.now(), idleTimer: setTimeout(() => undefined, 0) };
+			armIdleTimer(dbPath, fresh);
+			sharedDbs.set(dbPath, fresh);
+			return db;
+		})();
+		sharedDbLoads.set(dbPath, loading);
+		try { return await loading; } finally { sharedDbLoads.delete(dbPath); }
+	}
+
+	/** Drops this host's shared copy of data.db (extension dispose / tests). */
+	dispose(): void { releaseSharedDataDbs(this.getDbPath()); }
 
 	/** Lazily initialise and cache the sql.js WASM module. */
 	private async initSqlJs(): Promise<SqlJsStatic> {
@@ -102,16 +167,8 @@ export class CopilotAppDataAccess {
 		if (!fs.existsSync(dbPath)) { return result; }
 
 		try {
-			const SQL = await this.initSqlJs();
-			// Merge any pending WAL frames first — the Copilot app may still hold data.db
-			// open in WAL mode, so a bare file read can silently miss its most recent writes.
-			const buffer = await readDbBufferWithWal(dbPath);
-			const db = new SQL.Database(buffer);
-			try {
-				return this._buildHierarchyFromDb(db, sessionUuids);
-			} finally {
-				db.close();
-			}
+			const db = await this.getSharedDb(dbPath);
+			return this._buildHierarchyFromDb(db, sessionUuids);
 		} catch {
 			return result;
 		}
@@ -132,25 +189,18 @@ export class CopilotAppDataAccess {
 		if (!fs.existsSync(dbPath)) { return result; }
 
 		try {
-			const SQL = await this.initSqlJs();
-			// Same WAL-merge rationale as getSessionHierarchy above: context_current_tokens
-			// etc. are updated continuously while a Copilot CLI session runs, and those
-			// writes can sit in data.db-wal, unseen by a bare file read, for a long time.
-			const buffer = await readDbBufferWithWal(dbPath);
-			const db = new SQL.Database(buffer);
-			try {
-				const ph = sessionUuids.map(() => '?').join(', ');
-				const res = db.exec(
-					`SELECT id, context_tier, context_current_tokens, context_input_token_limit
-					 FROM sessions WHERE id IN (${ph})`,
-					sessionUuids,
-				);
-				for (const row of res.length > 0 ? res[0].values : []) {
-					const node = this._toContextWindowNode(row as (string | number | null)[]);
-					if (node) { result.set(node.uuid, node); }
-				}
-			} finally {
-				db.close();
+			// WAL-merged like getSessionHierarchy: context_current_tokens etc. are updated
+			// continuously while a Copilot CLI session runs.
+			const db = await this.getSharedDb(dbPath);
+			const ph = sessionUuids.map(() => '?').join(', ');
+			const res = db.exec(
+				`SELECT id, context_tier, context_current_tokens, context_input_token_limit
+				 FROM sessions WHERE id IN (${ph})`,
+				sessionUuids,
+			);
+			for (const row of res.length > 0 ? res[0].values : []) {
+				const node = this._toContextWindowNode(row as (string | number | null)[]);
+				if (node) { result.set(node.uuid, node); }
 			}
 		} catch { /* optional enrichment — suppress */ }
 		return result;
