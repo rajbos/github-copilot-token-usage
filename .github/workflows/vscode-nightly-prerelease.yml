@@ -3,6 +3,13 @@ name: VS Code Nightly Pre-Release
 on:
   schedule:
     - cron: '0 2 * * *'  # 2am UTC daily
+  # Re-run when this workflow itself changes on main, so a fix to the nightly
+  # is verified (and a missed nightly published) without waiting for 2am UTC.
+  # Limited to main: the publish job pushes to the marketplace.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/vscode-nightly-prerelease.yml'
   workflow_dispatch:
     inputs:
       force:
