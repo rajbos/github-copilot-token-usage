@@ -616,3 +616,25 @@ test('recovery helpers do not log on success', async () => {
 	});
 	assert.deepEqual(calls, []);
 });
+
+// Follow-up to #2462 (refs #2341): guards that still survived the mutation re-run.
+test('redactSecretsInText returns falsy text untouched even when secrets are provided', () => {
+	assert.equal(redactSecretsInText('', ['secret']), '');
+	assert.equal(redactSecretsInText(null as any, ['secret']), null);
+	assert.equal(redactSecretsInText(undefined as any, ['secret']), undefined);
+});
+
+test('redactSecretsInText returns text untouched when secretsToRedact is undefined', () => {
+	assert.equal(redactSecretsInText('keep me', undefined as any), 'keep me');
+});
+
+test('redactSecretsInText ignores whitespace-only, empty and nullish secrets', () => {
+	assert.equal(redactSecretsInText('a b  c', [' ', '  ', '\t']), 'a b  c');
+	assert.equal(redactSecretsInText('a b', ['', null as any, undefined as any]), 'a b');
+	assert.equal(redactSecretsInText('a b token', [' ', 'token']), 'a b [REDACTED]');
+});
+
+test('safeStringifyError stringifies primitives that JSON cannot handle (bigint, symbol)', () => {
+	assert.equal(safeStringifyError(10n), '10');
+	assert.equal(safeStringifyError(Symbol('x')), 'Symbol(x)');
+});
