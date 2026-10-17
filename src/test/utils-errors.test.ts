@@ -500,3 +500,119 @@ assert.equal(isNetworkError({ statusCode: 404 }), false);
 assert.equal(isNetworkError({ code: 'NOT_FOUND' }), false);
 assert.equal(isNetworkError(null), false);
 });
+
+// ── Mutation-hardening tests (issue #2341) ──────────────────────────────
+
+test('redactSecretsInText ignores whitespace-only secrets but still redacts other secrets in the list', () => {
+	assert.equal(redactSecretsInText('a b', ['  ']), 'a b');
+	assert.equal(redactSecretsInText('a b', ['\t', '\n']), 'a b');
+	assert.equal(redactSecretsInText('a b', ['', 'b']), 'a [REDACTED]');
+	assert.equal(redactSecretsInText('a b', ['  ', 'b']), 'a [REDACTED]');
+});
+
+test('redactSecretsInText keeps surrounding whitespace of a secret significant', () => {
+	// A secret that merely contains whitespace is a real secret and is matched literally.
+	assert.equal(redactSecretsInText('key secret end', [' secret ']), 'key[REDACTED]end');
+});
+
+test('safeStringifyError redaction boundary: empty list is a no-op, non-empty list redacts', () => {
+	assert.equal(safeStringifyError('x', []), 'x');
+	assert.equal(safeStringifyError('x', ['x']), '[REDACTED]');
+	assert.equal(safeStringifyError('x'), 'x');
+});
+
+test('safeStringifyError returns the message for an Error without a stack', () => {
+	const err = new Error('boom');
+	err.stack = undefined;
+	assert.equal(safeStringifyError(err), 'boom');
+	assert.equal(safeStringifyError(err, ['boom']), '[REDACTED]');
+});
+
+test('safeStringifyError falls back to toString() for a stackless Error with an empty message', () => {
+	const err = new Error('');
+	err.stack = undefined;
+	assert.equal(safeStringifyError(err), 'Error');
+	const typeErr = new TypeError('');
+	typeErr.stack = undefined;
+	assert.equal(safeStringifyError(typeErr), 'TypeError');
+});
+
+test('safeStringifyError redacts an Error stack only when secrets are supplied', () => {
+	const err = new Error('token=abc123');
+	err.stack = 'Error: token=abc123\n    at fake (file.js:1:1)';
+	assert.equal(safeStringifyError(err), err.stack);
+	assert.equal(safeStringifyError(err, []), err.stack);
+	assert.equal(safeStringifyError(err, ['abc123']), 'Error: token=[REDACTED]\n    at fake (file.js:1:1)');
+});
+
+test('safeStringifyError object shapes: message beats error beats JSON', () => {
+	assert.equal(safeStringifyError({ message: 'm', error: 'e' }), 'm');
+	assert.equal(safeStringifyError({ error: 'e' }), 'e');
+	assert.equal(safeStringifyError({ message: '', error: 'e' }), 'e');
+	assert.equal(safeStringifyError({ a: 1 }), '{"a":1}');
+});
+
+test('safeStringifyError falls back to message/error/[object Object] for circular objects', () => {
+	const circular: any = {};
+	circular.self = circular;
+	assert.equal(safeStringifyError(circular), '[object Object]');
+
+	const withMessage: any = { message: 'm' };
+	withMessage.self = withMessage;
+	assert.equal(safeStringifyError(withMessage), 'm');
+
+	const withError: any = { error: 'e' };
+	withError.self = withError;
+	assert.equal(safeStringifyError(withError), 'e');
+});
+
+test('safeStringifyError stringifies null, undefined and numbers via String()', () => {
+	assert.equal(safeStringifyError(null), 'null');
+	assert.equal(safeStringifyError(undefined), 'undefined');
+	assert.equal(safeStringifyError(0), '0');
+});
+
+function captureConsoleError(run: () => unknown): Promise<unknown[][]> {
+	const original = console.error;
+	const calls: unknown[][] = [];
+	console.error = (...args: unknown[]) => { calls.push(args); };
+	return Promise.resolve()
+		.then(run)
+		.then(() => calls)
+		.finally(() => { console.error = original; });
+}
+
+test('recovery helpers log "[recovery] unknown:" when no context is given and the supplied context otherwise', async () => {
+	const boom = new Error('boom');
+	const thrower = () => { throw boom; };
+	const cases: Array<[string, () => unknown]> = [
+		['sync', () => withErrorRecoverySync(thrower, 0)],
+		['async', () => withErrorRecovery(thrower, 0)],
+		['syncResult', () => withErrorRecoverySyncResult(thrower)],
+		['result', () => withErrorRecoveryResult(thrower)],
+	];
+	for (const [name, run] of cases) {
+		const noContext = await captureConsoleError(run);
+		assert.deepEqual(noContext, [['[recovery] unknown:', boom]], `${name} without context`);
+	}
+	const withContext: Array<[string, (c: string) => unknown]> = [
+		['sync', c => withErrorRecoverySync(thrower, 0, c)],
+		['async', c => withErrorRecovery(thrower, 0, c)],
+		['syncResult', c => withErrorRecoverySyncResult(thrower, c)],
+		['result', c => withErrorRecoveryResult(thrower, c)],
+	];
+	for (const [name, run] of withContext) {
+		const calls = await captureConsoleError(() => run('loading cache'));
+		assert.deepEqual(calls, [['[recovery] loading cache:', boom]], `${name} with context`);
+	}
+});
+
+test('recovery helpers do not log on success', async () => {
+	const calls = await captureConsoleError(async () => {
+		withErrorRecoverySync(() => 1, 0, 'ctx');
+		await withErrorRecovery(async () => 1, 0, 'ctx');
+		withErrorRecoverySyncResult(() => 1, 'ctx');
+		await withErrorRecoveryResult(() => 1, 'ctx');
+	});
+	assert.deepEqual(calls, []);
+});

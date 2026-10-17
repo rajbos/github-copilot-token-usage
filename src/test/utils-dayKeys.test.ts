@@ -104,3 +104,10 @@ const result = toLocalDayKey(d);
 assert.equal(result.length, 10);
 assert.match(result, /^\d{4}-\d{2}-\d{2}$/);
 });
+
+test('getDayKeysInclusive: stops at the end key without computing the day after it (max date boundary)', () => {
+	// Day after 9999-12-31 is '+010000-01-01', which sorts *before* '9999-12-31' as a string.
+	// Without the early break at the end key the loop would never terminate.
+	assert.deepEqual(getDayKeysInclusive('9999-12-31', '9999-12-31'), ['9999-12-31']);
+	assert.deepEqual(getDayKeysInclusive('9999-12-30', '9999-12-31'), ['9999-12-30', '9999-12-31']);
+});
