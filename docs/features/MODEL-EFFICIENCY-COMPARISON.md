@@ -82,6 +82,8 @@ from "how far back does the drift chart go".
 | Self-correction rate | lower is better | How often the model fixed its own output |
 | Cache read share | higher is better | Prompt reuse, which lowers cost |
 | Active minutes per session | lower is better | Wall-clock time to get the work done |
+| Median turn time | lower is better | End-to-end seconds per turn (histogram p50, accurate to a factor of two) |
+| Output tokens per second | higher is better | Reported output tokens divided by turn time, over turns that reported them |
 | Apply rate | higher is better | Suggested blocks you actually accepted |
 
 ## How the numbers are attributed
@@ -192,6 +194,33 @@ The comparison engine itself lives in `src/efficiencyAnalysis.ts`
 `buildModelBucketSeries`, `selectModelDaysForEditor`, `listModelVendors`,
 `filterModelsByVendor`) and is shared, so the CLI and other hosts can consume
 the same logic without reimplementing it.
+
+## Turn latency
+
+Each turn's duration is recorded in shared code (`src/modelEfficiency.ts`,
+`turnDurationMs`) as one additive `LatencyHistogram` per model, stored as
+`ModelEfficiencyCounters.turnLatency` — so it is also split per editor and merges
+by addition like every other counter. The rule is the same for every source: the
+user message timestamp to the **last assistant or tool event of that turn**.
+Output tokens per second divides only the reported (never estimated) output tokens
+by the time of the turns that reported them (`timedOutputTokens` / `timedOutputMs`).
+
+A turn includes tool execution, sub-agent work and user-approval waits, so this is
+**end-to-end latency, not model latency**, and tokens per second understates raw
+decode speed for tool-heavy turns. The same turn windows give sources without
+Copilot Chat's `timings.totalElapsed` an `activeDurationMs` (merged windows, idle
+gaps excluded), so "Active minutes per session" is no longer Copilot-Chat-only.
+
+| Source | Turn window | Output tokens/s |
+|---|---|---|
+| Copilot Chat (JSON / delta) | `timestamp` + `result.timings.totalElapsed` | when the result reports output tokens |
+| Copilot CLI (`events.jsonl`) | `user.message` to last `assistant.*` / `tool.*` event | from `assistant.message.outputTokens` |
+| Claude Code, Claude Desktop | human message to last assistant or tool-result event | from the API usage |
+| Copilot CLI session store (SQLite) | none — turns carry only a start time | — |
+| Mistral Vibe and other adapters | none — `messages.jsonl` has no timestamps | — |
+
+Sources without a turn end show "—", never zero. Mistral Vibe's session-level
+`stats.last_turn_duration` is not used here.
 
 ## Limitations
 

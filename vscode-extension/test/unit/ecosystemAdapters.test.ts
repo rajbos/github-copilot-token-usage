@@ -1014,3 +1014,36 @@ test('ClaudeDesktopAdapter.analyzeUsage: MCP tool_use lands under mcpTools, cons
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
 });
+
+test('ClaudeDesktopAdapter.buildTurns: carries the turn end from the last event timestamp', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(process.cwd(), 'cowork-latency-'));
+    const sessionFile = path.join(tmpDir, 'session.jsonl');
+    try {
+        const events = [
+            { type: 'user', isSidechain: false, timestamp: '2026-05-01T10:00:00Z', message: { role: 'user', content: 'Hello' } },
+            { type: 'assistant', requestId: 'r1', timestamp: '2026-05-01T10:00:20Z', message: { role: 'assistant', stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 }, content: [{ type: 'text', text: 'Hi' }] } },
+        ];
+        fs.writeFileSync(sessionFile, events.map(e => JSON.stringify(e)).join('\n'));
+        const { turns } = await claudeDesktopAdapter.buildTurns(sessionFile);
+        assert.equal(turns[0].timestamp, '2026-05-01T10:00:00.000Z');
+        assert.equal(turns[0].endTimestamp, '2026-05-01T10:00:20.000Z');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('MistralVibeAdapter.buildTurns: has no per-turn end time, so no latency is recorded (never fabricated)', async () => {
+    const dir = fs.mkdtempSync(path.join(process.cwd(), 'vibe-latency-'));
+    try {
+        fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify({ config: { active_model: 'devstral' }, stats: { session_prompt_tokens: 10, session_completion_tokens: 5 } }));
+        fs.writeFileSync(path.join(dir, 'messages.jsonl'), [
+            JSON.stringify({ role: 'user', content: 'hi' }),
+            JSON.stringify({ role: 'assistant', content: 'hello' }),
+        ].join('\n'));
+        const { turns } = await mistralVibeAdapter.buildTurns(path.join(dir, 'meta.json'));
+        assert.ok(turns.length >= 1);
+        assert.ok(turns.every(t => t.endTimestamp === undefined || t.endTimestamp === null));
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+});

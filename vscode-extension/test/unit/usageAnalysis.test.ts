@@ -3857,3 +3857,50 @@ test('analyzeSessionUsage: onAnalysisError fires only when the session could not
 	assert.equal(errors.length, 1, 'an unreadable session signals onAnalysisError');
 	assert.ok(result.taskClassification, 'callers still get a well-formed empty analysis');
 });
+
+test('analyzeSessionUsage: Copilot Chat JSON turn windows fill the per-model latency histogram', async () => {
+    const t0 = Date.parse('2026-05-01T10:00:00Z');
+    const content = JSON.stringify({
+        requests: [
+            { modelId: 'copilot/gpt-4o', timestamp: t0, message: { text: 'a' }, result: { promptTokens: 10, outputTokens: 300, timings: { totalElapsed: 10_000 } } },
+            { modelId: 'copilot/gpt-4o', timestamp: t0 + 60_000, message: { text: 'b' }, result: { promptTokens: 10, outputTokens: 100, timings: { totalElapsed: 10_000 } } },
+        ]
+    });
+    const result = await analyzeSessionUsage(makeMockDeps(), FAKE_JSON_PATH, content);
+    const counters = result.modelEfficiency?.['gpt-4o'];
+    assert.equal(counters?.turnLatency?.count, 2);
+    assert.equal(counters?.turnLatency?.sumMs, 20_000);
+    assert.equal(counters?.timedOutputTokens, 400);
+    assert.equal(counters?.timedOutputMs, 20_000);
+    assert.equal(result.sessionDuration?.activeDurationMs, 20_000);
+});
+
+test('analyzeSessionUsage: Copilot Chat JSON without timestamps or timings produces no latency histogram', async () => {
+    const content = JSON.stringify({
+        requests: [{ modelId: 'copilot/gpt-4o', message: { text: 'a' }, result: { promptTokens: 10, outputTokens: 5 } }]
+    });
+    const result = await analyzeSessionUsage(makeMockDeps(), FAKE_JSON_PATH, content);
+    assert.equal(result.modelEfficiency?.['gpt-4o']?.turnLatency, undefined);
+    assert.equal(result.sessionDuration?.activeDurationMs, 0);
+});
+
+test('analyzeSessionUsage: Copilot CLI turns end at their last assistant/tool event and yield active duration', async () => {
+    const events = [
+        { type: 'session.start', data: { selectedModel: 'claude-sonnet-5' }, timestamp: '2026-05-01T10:00:00Z' },
+        { type: 'user.message', data: { content: 'one' }, timestamp: '2026-05-01T10:00:05Z' },
+        { type: 'tool.execution_start', data: { toolCallId: 'c1', toolName: 'view', arguments: { path: 'a.ts' } }, timestamp: '2026-05-01T10:00:08Z' },
+        { type: 'tool.execution_complete', data: { toolCallId: 'c1', success: true, result: { content: 'x' } }, timestamp: '2026-05-01T10:00:10Z' },
+        { type: 'assistant.message', data: { content: 'done', outputTokens: 200 }, timestamp: '2026-05-01T10:00:15Z' },
+        { type: 'session.shutdown', data: {}, timestamp: '2026-05-01T11:30:00Z' },
+        { type: 'user.message', data: { content: 'two' }, timestamp: '2026-05-01T12:00:00Z' },
+    ];
+    const content = events.map(e => JSON.stringify(e)).join('\n');
+    const result = await analyzeSessionUsage(makeMockDeps(), '/home/user/.copilot/session-state/abc/events.jsonl', content);
+    const counters = result.modelEfficiency?.['claude-sonnet-5'];
+    // Turn one: 10:00:05 -> 10:00:15 (shutdown is not response work); turn two has no response event, so it is untimed.
+    assert.equal(counters?.calls, 2);
+    assert.equal(counters?.turnLatency?.count, 1);
+    assert.equal(counters?.turnLatency?.sumMs, 10_000);
+    assert.equal(counters?.timedOutputTokens, 200);
+    assert.equal(result.sessionDuration?.activeDurationMs, 10_000);
+});

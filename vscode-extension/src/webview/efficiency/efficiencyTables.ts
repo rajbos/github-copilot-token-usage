@@ -31,6 +31,8 @@ export function fmtValue(v: number | null, unit: EfficiencyDelta['unit']): strin
 	switch (unit) {
 		case 'percent': return `${(v * 100).toFixed(1)}%`;
 		case 'minutes': return `${v.toFixed(1)} min`;
+		case 'seconds': return `${v.toFixed(1)} s`;
+		case 'tokensPerSecond': return `${v.toFixed(1)} tok/s`;
 		case 'tokens': return formatCompact(Math.round(v));
 		case 'currency': return `$${v.toFixed(2)}`;
 		case 'ratio': return v.toFixed(1);

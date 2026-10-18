@@ -26,6 +26,7 @@ import type { DailyModelEfficiency, DailyModelEfficiencyEntry, DailyTokenStats, 
 import { activeSessionDays, addModelUsage, scaleModelUsage } from './statsHelpers';
 import { calculateEstimatedCost } from './tokenEstimation';
 import { isUnsafeObjectKey } from './utils/protoGuard';
+import { createLatencyHistogram, latencyPercentileMs, mergeLatencyHistogram, recordLatencyMs } from './latencyHistogram';
 
 // ---------------------------------------------------------------------------
 // Edit-tool detection
@@ -114,8 +115,77 @@ export interface EfficiencyTurn {
 	userMessage?: string;
 	/** Raw assistant response text (correction detection only). */
 	assistantResponse?: string;
-	/** Turn timestamp (correction detection only). */
+	/** Turn timestamp: correction detection, and the start of the turn-latency window. */
 	timestamp?: string | null;
+	/** ISO time of the turn's last assistant/tool event; with `timestamp` it bounds the turn-latency window. */
+	endTimestamp?: string | null;
+	/** Reported (not estimated) token usage; only `completionTokens` is read, for output tokens/second. */
+	actualUsage?: { completionTokens?: number };
+}
+
+/**
+ * Wall-clock span of a turn in ms, or null when either end is missing, unparsable
+ * or inverted. Sources without per-turn end times (Mistral Vibe) therefore yield
+ * no latency rather than a made-up one.
+ */
+export function turnDurationMs(turn: Pick<EfficiencyTurn, 'timestamp' | 'endTimestamp'>): number | null {
+	if (!turn.timestamp || !turn.endTimestamp) { return null; }
+	const start = Date.parse(turn.timestamp);
+	const end = Date.parse(turn.endTimestamp);
+	if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) { return null; }
+	return end - start;
+}
+
+/**
+ * Sum of the merged turn windows in ms (idle gaps between turns excluded), or 0
+ * when no turn has a usable window. Gives sources without Copilot Chat's
+ * `timings.totalElapsed` an `activeDurationMs` from the same windows the latency
+ * histogram uses.
+ */
+export function activeDurationFromTurns(turns: Pick<EfficiencyTurn, 'timestamp' | 'endTimestamp'>[]): number {
+	const windows: { start: number; end: number }[] = [];
+	for (const turn of turns) {
+		const duration = turnDurationMs(turn);
+		if (duration !== null) {
+			const start = Date.parse(turn.timestamp!);
+			windows.push({ start, end: start + duration });
+		}
+	}
+	if (windows.length === 0) { return 0; }
+	windows.sort((a, b) => a.start - b.start);
+	let total = 0;
+	let curStart = windows[0].start;
+	let curEnd = windows[0].end;
+	for (const { start, end } of windows.slice(1)) {
+		if (start <= curEnd) { curEnd = Math.max(curEnd, end); }
+		else { total += curEnd - curStart; curStart = start; curEnd = end; }
+	}
+	return total + (curEnd - curStart);
+}
+
+/** Folds `src`'s turn-latency fields into `target`; a source without any leaves `target` untouched. */
+export function mergeTurnLatency(
+	target: Pick<ModelEfficiencyCounters, 'turnLatency' | 'timedOutputTokens' | 'timedOutputMs'>,
+	src: Pick<ModelEfficiencyCounters, 'turnLatency' | 'timedOutputTokens' | 'timedOutputMs'>,
+): void {
+	if (src.turnLatency && src.turnLatency.count > 0) {
+		mergeLatencyHistogram(target.turnLatency ??= createLatencyHistogram(), src.turnLatency);
+	}
+	if (src.timedOutputMs && src.timedOutputMs > 0) {
+		target.timedOutputTokens = (target.timedOutputTokens ?? 0) + (src.timedOutputTokens ?? 0);
+		target.timedOutputMs = (target.timedOutputMs ?? 0) + src.timedOutputMs;
+	}
+}
+
+function recordTurnLatency(counters: ModelEfficiencyCounters, turn: EfficiencyTurn): void {
+	const duration = turnDurationMs(turn);
+	if (duration === null) { return; }
+	recordLatencyMs(counters.turnLatency ??= createLatencyHistogram(), duration);
+	const outputTokens = turn.actualUsage?.completionTokens ?? 0;
+	if (outputTokens > 0 && duration > 0) {
+		counters.timedOutputTokens = (counters.timedOutputTokens ?? 0) + outputTokens;
+		counters.timedOutputMs = (counters.timedOutputMs ?? 0) + duration;
+	}
 }
 
 export function createEmptyModelEfficiencyCounters(): ModelEfficiencyCounters {
@@ -179,6 +249,7 @@ export function computeEfficiencyFromTurns(turns: EfficiencyTurn[]): ModelEffici
 		const counters = ensureCounters(eff, model);
 		counters.calls++;
 		analyzeTurnToolCalls(turn.toolCalls ?? [], counters);
+		recordTurnLatency(counters, turn);
 	}
 	return eff;
 }
@@ -238,6 +309,7 @@ export function mergeModelEfficiency(target: ModelEfficiencyUsage, source: Model
 		t.outputTokens += counters.outputTokens;
 		t.cachedReadTokens += counters.cachedReadTokens;
 		t.cost += counters.cost;
+		mergeTurnLatency(t, counters);
 	}
 }
 
@@ -496,6 +568,7 @@ function addTurnCounters(entry: DailyModelEfficiencyEntry, counters: ModelEffici
 	entry.retries += counters.retries;
 	entry.selfCorrections += counters.selfCorrections;
 	entry.editToolCalls += counters.editToolCalls;
+	mergeTurnLatency(entry, counters);
 }
 
 function pushSessionRecord(entry: DailyModelEfficiencyEntry, record: ModelSessionRecord): void {
@@ -530,6 +603,8 @@ function buildModelSessionRecord(
 		activeDurationMs: hasDuration ? scaled(input.activeDurationMs) : 0,
 		applies: scaled(input.applies),
 		codeBlocks: scaled(input.codeBlocks),
+		...(c.turnLatency && c.turnLatency.count > 0 ? { turnLatency: { ...c.turnLatency, buckets: [...c.turnLatency.buckets] } } : {}),
+		...(c.timedOutputMs ? { timedOutputTokens: c.timedOutputTokens ?? 0, timedOutputMs: c.timedOutputMs } : {}),
 	};
 }
 
@@ -581,6 +656,7 @@ export function buildSessionEfficiencyAttribution(sessionData: SessionEfficiency
 		t.linesRemoved += s.linesRemoved;
 		t.applies += s.applies;
 		t.codeBlocks += s.codeBlocks;
+		mergeTurnLatency(t, s);
 		if (s.sessionRecords?.length) { (t.sessionRecords ??= []).push(...s.sessionRecords); }
 	}
 }
@@ -607,6 +683,23 @@ export interface ModelEfficiencyRates {
 	toolCallsPerCall: number | null;
 	/** Cache-read share of input tokens (0..1). */
 	cacheHitRate: number | null;
+	/** Median end-to-end turn duration in seconds (histogram p50, accurate to a bucket); null when no turn was timed. */
+	medianTurnSeconds: number | null;
+	/** Output tokens per second over the timed turns that reported output tokens; null when none did. */
+	outputTokensPerSecond: number | null;
+}
+
+/** Output tokens per second from a counter's timed-turn totals; null without a usable denominator. */
+export function outputTokensPerSecond(c: Pick<ModelEfficiencyCounters, 'timedOutputTokens' | 'timedOutputMs'>): number | null {
+	return c.timedOutputMs && c.timedOutputMs > 0 && (c.timedOutputTokens ?? 0) > 0
+		? c.timedOutputTokens! / (c.timedOutputMs / 1000)
+		: null;
+}
+
+/** Median turn duration in seconds from a counter's histogram; null when empty. */
+export function medianTurnSeconds(c: Pick<ModelEfficiencyCounters, 'turnLatency'>): number | null {
+	const ms = c.turnLatency ? latencyPercentileMs(c.turnLatency, 0.5) : null;
+	return ms === null ? null : ms / 1000;
 }
 
 export function deriveModelEfficiencyRates(c: ModelEfficiencyCounters): ModelEfficiencyRates {
@@ -620,6 +713,8 @@ export function deriveModelEfficiencyRates(c: ModelEfficiencyCounters): ModelEff
 		toolCallsPerCall: c.calls > 0 ? (c.toolCalls ?? 0) / c.calls : null,
 		// Cap at 1.0: some providers report cachedReadTokens > inputTokens (e.g. DeepSeek).
 		cacheHitRate: c.inputTokens > 0 ? Math.min(1, c.cachedReadTokens / c.inputTokens) : null,
+		medianTurnSeconds: medianTurnSeconds(c),
+		outputTokensPerSecond: outputTokensPerSecond(c),
 	};
 }
 

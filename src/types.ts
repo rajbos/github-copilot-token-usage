@@ -237,6 +237,10 @@ export interface ModelSessionRecord {
   activeDurationMs: number;
   applies: number;
   codeBlocks: number;
+  /** This session's turn-latency histogram for the model; absent when no turn was timed. */
+  turnLatency?: LatencyHistogram;
+  timedOutputTokens?: number;
+  timedOutputMs?: number;
 }
 
 export interface DailyModelEfficiencyEntry extends ModelEfficiencyCounters {
@@ -715,6 +719,16 @@ export interface ModelEfficiencyCounters {
   cachedReadTokens: number;
   /** Estimated cost in USD (provider/API rates). Folded in at aggregation time. */
   cost: number;
+  /**
+   * End-to-end response duration of this model's turns (user message to the last
+   * assistant/tool event of the turn, so it includes tool execution and approval
+   * waits). Absent when no turn of this model carried both timestamps — never zero-filled.
+   */
+  turnLatency?: LatencyHistogram;
+  /** Actual output tokens of the timed turns that reported them; the numerator of output tokens/second. */
+  timedOutputTokens?: number;
+  /** Elapsed ms of exactly those turns (a subset of {@link turnLatency}); the denominator of output tokens/second. */
+  timedOutputMs?: number;
 }
 
 export interface ModelEfficiencyUsage {
@@ -1429,6 +1443,8 @@ export interface ActualUsage {
 export interface ChatTurn {
   turnNumber: number;
   timestamp: string | null;
+  /** ISO time of the last assistant/tool event of this turn, when the source records it. Absent means unknown, never an estimate. */
+  endTimestamp?: string | null;
   mode: "ask" | "edit" | "agent" | "plan" | "customAgent" | "cli";
   userMessage: string;
   assistantResponse: string;
