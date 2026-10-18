@@ -575,6 +575,14 @@ function pushSessionRecord(entry: DailyModelEfficiencyEntry, record: ModelSessio
 	(entry.sessionRecords ??= []).push(record);
 }
 
+/** The latency fields a session record copies from its model's counters (cloned, so records never alias them). */
+function sessionRecordLatency(c: ModelEfficiencyCounters): Pick<ModelSessionRecord, 'turnLatency' | 'timedOutputTokens' | 'timedOutputMs'> {
+	const out: Pick<ModelSessionRecord, 'turnLatency' | 'timedOutputTokens' | 'timedOutputMs'> = {};
+	if (c.turnLatency && c.turnLatency.count > 0) { out.turnLatency = { ...c.turnLatency, buckets: [...c.turnLatency.buckets] }; }
+	if (c.timedOutputMs) { out.timedOutputTokens = c.timedOutputTokens ?? 0; out.timedOutputMs = c.timedOutputMs; }
+	return out;
+}
+
 /** One session's whole-session footprint for `model`; see {@link ModelSessionRecord}. */
 function buildModelSessionRecord(
 	model: string,
@@ -603,8 +611,7 @@ function buildModelSessionRecord(
 		activeDurationMs: hasDuration ? scaled(input.activeDurationMs) : 0,
 		applies: scaled(input.applies),
 		codeBlocks: scaled(input.codeBlocks),
-		...(c.turnLatency && c.turnLatency.count > 0 ? { turnLatency: { ...c.turnLatency, buckets: [...c.turnLatency.buckets] } } : {}),
-		...(c.timedOutputMs ? { timedOutputTokens: c.timedOutputTokens ?? 0, timedOutputMs: c.timedOutputMs } : {}),
+		...sessionRecordLatency(c),
 	};
 }
 

@@ -2536,7 +2536,7 @@ function _asuProcessCliEvents(event: any, cliState: AsuCliState, analysis: Sessi
 }
 
 /** The turn ends at its last assistant/tool event; later events (shutdown, model changes) are not response work. */
-function _asuExtendTurnWindow(event: any, cliState: AsuCliState): void {
+function _asuExtendTurnWindow(event: { type?: unknown; timestamp?: unknown; data?: { outputTokens?: unknown } }, cliState: AsuCliState): void {
 	const turn = cliState.efficiencyTurns[cliState.efficiencyTurns.length - 1];
 	if (!turn?.timestamp || typeof event.timestamp !== 'string') { return; }
 	if (typeof event.type !== 'string' || !(event.type.startsWith('assistant.') || event.type.startsWith('tool.'))) { return; }

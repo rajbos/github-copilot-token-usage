@@ -41,14 +41,18 @@ export function buildClaudeChatTurns(
 		} else if (event.type === 'assistant' && event.message?.stop_reason && event.message?.role === 'assistant') {
 			pendingAssistantEvents.push(event);
 		}
-		if (currentUserEvent && (event.type === 'assistant' || event.type === 'user') && event !== currentUserEvent) {
-			lastEventTime = laterTimestamp(lastEventTime, event.timestamp);
-		}
+		lastEventTime = advanceLastEventTime(lastEventTime, event, currentUserEvent);
 	}
 	const finalTurn = buildTurnFromEvents(currentUserEvent, pendingAssistantEvents, processAssistantEvents, turns.length + 1, estimateTokens, lastEventTime);
 	if (finalTurn) { turns.push(finalTurn); }
 
 	return turns;
+}
+
+/** Moves the turn end forward for assistant and tool-result events that follow the human message. */
+function advanceLastEventTime(current: string | null, event: { type?: unknown; timestamp?: unknown }, currentUserEvent: unknown): string | null {
+	const isResponseEvent = (event.type === 'assistant' || event.type === 'user') && event !== currentUserEvent;
+	return currentUserEvent && isResponseEvent ? laterTimestamp(current, event.timestamp) : current;
 }
 
 function laterTimestamp(current: string | null, candidate: unknown): string | null {
