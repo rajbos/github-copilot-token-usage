@@ -607,9 +607,22 @@ export interface ModelEfficiencyRates {
 	toolCallsPerCall: number | null;
 	/** Cache-read share of input tokens (0..1). */
 	cacheHitRate: number | null;
+	/**
+	 * Input tokens per turn that were not served from the prompt cache
+	 * (`inputTokens − cachedReadTokens`, clamped at 0). When the source never
+	 * reports cache reads ({@link cacheReadsReported} false) this equals the raw
+	 * input and is an upper bound.
+	 */
+	freshInputTokensPerCall: number | null;
+	/** Input tokens per turn served from the prompt cache (clamped to the input total). */
+	cachedInputTokensPerCall: number | null;
+	/** True when any cache read was reported; false means the fresh figure cannot be trusted as fresh. */
+	cacheReadsReported: boolean;
 }
 
 export function deriveModelEfficiencyRates(c: ModelEfficiencyCounters): ModelEfficiencyRates {
+	// Clamp: some providers report cachedReadTokens > inputTokens (e.g. DeepSeek).
+	const cachedTokens = Math.min(c.cachedReadTokens, c.inputTokens);
 	return {
 		oneShotRate: c.editTurns > 0 ? c.oneShotEditTurns / c.editTurns : null,
 		retryRate: c.editTurns > 0 ? c.retries / c.editTurns : null,
@@ -620,6 +633,9 @@ export function deriveModelEfficiencyRates(c: ModelEfficiencyCounters): ModelEff
 		toolCallsPerCall: c.calls > 0 ? (c.toolCalls ?? 0) / c.calls : null,
 		// Cap at 1.0: some providers report cachedReadTokens > inputTokens (e.g. DeepSeek).
 		cacheHitRate: c.inputTokens > 0 ? Math.min(1, c.cachedReadTokens / c.inputTokens) : null,
+		freshInputTokensPerCall: c.calls > 0 ? (c.inputTokens - cachedTokens) / c.calls : null,
+		cachedInputTokensPerCall: c.calls > 0 ? cachedTokens / c.calls : null,
+		cacheReadsReported: c.cachedReadTokens > 0,
 	};
 }
 

@@ -4743,7 +4743,7 @@ type EfficiencyMetricKey = 'cost' | 'outputTokens' | 'toolSteps';
 type EfficiencyBubbleMetricKey = 'calls' | EfficiencyMetricKey;
 type EfficiencyColorMode = 'vendor' | 'model';
 type EfficiencyRow = { model: string; counters: ModelEfficiencyCounters; rates: ReturnType<typeof deriveModelEfficiencyRates> };
-type EfficiencySortColumn = 'model' | 'calls' | 'oneShotRate' | 'retryRate' | 'selfCorrectionRate' | 'costPerCall' | 'outputTokensPerCall' | 'toolCallsPerCall' | 'cacheHitRate';
+type EfficiencySortColumn = 'model' | 'calls' | 'oneShotRate' | 'retryRate' | 'selfCorrectionRate' | 'costPerCall' | 'outputTokensPerCall' | 'toolCallsPerCall' | 'cacheHitRate' | 'freshInputTokensPerCall';
 
 const EFFICIENCY_PERIOD_TO_DATA_KEY: Partial<Record<Period, EfficiencyPeriodKey>> = {
 	today: 'today',
@@ -4828,6 +4828,7 @@ const EFFICIENCY_COLUMN_DEFS: EfficiencyColumnDef[] = [
 	{ sortKey: 'outputTokensPerCall', label: 'Out tok', title: 'Average output tokens per user-request turn', sortValue: row => row.rates.outputTokensPerCall, render: row => row.rates.outputTokensPerCall === null ? '—' : formatCompact(Math.round(row.rates.outputTokensPerCall)) },
 	{ sortKey: 'toolCallsPerCall', label: 'Steps', title: 'Average tool invocations per user-request turn', sortValue: row => row.rates.toolCallsPerCall, render: row => formatPerTurn(row.rates.toolCallsPerCall) },
 	{ sortKey: 'cacheHitRate', label: 'Cache hit', title: 'Cache-read share of input tokens', sortValue: row => row.rates.cacheHitRate, render: row => formatRatePercent(row.rates.cacheHitRate) },
+	{ sortKey: 'freshInputTokensPerCall', label: 'Fresh in', title: 'Average input tokens per turn not served from the prompt cache. An upper bound (shown with ≤) when the source reports no cache reads', sortValue: row => row.rates.freshInputTokensPerCall, render: row => row.rates.freshInputTokensPerCall === null ? '—' : `${row.rates.cacheReadsReported ? '' : '≤'}${formatCompact(Math.round(row.rates.freshInputTokensPerCall))}` },
 ];
 
 /** Rows by descending local use: the leaderboard's default order and the chart's input. */

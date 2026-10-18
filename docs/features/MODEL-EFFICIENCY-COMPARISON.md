@@ -81,8 +81,28 @@ from "how far back does the drift chart go".
 | Edit retry rate | lower is better | Retries per edit turn |
 | Self-correction rate | lower is better | How often the model fixed its own output |
 | Cache read share | higher is better | Prompt reuse, which lowers cost |
+| Fresh input tokens per turn | lower is better | Input not served from the prompt cache: the "token hunger" number |
+| Cached input tokens per turn | higher is better | Context re-read from the cache each turn (cheap) |
 | Active minutes per session | lower is better | Wall-clock time to get the work done |
 | Apply rate | higher is better | Suggested blocks you actually accepted |
+
+## Why raw token totals mislead across harnesses
+
+Claude Code, Claude Desktop, Mistral Vibe and several others count cache reads
+inside `inputTokens`, so a harness that re-reads a large cached context every
+turn looks "hungrier" on *Tokens per session* even when its full-price input is
+small. For "which harness or model is token-hungry" read **Fresh input tokens per
+turn** (`(inputTokens − cachedReadTokens) / calls`, with cached clamped to input
+for providers such as DeepSeek that report more cache reads than input). A side
+that never reports cache reads shows its raw input as fresh, which is an upper
+bound; the comparison adds a "Read with care" caveat and the Usage Analysis
+model table shows the value with a leading `≤`.
+
+Adapters declare whether they populate cache reads through
+`IEcosystemAdapter.reportsCacheReads`. Verified true: Claude Code, Claude Desktop,
+Copilot CLI, Cline, Gemini CLI, Hermes, Kilo, OpenCode, Pi, Mistral Vibe. False
+or unset: Copilot Chat (VS Code JSON/JSONL) and the rest, which never set
+`cachedReadTokens`.
 
 ## How the numbers are attributed
 

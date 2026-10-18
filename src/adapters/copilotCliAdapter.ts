@@ -40,6 +40,7 @@ export function getCopilotCliSessionStateDir(): string {
 
 export class CopilotCliAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'copilotcli';
+	readonly reportsCacheReads = true;
 	readonly displayName = 'Copilot CLI';
 	// Bounded so large session histories don't saturate disk, but the pathExists() pre-check
 	// above (added alongside this) makes each miss a cheap access() instead of an open()+error-log,

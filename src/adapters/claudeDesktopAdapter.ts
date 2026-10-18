@@ -9,6 +9,7 @@ import { extractClaudeSlashCommand, recordSkillCall, recordInvokedSkillCall, Cla
 
 export class ClaudeDesktopAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'claudedesktop';
+	readonly reportsCacheReads = true;
 	readonly displayName = 'Claude Desktop Cowork';
 
 	constructor(
