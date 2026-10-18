@@ -1162,7 +1162,7 @@ function sideSummary(m: ModelPeriodMetrics, side: 'A' | 'B'): string {
 			<div class="model-side-tag">${side}</div>
 			<div class="model-side-name">${escapeHtml(m.displayName)}</div>
 			<div class="model-side-period">${escapeHtml(m.periodLabel)}</div>
-			<div class="model-side-stats">${m.sessions} sessions · ${m.editTurns} edit turns · ${formatCompact(m.tokens)} tokens · ${m.costBasis === 'exact' && !m.exactCostAvailable ? '—' : `$${m.cost.toFixed(2)}`}</div>
+			<div class="model-side-stats">${escapeHtml(localizeFormat('efficiency.models.sideStats', String(m.sessions), String(m.editTurns), formatCompact(m.tokens), m.costBasis === 'exact' && !m.exactCostAvailable ? '—' : `$${m.cost.toFixed(2)}`))}</div>
 		</div>`;
 }
 
@@ -1360,7 +1360,7 @@ function renderModelsTab(d: EfficiencyViewData, s: ScopedData): string {
 	// because an unrelated selection came up empty.
 	const comparison = cmp
 		? `
-		<p class="eff-section-note">${modelState.costBasis === 'exact' ? localize('efficiency.models.costBasis.exactNote') : `Head-to-head efficiency. Costs use <b>provider/API rates</b>, so this measures the models themselves rather than a billing plan — “model vendor” above is the model's own provider, not who bills for the call. Metrics whose sample was too small show as “—”. Session-level signals (duration, lines changed) are split across a session's models by token share.`}</p>
+		<p class="eff-section-note">${modelState.costBasis === 'exact' ? localize('efficiency.models.costBasis.exactNote') : localize('efficiency.models.costBasis.providerNote')}</p>
 		<div class="model-sides">${sideSummary(cmp.a, 'A')}${sideSummary(cmp.b, 'B')}</div>
 		${filterSummaryHtml(cmp)}
 		${verdictHtml(cmp)}

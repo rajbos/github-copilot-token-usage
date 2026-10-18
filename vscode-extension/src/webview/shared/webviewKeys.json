@@ -617,5 +617,7 @@
   "usage.router.stat.aiuPerTurn",
   "usage.router.stat.reviewShare",
   "usage.router.stat.totalSpend",
-  "usage.router.patternMix"
+  "usage.router.patternMix",
+  "efficiency.models.sideStats",
+  "efficiency.models.costBasis.providerNote"
 ]

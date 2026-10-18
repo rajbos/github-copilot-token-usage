@@ -2243,6 +2243,8 @@ test('l10n: cost-basis switch and Router card strings resolve in English and zh-
 		assert.equal(t(key), value, `English value for ${key}`);
 	}
 	assert.match(t('efficiency.models.costBasis.exactNote'), /exact Copilot billing/);
+	assert.equal(t('efficiency.models.sideStats', '1', '2', '3K', '$4.00'), '1 sessions · 2 edit turns · 3K tokens · $4.00');
+	assert.match(t('efficiency.models.costBasis.providerNote'), /provider\/API rates/);
 
 	mock.setLanguage('zh-cn');
 	try {

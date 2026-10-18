@@ -617,5 +617,7 @@
   "usage.router.stat.aiuPerTurn": "AIU per turn",
   "usage.router.stat.reviewShare": "Review overhead",
   "usage.router.stat.totalSpend": "Total spend",
-  "usage.router.patternMix": "Pattern mix"
+  "usage.router.patternMix": "Pattern mix",
+  "efficiency.models.sideStats": "{0} sessions · {1} edit turns · {2} tokens · {3}",
+  "efficiency.models.costBasis.providerNote": "Head-to-head efficiency. Costs use <b>provider/API rates</b>, so this measures the models themselves rather than a billing plan — “model vendor” above is the model's own provider, not who bills for the call. Metrics whose sample was too small show as “—”. Session-level signals (duration, lines changed) are split across a session's models by token share."
 }

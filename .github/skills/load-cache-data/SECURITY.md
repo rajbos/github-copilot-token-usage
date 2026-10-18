@@ -60,7 +60,7 @@ Nothing on disk. Stdout is one JSON line.
   agents were used) and `requests`; its `byAgent` map, keyed by the agent's name, is dropped for
   the same reason (`sanitizeCacheEntry`). `modelSwitching.selectedModelExtensions` (the ids
   of the extensions that supplied the selected models, which can name a private or internal
-  provider extension) is dropped; the model ids themselves are kept. `title`, `repository`,
+  provider extension) is dropped; the model ids themselves are kept. `hydraFusion` (the Copilot CLI router rollup) is printed unchanged: it holds only turn, judge, escalation and AIU counts plus the router's own pattern ids (`cascade`, `single`, ...), never prompt text, model ids or timestamps (see `toHydraFusionRollup`). `title`, `repository`,
   `workspaceFolderPath`, top-level `languageUsage` (keyed by file extension, or by the whole
   basename for extensionless files), any unrecognized top-level field and the cache file path
   are omitted.
