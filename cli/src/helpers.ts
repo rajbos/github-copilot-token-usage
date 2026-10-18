@@ -10,7 +10,7 @@ import { SessionDiscovery } from '../../src/sessionDiscovery';
 import { findWorkspacePathForDiscoveredPath, type IEcosystemAdapter } from '../../src/ecosystemAdapter';
 import { findRepositoryRemoteForFolder, resolveExactWorkspacePath } from '../../src/workspaceHelpers';
 import { resolveFileUri } from '../../src/workspacePathResolver';
-import { calculateEstimatedCost } from '../../src/tokenEstimation';
+import { calculateEstimatedCost, NANO_AIU_TO_DOLLARS } from '../../src/tokenEstimation';
 import { toLocalDayKey } from '../../src/utils/dayKeys';
 import type { CustomizationFileEntry, DailyTokenStats, DetailedStats, SessionUsageAnalysis, UsageAnalysisStats, WorkspaceCustomizationMatrix, TodaySessionSummary } from '../../src/types';
 import { analyzeSessionUsage, mergeUsageAnalysis } from '../../src/usageAnalysis';
@@ -984,6 +984,7 @@ function dailyStatsFromSessions(sessions: Array<SessionData | null | undefined>)
 			linesAdded: data.linesAdded,
 			linesRemoved: data.linesRemoved,
 			usageAnalysis: data.usageAnalysis,
+			copilotExactCostDollars: data.copilotNanoAiu > 0 ? data.copilotNanoAiu * NANO_AIU_TO_DOLLARS : undefined,
 		}, modelPricing);
 	}
 	return sortedDailyStats(dailyStatsMap);

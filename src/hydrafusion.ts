@@ -588,3 +588,117 @@ export function matchHydraFusionTurnsToChatTurns(
 	}
 	return matches;
 }
+
+// ── Cross-session aggregate ──────────────────────────────────────────────────
+
+/**
+ * The additive, numeric core of a {@link HydraFusionSummary}: what is kept per session in
+ * the usage analysis and summed across a period. Counts and credits only — no model ids,
+ * prompts or timestamps.
+ */
+export interface HydraFusionRollup {
+	/** Sessions that contributed. */
+	sessions: number;
+	totalTurns: number;
+	compoundTurns: number;
+	judgeAccepts: number;
+	judgeRejects: number;
+	/** Turns where a rejecting judge handed the task to a stronger model. */
+	escalatedTurns: number;
+	/** Credits for the period in AIU, from the per-turn rollups (never rollups plus legs). */
+	totalAiu: number;
+	/** Credits spent on legs that did not supply the answer. */
+	reviewAiu: number;
+	degradedTurns: number;
+	patternCounts: { pattern: HydraFusionPattern; turns: number; aiu: number }[];
+}
+
+/** Period totals and derived rates across HydraFusion sessions. Numeric only. */
+export interface HydraFusionAggregate extends HydraFusionRollup {
+	/** `compoundTurns` as a percentage of `totalTurns` (0-100); 0 when there are no turns. */
+	compoundRatePercent: number;
+	/** Rejections as a percentage of judged drafts (0-100); `null` when no judge ran. */
+	judgeRejectionRatePercent: number | null;
+	/** Mean credits per turn in AIU; `null` when there are no turns. */
+	aiuPerTurn: number | null;
+	/** Total spend in USD (`aiuToUsd(totalAiu)`). */
+	totalUsd: number;
+	/** Mean spend per turn in USD; `null` when there are no turns. */
+	usdPerTurn: number | null;
+	/** `reviewAiu` as a percentage of `totalAiu` (0-100); 0 when nothing was spent. */
+	reviewSharePercent: number;
+	/** Escalated turns as a percentage of all turns (0-100); 0 when there are no turns. */
+	escalationRatePercent: number;
+}
+
+export function createEmptyHydraFusionRollup(): HydraFusionRollup {
+	return {
+		sessions: 0, totalTurns: 0, compoundTurns: 0, judgeAccepts: 0, judgeRejects: 0,
+		escalatedTurns: 0, totalAiu: 0, reviewAiu: 0, degradedTurns: 0, patternCounts: [],
+	};
+}
+
+/** Reduces one session's summary to its additive rollup (one session). */
+export function toHydraFusionRollup(summary: HydraFusionSummary): HydraFusionRollup {
+	return {
+		sessions: 1,
+		totalTurns: summary.totalTurns,
+		compoundTurns: summary.compoundTurns,
+		judgeAccepts: summary.judgeAccepts,
+		judgeRejects: summary.judgeRejects,
+		escalatedTurns: summary.turns.filter(turn => turn.handoffs.length > 0).length,
+		totalAiu: summary.totalAiu,
+		reviewAiu: summary.reviewAiu,
+		degradedTurns: summary.degradedTurns,
+		patternCounts: summary.patternCounts.map(p => ({ ...p })),
+	};
+}
+
+/** Adds `source` into `target`, merging the pattern mix; returns `target`. */
+export function addHydraFusionRollup(target: HydraFusionRollup, source: HydraFusionRollup): HydraFusionRollup {
+	target.sessions += source.sessions;
+	target.totalTurns += source.totalTurns;
+	target.compoundTurns += source.compoundTurns;
+	target.judgeAccepts += source.judgeAccepts;
+	target.judgeRejects += source.judgeRejects;
+	target.escalatedTurns += source.escalatedTurns;
+	target.totalAiu += source.totalAiu;
+	target.reviewAiu += source.reviewAiu;
+	target.degradedTurns += source.degradedTurns;
+	for (const incoming of source.patternCounts) {
+		const existing = target.patternCounts.find(p => p.pattern === incoming.pattern);
+		if (existing) { existing.turns += incoming.turns; existing.aiu += incoming.aiu; }
+		else { target.patternCounts.push({ ...incoming }); }
+	}
+	target.patternCounts.sort((a, b) => b.turns - a.turns || b.aiu - a.aiu);
+	return target;
+}
+
+/** Derives the display rates from an (already summed) rollup. */
+export function deriveHydraFusionAggregate(rollup: HydraFusionRollup): HydraFusionAggregate {
+	const judged = rollup.judgeAccepts + rollup.judgeRejects;
+	const totalUsd = aiuToUsd(rollup.totalAiu);
+	return {
+		...rollup,
+		patternCounts: rollup.patternCounts.map(p => ({ ...p })),
+		compoundRatePercent: percent(rollup.compoundTurns, rollup.totalTurns),
+		judgeRejectionRatePercent: judged > 0 ? percent(rollup.judgeRejects, judged) : null,
+		aiuPerTurn: rollup.totalTurns > 0 ? rollup.totalAiu / rollup.totalTurns : null,
+		totalUsd,
+		usdPerTurn: rollup.totalTurns > 0 ? totalUsd / rollup.totalTurns : null,
+		reviewSharePercent: percent(rollup.reviewAiu, rollup.totalAiu),
+		escalationRatePercent: percent(rollup.escalatedTurns, rollup.totalTurns),
+	};
+}
+
+/**
+ * Period totals across several sessions' HydraFusion summaries: turns, compound rate,
+ * judge accept/reject, AIU per turn, review share and the pattern mix. Each session's
+ * `totalAiu` already contains its own legs, so credits are summed from those totals and
+ * never from rollups plus legs.
+ */
+export function aggregateHydraFusionSummaries(summaries: readonly HydraFusionSummary[]): HydraFusionAggregate {
+	const total = createEmptyHydraFusionRollup();
+	for (const summary of summaries) { addHydraFusionRollup(total, toHydraFusionRollup(summary)); }
+	return deriveHydraFusionAggregate(total);
+}

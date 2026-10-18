@@ -408,7 +408,20 @@
       "customAgent": 1,
       "cli": 0
     },
-    "agentUsage": { "byAgent": { "Product Owner": { "sessions": 1, "requests": 3, "source": "github" }, "Product Owner[Claude]": { "sessions": 1, "requests": 1, "source": "claude" } } },
+    "agentUsage": {
+      "byAgent": {
+        "Product Owner": {
+          "sessions": 1,
+          "requests": 3,
+          "source": "github"
+        },
+        "Product Owner[Claude]": {
+          "sessions": 1,
+          "requests": 1,
+          "source": "claude"
+        }
+      }
+    },
     "contextReferences": {
       "file": 42,
       "selection": 11,
@@ -622,12 +635,129 @@
         "create_file": 2
       },
       "latencyByTool": {
-        "read_file": { "count": 572, "sumMs": 68640, "buckets": [0, 0, 0, 20, 120, 250, 100, 40, 15, 10, 7, 6, 3, 1] },
-        "run_in_terminal": { "count": 451, "sumMs": 4059000, "buckets": [0, 0, 0, 0, 0, 5, 10, 20, 30, 40, 60, 90, 70, 50, 35, 25, 12, 4] },
-        "apply_patch": { "count": 363, "sumMs": 108900, "buckets": [0, 0, 0, 0, 5, 20, 60, 90, 80, 50, 30, 15, 8, 4, 1] },
-        "grep_search": { "count": 308, "sumMs": 46200, "buckets": [0, 0, 0, 10, 40, 80, 70, 50, 30, 15, 8, 4, 1] },
-        "semantic_search": { "count": 220, "sumMs": 198000, "buckets": [0, 0, 0, 0, 0, 0, 0, 10, 30, 60, 60, 35, 15, 7, 3] },
-        "create_file": { "count": 132, "sumMs": 15840, "buckets": [0, 0, 0, 0, 10, 30, 40, 25, 15, 8, 3, 1] }
+        "read_file": {
+          "count": 572,
+          "sumMs": 68640,
+          "buckets": [
+            0,
+            0,
+            0,
+            20,
+            120,
+            250,
+            100,
+            40,
+            15,
+            10,
+            7,
+            6,
+            3,
+            1
+          ]
+        },
+        "run_in_terminal": {
+          "count": 451,
+          "sumMs": 4059000,
+          "buckets": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            5,
+            10,
+            20,
+            30,
+            40,
+            60,
+            90,
+            70,
+            50,
+            35,
+            25,
+            12,
+            4
+          ]
+        },
+        "apply_patch": {
+          "count": 363,
+          "sumMs": 108900,
+          "buckets": [
+            0,
+            0,
+            0,
+            0,
+            5,
+            20,
+            60,
+            90,
+            80,
+            50,
+            30,
+            15,
+            8,
+            4,
+            1
+          ]
+        },
+        "grep_search": {
+          "count": 308,
+          "sumMs": 46200,
+          "buckets": [
+            0,
+            0,
+            0,
+            10,
+            40,
+            80,
+            70,
+            50,
+            30,
+            15,
+            8,
+            4,
+            1
+          ]
+        },
+        "semantic_search": {
+          "count": 220,
+          "sumMs": 198000,
+          "buckets": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            10,
+            30,
+            60,
+            60,
+            35,
+            15,
+            7,
+            3
+          ]
+        },
+        "create_file": {
+          "count": 132,
+          "sumMs": 15840,
+          "buckets": [
+            0,
+            0,
+            0,
+            0,
+            10,
+            30,
+            40,
+            25,
+            15,
+            8,
+            3,
+            1
+          ]
+        }
       }
     },
     "modeUsage": {
@@ -638,7 +768,25 @@
       "customAgent": 11,
       "cli": 0
     },
-    "agentUsage": { "byAgent": { "Product Owner": { "sessions": 4, "requests": 21, "source": "github" }, "Product Owner[Claude]": { "sessions": 2, "requests": 9, "source": "claude" }, "Repo Status": { "sessions": 1, "requests": 5, "source": "other" } } },
+    "agentUsage": {
+      "byAgent": {
+        "Product Owner": {
+          "sessions": 4,
+          "requests": 21,
+          "source": "github"
+        },
+        "Product Owner[Claude]": {
+          "sessions": 2,
+          "requests": 9,
+          "source": "claude"
+        },
+        "Repo Status": {
+          "sessions": 1,
+          "requests": 5,
+          "source": "other"
+        }
+      }
+    },
     "contextReferences": {
       "file": 462,
       "selection": 121,
@@ -693,8 +841,46 @@
         "playwright": 11
       },
       "latencyByServer": {
-        "github": { "count": 99, "sumMs": 247500, "buckets": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20, 45, 25, 9] },
-        "playwright": { "count": 55, "sumMs": 82500, "buckets": [0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 15, 20, 10, 5] }
+        "github": {
+          "count": 99,
+          "sumMs": 247500,
+          "buckets": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            20,
+            45,
+            25,
+            9
+          ]
+        },
+        "playwright": {
+          "count": 55,
+          "sumMs": 82500,
+          "buckets": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            5,
+            15,
+            20,
+            10,
+            5
+          ]
+        }
       }
     },
     "skillCalls": {
@@ -909,7 +1095,10 @@
       "worstFillPercent": 99
     }
   },
-  "monthBillingGroupCosts": { "GitHub Copilot": 18.4, "Anthropic": 6.2 },
+  "monthBillingGroupCosts": {
+    "GitHub Copilot": 18.4,
+    "Anthropic": 6.2
+  },
   "accountBudgets": [
     {
       "accountId": "fixture-account-1",
@@ -917,7 +1106,13 @@
       "status": "ok",
       "planName": "Copilot Pro",
       "resetDate": "2026-11-01T00:00:00.000Z",
-      "balance": { "budgetUsd": 39, "budgetAiCredits": 3900, "remainingAiCredits": 1500, "usedAiCredits": 2400, "pctAvailable": 38.5 }
+      "balance": {
+        "budgetUsd": 39,
+        "budgetAiCredits": 3900,
+        "remainingAiCredits": 1500,
+        "usedAiCredits": 2400,
+        "pctAvailable": 38.5
+      }
     },
     {
       "accountId": "fixture-account-2",
@@ -3048,6 +3243,45 @@
       }
     },
     "recommendations": []
+  },
+  "hydraFusion": {
+    "today": null,
+    "last30Days": {
+      "sessions": 6,
+      "totalTurns": 42,
+      "compoundTurns": 25,
+      "judgeAccepts": 14,
+      "judgeRejects": 11,
+      "escalatedTurns": 9,
+      "totalAiu": 512.4,
+      "reviewAiu": 96.2,
+      "degradedTurns": 0,
+      "patternCounts": [
+        {
+          "pattern": "cascade",
+          "turns": 25,
+          "aiu": 380.1
+        },
+        {
+          "pattern": "single",
+          "turns": 12,
+          "aiu": 98.7
+        },
+        {
+          "pattern": "critique",
+          "turns": 5,
+          "aiu": 33.6
+        }
+      ],
+      "compoundRatePercent": 59.523809523809526,
+      "judgeRejectionRatePercent": 44.0,
+      "aiuPerTurn": 12.2,
+      "totalUsd": 5.124,
+      "usdPerTurn": 0.122,
+      "reviewSharePercent": 18.7743950039032,
+      "escalationRatePercent": 21.428571428571427
+    },
+    "month": null,
+    "lastMonth": null
   }
-
 }

@@ -14,6 +14,7 @@ import {
 	computeModelPeriodMetrics,
 	computeOutlierCutoffTokens,
 	DEFAULT_MODEL_SESSION_FILTER,
+	UNFILTERED_MODEL_SESSIONS,
 	listComparableModels,
 	compareModels,
 	buildModelWeeklySeries,
@@ -1522,4 +1523,96 @@ test('reconcileModelSelection: defaults lead with a model that clears the sample
 	const next = reconcileModelSelection(days, selection(), NOW);
 	assert.equal(next.modelA, 'steady');
 	assert.equal(next.modelB, 'hog');
+});
+
+// ── Cost basis (provider rates vs exact Copilot billing) ────────────────────
+
+test('computeModelPeriodMetrics: provider basis ignores exact cost', () => {
+	const days = [modelDay('2026-07-01', { a: solidModel({ cost: 10, exactCost: 30, exactCostSessions: 10 }) })];
+	const m = computeModelPeriodMetrics(days, 'a', 'Jul')!;
+	assert.equal(m.costBasis, 'provider');
+	assert.equal(m.cost, 10);
+	assert.equal(m.costPerEditTurn, 0.5);
+});
+
+test('computeModelPeriodMetrics: exact basis prices the work with the exact cost', () => {
+	const days = [modelDay('2026-07-01', { a: solidModel({ cost: 10, exactCost: 30, exactCostSessions: 10 }) })];
+	const m = computeModelPeriodMetrics(days, 'a', 'Jul', UNFILTERED_MODEL_SESSIONS, null, 'exact')!;
+	assert.equal(m.costBasis, 'exact');
+	assert.equal(m.exactCostAvailable, true);
+	assert.equal(m.cost, 30);
+	assert.equal(m.costPerEditTurn, 1.5);
+	assert.equal(m.costPerSession, 3);
+	assert.equal(m.costPerKloc, 30);
+});
+
+test('computeModelPeriodMetrics: exact basis refuses (null) when exact billing covers only some sessions', () => {
+	const days = [modelDay('2026-07-01', { a: solidModel({ cost: 10, exactCost: 3, exactCostSessions: 4 }) })];
+	const m = computeModelPeriodMetrics(days, 'a', 'Jul', UNFILTERED_MODEL_SESSIONS, null, 'exact')!;
+	assert.equal(m.exactCostAvailable, false);
+	assert.equal(m.cost, 0);
+	assert.equal(m.costPerEditTurn, null);
+	assert.equal(m.costPerSession, null);
+	assert.equal(m.costPerKloc, null);
+	assert.equal(m.dollarsPerMTokens, null);
+	// Non-cost rows are unaffected by the basis.
+	assert.equal(m.oneShotRate, 0.75);
+});
+
+test('computeModelPeriodMetrics: exact basis with no exact data at all is unavailable, not zero cost', () => {
+	const days = [modelDay('2026-07-01', { a: solidModel({}) })];
+	const m = computeModelPeriodMetrics(days, 'a', 'Jul', UNFILTERED_MODEL_SESSIONS, null, 'exact')!;
+	assert.equal(m.exactCostAvailable, false);
+	assert.equal(m.costPerEditTurn, null);
+});
+
+test('computeModelPeriodMetrics: exact basis sums exact cost from session records and honours the filter', () => {
+	const days = [recordDay('a', [
+		sessionRecord({ exactCost: 2 }),
+		sessionRecord({ exactCost: 4 }),
+		sessionRecord({ mixed: true, share: 0.5, exactCost: 100 }),
+	])];
+	const m = computeModelPeriodMetrics(days, 'a', 'Jul', DEFAULT_MODEL_SESSION_FILTER, null, 'exact')!;
+	assert.equal(m.sessions, 2);
+	assert.equal(m.cost, 6);
+	assert.equal(m.exactCostAvailable, true);
+});
+
+test('computeModelPeriodMetrics: a session record without exact cost makes the exact basis unavailable', () => {
+	const days = [recordDay('a', [sessionRecord({ exactCost: 2 }), sessionRecord()])];
+	const m = computeModelPeriodMetrics(days, 'a', 'Jul', DEFAULT_MODEL_SESSION_FILTER, null, 'exact')!;
+	assert.equal(m.exactCostAvailable, false);
+	assert.equal(m.costPerEditTurn, null);
+});
+
+test('compareModels: on the exact basis a side without exact billing renders "—" rather than mixing bases', () => {
+	const days = [modelDay('2026-07-01', {
+		router: solidModel({ cost: 0, exactCost: 20, exactCostSessions: 10 }),
+		plain: solidModel({ cost: 10 }),
+	})];
+	const router = computeModelPeriodMetrics(days, 'router', 'Jul', UNFILTERED_MODEL_SESSIONS, null, 'exact')!;
+	const plain = computeModelPeriodMetrics(days, 'plain', 'Jul', UNFILTERED_MODEL_SESSIONS, null, 'exact')!;
+	const cmp = compareModels(router, plain);
+	for (const id of ['cost-per-edit-turn', 'cost-per-session', 'cost-per-kloc', 'dollars-per-mtokens']) {
+		const row = cmp.rows.find(r => r.id === id)!;
+		assert.equal(row.a !== null, true, `${id} side A`);
+		assert.equal(row.b, null, `${id} side B`);
+		assert.equal(row.winner, null);
+		assert.equal(row.significant, false);
+	}
+	assert.ok(cmp.caveats.some(c => c.includes('exact Copilot billing')));
+});
+
+test('compareModels: with exact billing on both sides the cost rows compare normally', () => {
+	const days = [modelDay('2026-07-01', {
+		router: solidModel({ exactCost: 20, exactCostSessions: 10 }),
+		plain: solidModel({ exactCost: 40, exactCostSessions: 10 }),
+	})];
+	const router = computeModelPeriodMetrics(days, 'router', 'Jul', UNFILTERED_MODEL_SESSIONS, null, 'exact')!;
+	const plain = computeModelPeriodMetrics(days, 'plain', 'Jul', UNFILTERED_MODEL_SESSIONS, null, 'exact')!;
+	const row = compareModels(router, plain).rows.find(r => r.id === 'cost-per-edit-turn')!;
+	assert.equal(row.a, 1);
+	assert.equal(row.b, 2);
+	assert.equal(row.winner, 'a');
+	assert.equal(row.significant, true);
 });

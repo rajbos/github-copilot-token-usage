@@ -1237,6 +1237,13 @@ export function computeSkillImpact(sessions: EfficiencySessionInput[]): SkillImp
 // ---------------------------------------------------------------------------
 
 /**
+ * What the Models tab prices work with: `provider` is token counts at provider/API rates
+ * (the default); `exact` is the Copilot AIU billing the session reported. The two are
+ * never mixed — a side without exact billing renders "—" on the exact basis.
+ */
+export type ModelCostBasis = 'provider' | 'exact';
+
+/**
  * One model's efficiency profile over a time window, derived from the daily
  * per-model aggregates. Costs use provider/API rates (the basis carried by
  * `ModelEfficiencyCounters.cost`), so "cheaper per edit turn" is a statement
@@ -1255,7 +1262,12 @@ export interface ModelPeriodMetrics {
 	calls: number;
 	editTurns: number;
 	tokens: number;
+	/** Cost on the basis named by `costBasis`; 0 when that basis is unavailable for this side. */
 	cost: number;
+	/** Which cost the cost-based rows use. */
+	costBasis: ModelCostBasis;
+	/** True when every session folded into this side carries exact Copilot billing. */
+	exactCostAvailable: boolean;
 	loc: number;
 	costPerEditTurn: number | null;
 	costPerSession: number | null;
@@ -1422,6 +1434,7 @@ export function computeModelPeriodMetrics(
 	filter: ModelSessionFilter = UNFILTERED_MODEL_SESSIONS,
 	/** Pooled outlier cutoff from {@link computeOutlierCutoffTokens}; sessions above it are excluded. */
 	outlierCutoffTokens: number | null = null,
+	costBasis: ModelCostBasis = 'provider',
 ): ModelPeriodMetrics | null {
 	const entries = days.map(day => day.modelEfficiency?.[model]);
 	if (!entries.some(Boolean)) { return null; }
@@ -1434,7 +1447,7 @@ export function computeModelPeriodMetrics(
 	const totals = filtering.applied
 		? totalsFromSessionRecords(entries, filter, outlierCutoffTokens, filtering)
 		: totalsFromDayAggregates(model, entries);
-	return finishPeriodMetrics(model, periodLabel, totals, taskMixRaw, filtering);
+	return finishPeriodMetrics(model, periodLabel, totals, taskMixRaw, filtering, costBasis);
 }
 
 function totalsFromDayAggregates(model: string, entries: (DailyModelEfficiencyEntry | undefined)[]): DailyModelEfficiencyEntry {
@@ -1473,6 +1486,10 @@ function addSessionRecord(totals: DailyModelEfficiencyEntry, rec: ModelSessionRe
 	totals.outputTokens += rec.outputTokens;
 	totals.cachedReadTokens += rec.cachedReadTokens;
 	totals.cost += rec.cost;
+	if (rec.exactCost !== undefined) {
+		totals.exactCost = (totals.exactCost ?? 0) + rec.exactCost;
+		totals.exactCostSessions = (totals.exactCostSessions ?? 0) + 1;
+	}
 	totals.linesAdded += rec.loc;
 	totals.applies += rec.applies;
 	totals.codeBlocks += rec.codeBlocks;
@@ -1545,8 +1562,14 @@ function finishPeriodMetrics(
 	totals: DailyModelEfficiencyEntry,
 	taskMixRaw: Map<string, number>,
 	filtering: ModelFilterOutcome,
+	costBasis: ModelCostBasis,
 ): ModelPeriodMetrics {
 	const tokens = totals.inputTokens + totals.outputTokens;
+	// Exact billing counts only when it covers every session on this side; a partial figure
+	// would understate the cost, and mixing it with estimates would compare two bases.
+	const exactCostAvailable = totals.sessions > 0 && (totals.exactCostSessions ?? 0) >= totals.sessions;
+	const costUsable = costBasis === 'provider' || exactCostAvailable;
+	const cost = costBasis === 'exact' ? (exactCostAvailable ? totals.exactCost ?? 0 : 0) : totals.cost;
 	const loc = totals.linesAdded + totals.linesRemoved;
 	const enoughSessions = totals.sessionShare >= MIN_SESSION_SHARE_FOR_COMPARE;
 	const enoughEdits = totals.editTurns >= MIN_EDIT_TURNS_FOR_COMPARE;
@@ -1560,12 +1583,14 @@ function finishPeriodMetrics(
 		calls: totals.calls,
 		editTurns: totals.editTurns,
 		tokens,
-		cost: totals.cost,
+		cost,
+		costBasis,
+		exactCostAvailable,
 		loc,
-		costPerEditTurn: gatedRatio(totals.cost, totals.editTurns, enoughEdits),
-		costPerSession: gatedRatio(totals.cost, totals.sessionShare, enoughSessions),
-		costPerKloc: gatedRatio(totals.cost * 1000, loc, enoughSessions),
-		dollarsPerMTokens: gatedRatio(totals.cost * 1_000_000, tokens),
+		costPerEditTurn: gatedRatio(cost, totals.editTurns, enoughEdits && costUsable),
+		costPerSession: gatedRatio(cost, totals.sessionShare, enoughSessions && costUsable),
+		costPerKloc: gatedRatio(cost * 1000, loc, enoughSessions && costUsable),
+		dollarsPerMTokens: gatedRatio(cost * 1_000_000, tokens, costUsable),
 		tokensPerEditTurn: gatedRatio(tokens, totals.editTurns, enoughEdits),
 		tokensPerSession: gatedRatio(tokens, totals.sessionShare, enoughSessions),
 		oneShotRate: gatedRatio(totals.oneShotEditTurns, totals.editTurns, enoughEdits),
@@ -1916,6 +1941,9 @@ function taskMixDivergence(a: { [c: string]: number }, b: { [c: string]: number 
 function buildCaveats(a: ModelPeriodMetrics, b: ModelPeriodMetrics): string[] {
 	const caveats: string[] = [];
 	for (const side of [a, b]) {
+		if (side.costBasis === 'exact' && !side.exactCostAvailable) {
+			caveats.push(`${side.displayName} (${side.periodLabel}) has no exact Copilot billing for all of its sessions, so its cost rows show “—” on the exact-billing basis rather than mixing in estimates.`);
+		}
 		if (!side.sampleSufficient) {
 			caveats.push(`${side.displayName} (${side.periodLabel}) has only ${side.sessionShare.toFixed(1)} session equivalents — below the ${MIN_SESSION_SHARE_FOR_COMPARE} needed for reliable per-session ratios.`);
 		}
@@ -1956,7 +1984,7 @@ export function compareModels(a: ModelPeriodMetrics, b: ModelPeriodMetrics): Mod
 			'What one round of file edits actually costs. The headline efficiency number.',
 			a.costPerEditTurn, b.costPerEditTurn, 'currency', 'down'),
 		comparisonRow('cost-per-session', 'Cost per session',
-			'Average spend per session, at provider rates.',
+			a.costBasis === 'exact' ? 'Average spend per session, at exact Copilot billing.' : 'Average spend per session, at provider rates.',
 			a.costPerSession, b.costPerSession, 'currency', 'down'),
 		comparisonRow('cost-per-kloc', 'Cost per 1000 lines changed',
 			'Spend per unit of code actually shipped.',

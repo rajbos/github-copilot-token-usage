@@ -5015,9 +5015,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.675
             }
-          ]
+          ],
+          "exactCost": 0.675,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -5054,9 +5057,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4125
             }
-          ]
+          ],
+          "exactCost": 0.4125,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -5113,9 +5119,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4125
             }
-          ]
+          ],
+          "exactCost": 0.4125,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 3,
@@ -5152,9 +5161,12 @@
               "loc": 60,
               "activeDurationMs": 248976,
               "applies": 1,
-              "codeBlocks": 2
+              "codeBlocks": 2,
+              "exactCost": 0.25
             }
-          ]
+          ],
+          "exactCost": 0.25,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -5211,9 +5223,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.725
             }
-          ]
+          ],
+          "exactCost": 0.725,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 4,
@@ -5250,9 +5265,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4375
             }
-          ]
+          ],
+          "exactCost": 0.4375,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -5309,9 +5327,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.45
             }
-          ]
+          ],
+          "exactCost": 0.45,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -5368,9 +5389,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.625
             }
-          ]
+          ],
+          "exactCost": 0.625,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -5407,9 +5431,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.5125
             }
-          ]
+          ],
+          "exactCost": 0.5125,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -5466,9 +5493,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.3875
             }
-          ]
+          ],
+          "exactCost": 0.3875,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -5525,9 +5555,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.675
             }
-          ]
+          ],
+          "exactCost": 0.675,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -5564,9 +5597,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4
             }
-          ]
+          ],
+          "exactCost": 0.4,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -5623,9 +5659,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4125
             }
-          ]
+          ],
+          "exactCost": 0.4125,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 3,
@@ -5662,9 +5701,12 @@
               "loc": 60,
               "activeDurationMs": 248976,
               "applies": 1,
-              "codeBlocks": 2
+              "codeBlocks": 2,
+              "exactCost": 0.25
             }
-          ]
+          ],
+          "exactCost": 0.25,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -5721,9 +5763,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.7125
             }
-          ]
+          ],
+          "exactCost": 0.7125,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -5760,9 +5805,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4375
             }
-          ]
+          ],
+          "exactCost": 0.4375,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -5819,9 +5867,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4375
             }
-          ]
+          ],
+          "exactCost": 0.4375,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -5878,9 +5929,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.5625
             }
-          ]
+          ],
+          "exactCost": 0.5625,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -5917,9 +5971,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4625
             }
-          ]
+          ],
+          "exactCost": 0.4625,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -5976,9 +6033,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.35
             }
-          ]
+          ],
+          "exactCost": 0.35,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -6035,9 +6095,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.6125
             }
-          ]
+          ],
+          "exactCost": 0.6125,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 4,
@@ -6074,9 +6137,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.5
             }
-          ]
+          ],
+          "exactCost": 0.5,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -6133,9 +6199,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.375
             }
-          ]
+          ],
+          "exactCost": 0.375,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -6339,9 +6408,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.6625
             }
-          ]
+          ],
+          "exactCost": 0.6625,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 4,
@@ -6378,9 +6450,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.5375
             }
-          ]
+          ],
+          "exactCost": 0.5375,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -6437,9 +6512,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4
             }
-          ]
+          ],
+          "exactCost": 0.4,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 3,
@@ -6476,9 +6554,12 @@
               "loc": 60,
               "activeDurationMs": 248976,
               "applies": 1,
-              "codeBlocks": 2
+              "codeBlocks": 2,
+              "exactCost": 0.325
             }
-          ]
+          ],
+          "exactCost": 0.325,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -6535,9 +6616,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.7
             }
-          ]
+          ],
+          "exactCost": 0.7,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -6574,9 +6658,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.425
             }
-          ]
+          ],
+          "exactCost": 0.425,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -6633,9 +6720,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.425
             }
-          ]
+          ],
+          "exactCost": 0.425,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -6692,9 +6782,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.55
             }
-          ]
+          ],
+          "exactCost": 0.55,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -6731,9 +6824,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4625
             }
-          ]
+          ],
+          "exactCost": 0.4625,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -6790,9 +6886,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.3375
             }
-          ]
+          ],
+          "exactCost": 0.3375,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -6849,9 +6948,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.6
             }
-          ]
+          ],
+          "exactCost": 0.6,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -6888,9 +6990,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4875
             }
-          ]
+          ],
+          "exactCost": 0.4875,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -6947,9 +7052,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.3625
             }
-          ]
+          ],
+          "exactCost": 0.3625,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -7006,9 +7114,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.65
             }
-          ]
+          ],
+          "exactCost": 0.65,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -7045,9 +7156,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.525
             }
-          ]
+          ],
+          "exactCost": 0.525,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -7104,9 +7218,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4
             }
-          ]
+          ],
+          "exactCost": 0.4,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 3,
@@ -7143,9 +7260,12 @@
               "loc": 60,
               "activeDurationMs": 248976,
               "applies": 1,
-              "codeBlocks": 2
+              "codeBlocks": 2,
+              "exactCost": 0.325
             }
-          ]
+          ],
+          "exactCost": 0.325,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -7202,9 +7322,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.6875
             }
-          ]
+          ],
+          "exactCost": 0.6875,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 4,
@@ -7241,9 +7364,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4125
             }
-          ]
+          ],
+          "exactCost": 0.4125,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -7300,9 +7426,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.425
             }
-          ]
+          ],
+          "exactCost": 0.425,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -7359,9 +7488,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.7375
             }
-          ]
+          ],
+          "exactCost": 0.7375,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 4,
@@ -7398,9 +7530,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.45
             }
-          ]
+          ],
+          "exactCost": 0.45,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -7457,9 +7592,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.45
             }
-          ]
+          ],
+          "exactCost": 0.45,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -7516,9 +7654,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.5875
             }
-          ]
+          ],
+          "exactCost": 0.5875,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -7555,9 +7696,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4875
             }
-          ]
+          ],
+          "exactCost": 0.4875,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -7614,9 +7758,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.3625
             }
-          ]
+          ],
+          "exactCost": 0.3625,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -7673,9 +7820,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.6375
             }
-          ]
+          ],
+          "exactCost": 0.6375,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -7712,9 +7862,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.5125
             }
-          ]
+          ],
+          "exactCost": 0.5125,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -7771,9 +7924,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.3875
             }
-          ]
+          ],
+          "exactCost": 0.3875,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 3,
@@ -7810,9 +7966,12 @@
               "loc": 60,
               "activeDurationMs": 248976,
               "applies": 1,
-              "codeBlocks": 2
+              "codeBlocks": 2,
+              "exactCost": 0.3125
             }
-          ]
+          ],
+          "exactCost": 0.3125,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -7869,9 +8028,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.725
             }
-          ]
+          ],
+          "exactCost": 0.725,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -7908,9 +8070,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4375
             }
-          ]
+          ],
+          "exactCost": 0.4375,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -7967,9 +8132,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.45
             }
-          ]
+          ],
+          "exactCost": 0.45,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -8026,9 +8194,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.575
             }
-          ]
+          ],
+          "exactCost": 0.575,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 4,
@@ -8065,9 +8236,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.475
             }
-          ]
+          ],
+          "exactCost": 0.475,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -8124,9 +8298,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.35
             }
-          ]
+          ],
+          "exactCost": 0.35,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -8183,9 +8360,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.625
             }
-          ]
+          ],
+          "exactCost": 0.625,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 4,
@@ -8222,9 +8402,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.5125
             }
-          ]
+          ],
+          "exactCost": 0.5125,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -8281,9 +8464,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.3875
             }
-          ]
+          ],
+          "exactCost": 0.3875,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 3,
@@ -8320,9 +8506,12 @@
               "loc": 60,
               "activeDurationMs": 248976,
               "applies": 1,
-              "codeBlocks": 2
+              "codeBlocks": 2,
+              "exactCost": 0.3125
             }
-          ]
+          ],
+          "exactCost": 0.3125,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -8560,9 +8749,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.675
             }
-          ]
+          ],
+          "exactCost": 0.675,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -8599,9 +8791,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4
             }
-          ]
+          ],
+          "exactCost": 0.4,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -8658,9 +8853,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4125
             }
-          ]
+          ],
+          "exactCost": 0.4125,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -8717,9 +8915,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.7125
             }
-          ]
+          ],
+          "exactCost": 0.7125,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -8756,9 +8957,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4375
             }
-          ]
+          ],
+          "exactCost": 0.4375,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -8815,9 +9019,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4375
             }
-          ]
+          ],
+          "exactCost": 0.4375,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -8874,9 +9081,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.6125
             }
-          ]
+          ],
+          "exactCost": 0.6125,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -8913,9 +9123,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.5
             }
-          ]
+          ],
+          "exactCost": 0.5,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -8972,9 +9185,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.375
             }
-          ]
+          ],
+          "exactCost": 0.375,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 3,
@@ -9011,9 +9227,12 @@
               "loc": 60,
               "activeDurationMs": 248976,
               "applies": 1,
-              "codeBlocks": 2
+              "codeBlocks": 2,
+              "exactCost": 0.3125
             }
-          ]
+          ],
+          "exactCost": 0.3125,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -9070,9 +9289,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.6625
             }
-          ]
+          ],
+          "exactCost": 0.6625,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 4,
@@ -9109,9 +9331,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.5375
             }
-          ]
+          ],
+          "exactCost": 0.5375,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -9168,9 +9393,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4
             }
-          ]
+          ],
+          "exactCost": 0.4,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -9227,9 +9455,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.7
             }
-          ]
+          ],
+          "exactCost": 0.7,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 4,
@@ -9266,9 +9497,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.425
             }
-          ]
+          ],
+          "exactCost": 0.425,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -9325,9 +9559,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.425
             }
-          ]
+          ],
+          "exactCost": 0.425,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -9588,9 +9825,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.55
             }
-          ]
+          ],
+          "exactCost": 0.55,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -9627,9 +9867,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4625
             }
-          ]
+          ],
+          "exactCost": 0.4625,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -9686,9 +9929,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.3375
             }
-          ]
+          ],
+          "exactCost": 0.3375,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -9745,9 +9991,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.6
             }
-          ]
+          ],
+          "exactCost": 0.6,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -9784,9 +10033,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4875
             }
-          ]
+          ],
+          "exactCost": 0.4875,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -9843,9 +10095,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.3625
             }
-          ]
+          ],
+          "exactCost": 0.3625,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 3,
@@ -9882,9 +10137,12 @@
               "loc": 60,
               "activeDurationMs": 248976,
               "applies": 1,
-              "codeBlocks": 2
+              "codeBlocks": 2,
+              "exactCost": 0.3
             }
-          ]
+          ],
+          "exactCost": 0.3,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -9941,9 +10199,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.65
             }
-          ]
+          ],
+          "exactCost": 0.65,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -9980,9 +10241,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.525
             }
-          ]
+          ],
+          "exactCost": 0.525,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -10039,9 +10303,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4
             }
-          ]
+          ],
+          "exactCost": 0.4,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -10098,9 +10365,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.6875
             }
-          ]
+          ],
+          "exactCost": 0.6875,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -10137,9 +10407,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4125
             }
-          ]
+          ],
+          "exactCost": 0.4125,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -10196,9 +10469,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.425
             }
-          ]
+          ],
+          "exactCost": 0.425,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -10255,9 +10531,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.7375
             }
-          ]
+          ],
+          "exactCost": 0.7375,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 4,
@@ -10294,9 +10573,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.45
             }
-          ]
+          ],
+          "exactCost": 0.45,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -10353,9 +10635,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.45
             }
-          ]
+          ],
+          "exactCost": 0.45,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -10412,9 +10697,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.5875
             }
-          ]
+          ],
+          "exactCost": 0.5875,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 4,
@@ -10451,9 +10739,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4875
             }
-          ]
+          ],
+          "exactCost": 0.4875,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -10510,9 +10801,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.3625
             }
-          ]
+          ],
+          "exactCost": 0.3625,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 3,
@@ -10549,9 +10843,12 @@
               "loc": 60,
               "activeDurationMs": 248976,
               "applies": 1,
-              "codeBlocks": 2
+              "codeBlocks": 2,
+              "exactCost": 0.3
             }
-          ]
+          ],
+          "exactCost": 0.3,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -10608,9 +10905,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.6375
             }
-          ]
+          ],
+          "exactCost": 0.6375,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -10647,9 +10947,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.5125
             }
-          ]
+          ],
+          "exactCost": 0.5125,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -10706,9 +11009,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.3875
             }
-          ]
+          ],
+          "exactCost": 0.3875,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -10929,9 +11235,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.675
             }
-          ]
+          ],
+          "exactCost": 0.675,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -10968,9 +11277,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4125
             }
-          ]
+          ],
+          "exactCost": 0.4125,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -11027,9 +11339,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4125
             }
-          ]
+          ],
+          "exactCost": 0.4125,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -11086,9 +11401,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.725
             }
-          ]
+          ],
+          "exactCost": 0.725,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -11125,9 +11443,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4375
             }
-          ]
+          ],
+          "exactCost": 0.4375,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -11184,9 +11505,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.45
             }
-          ]
+          ],
+          "exactCost": 0.45,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -11243,9 +11567,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.575
             }
-          ]
+          ],
+          "exactCost": 0.575,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -11282,9 +11609,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.475
             }
-          ]
+          ],
+          "exactCost": 0.475,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -11341,9 +11671,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.35
             }
-          ]
+          ],
+          "exactCost": 0.35,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 3,
@@ -11380,9 +11713,12 @@
               "loc": 60,
               "activeDurationMs": 248976,
               "applies": 1,
-              "codeBlocks": 2
+              "codeBlocks": 2,
+              "exactCost": 0.2875
             }
-          ]
+          ],
+          "exactCost": 0.2875,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -11439,9 +11775,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.625
             }
-          ]
+          ],
+          "exactCost": 0.625,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 4,
@@ -11478,9 +11817,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.5125
             }
-          ]
+          ],
+          "exactCost": 0.5125,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -11537,9 +11879,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.3875
             }
-          ]
+          ],
+          "exactCost": 0.3875,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -11596,9 +11941,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.7125
             }
-          ]
+          ],
+          "exactCost": 0.7125,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -11635,9 +11983,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4375
             }
-          ]
+          ],
+          "exactCost": 0.4375,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -11694,9 +12045,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4375
             }
-          ]
+          ],
+          "exactCost": 0.4375,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -11753,9 +12107,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.5625
             }
-          ]
+          ],
+          "exactCost": 0.5625,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -11792,9 +12149,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4625
             }
-          ]
+          ],
+          "exactCost": 0.4625,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -11851,9 +12211,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.35
             }
-          ]
+          ],
+          "exactCost": 0.35,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 3,
@@ -11890,9 +12253,12 @@
               "loc": 60,
               "activeDurationMs": 248976,
               "applies": 1,
-              "codeBlocks": 2
+              "codeBlocks": 2,
+              "exactCost": 0.2875
             }
-          ]
+          ],
+          "exactCost": 0.2875,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -12136,9 +12502,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.6125
             }
-          ]
+          ],
+          "exactCost": 0.6125,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -12175,9 +12544,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.5
             }
-          ]
+          ],
+          "exactCost": 0.5,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -12234,9 +12606,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.375
             }
-          ]
+          ],
+          "exactCost": 0.375,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -12293,9 +12668,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.6625
             }
-          ]
+          ],
+          "exactCost": 0.6625,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 5,
@@ -12332,9 +12710,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.5375
             }
-          ]
+          ],
+          "exactCost": 0.5375,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -12391,9 +12772,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.4
             }
-          ]
+          ],
+          "exactCost": 0.4,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",
@@ -12450,9 +12834,12 @@
               "loc": 136,
               "activeDurationMs": 560976,
               "applies": 3,
-              "codeBlocks": 4
+              "codeBlocks": 4,
+              "exactCost": 0.7
             }
-          ]
+          ],
+          "exactCost": 0.7,
+          "exactCostSessions": 1
         },
         "gpt-5": {
           "calls": 4,
@@ -12489,9 +12876,12 @@
               "loc": 99,
               "activeDurationMs": 406224,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.425
             }
-          ]
+          ],
+          "exactCost": 0.425,
+          "exactCostSessions": 1
         }
       },
       "editor": "VS Code",
@@ -12548,9 +12938,12 @@
               "loc": 83,
               "activeDurationMs": 343824,
               "applies": 2,
-              "codeBlocks": 3
+              "codeBlocks": 3,
+              "exactCost": 0.425
             }
-          ]
+          ],
+          "exactCost": 0.425,
+          "exactCostSessions": 1
         }
       },
       "editor": "Claude Code",

@@ -20,6 +20,8 @@ import {
     accumulateDayAndEditorModelTokens,
     accumulateDayAndEditorModelCounters,
     mergeDailyModelEfficiency,
+    addSessionEfficiencyToDailyStats,
+    createEmptyDailyModelEfficiencyEntry,
     type EfficiencyTurn,
     type SessionEfficiencyAttribution,
 } from '../modelEfficiency';
@@ -783,4 +785,99 @@ test('accumulateDayAndEditorModelTokens: a routed session is re-keyed in both th
     assert.deepEqual(Object.keys(entry.modelEfficiency ?? {}), ['hydrafusion']);
     assert.deepEqual(Object.keys(entry.editorModelEfficiency?.['Copilot CLI'] ?? {}), ['hydrafusion']);
     assert.deepEqual(mergedEditorSlices(entry), entry.modelEfficiency);
+});
+
+// ---------------------------------------------------------------------------
+// Exact Copilot billing (separate from the estimated cost)
+// ---------------------------------------------------------------------------
+
+test('accumulateDailyModelTokens: exact cost is stored beside, never inside, the estimated cost', () => {
+    const daily: DailyModelEfficiency = {};
+    accumulateDailyModelTokens(daily, { 'gpt-5.6-sol': { inputTokens: 1_000_000, outputTokens: 0, sessions: 1 } }, ROUTED_PRICING, undefined, 0.5);
+    assert.equal(daily['gpt-5.6-sol'].cost, 1);
+    assert.equal(daily['gpt-5.6-sol'].exactCost, 0.5);
+    assert.equal(daily['gpt-5.6-sol'].exactCostSessions, 1);
+    assert.equal(daily['gpt-5.6-sol'].sessions, 1);
+});
+
+test('accumulateDailyModelTokens: a session without exact billing leaves the exact fields absent', () => {
+    const daily: DailyModelEfficiency = {};
+    accumulateDailyModelTokens(daily, ROUTED_USAGE, ROUTED_PRICING);
+    assert.equal(daily['gpt-5.6-sol'].exactCost, undefined);
+    assert.equal(daily['gpt-5.6-sol'].exactCostSessions, undefined);
+});
+
+test('accumulateDailyModelTokens: a routed session keeps its whole exact cost on the router row', () => {
+    const daily: DailyModelEfficiency = {};
+    accumulateDailyModelTokens(daily, ROUTED_USAGE, ROUTED_PRICING, { hydrafusion: counters({ calls: 3 }) }, 2);
+    assert.deepEqual(Object.keys(daily), ['hydrafusion']);
+    assert.ok(Math.abs(daily.hydrafusion.exactCost! - 2) < 1e-9);
+    assert.equal(daily.hydrafusion.exactCostSessions, 1);
+    assert.equal(daily.hydrafusion.sessions, 1);
+});
+
+test('accumulateDailyModelTokens: an unrouted multi-model session splits exact cost by token share', () => {
+    const daily: DailyModelEfficiency = {};
+    accumulateDailyModelTokens(daily, ROUTED_USAGE, ROUTED_PRICING, undefined, 3);
+    // 900 vs 300 tokens -> 75% / 25%.
+    assert.ok(Math.abs(daily['gpt-5.6-sol'].exactCost! - 2.25) < 1e-9);
+    assert.ok(Math.abs(daily['claude-opus-5'].exactCost! - 0.75) < 1e-9);
+});
+
+test('accumulateDayAndEditorModelTokens: day total and editor slice both receive the exact cost', () => {
+    const entry = { date: '2026-07-01' } as DailyTokenStats;
+    accumulateDayAndEditorModelTokens(entry, 'Copilot CLI', ROUTED_USAGE, ROUTED_PRICING, { hydrafusion: counters({ calls: 1 }) }, 1.5);
+    assert.ok(Math.abs(entry.modelEfficiency!.hydrafusion.exactCost! - 1.5) < 1e-9);
+    assert.ok(Math.abs(entry.editorModelEfficiency!['Copilot CLI'].hydrafusion.exactCost! - 1.5) < 1e-9);
+});
+
+test('mergeModelEfficiency and mergeDailyModelEfficiency sum the exact fields', () => {
+    const target: ModelEfficiencyUsage = {};
+    mergeModelEfficiency(target, { m: counters({ exactCost: 1, exactCostSessions: 1 }) });
+    mergeModelEfficiency(target, { m: counters({ exactCost: 2, exactCostSessions: 1 }) });
+    mergeModelEfficiency(target, { m: counters({}) });
+    assert.equal(target.m.exactCost, 3);
+    assert.equal(target.m.exactCostSessions, 2);
+
+    const daily: DailyModelEfficiency = {};
+    const src = (exactCost: number): DailyModelEfficiency => ({ m: { ...createEmptyDailyModelEfficiencyEntry(), exactCost, exactCostSessions: 1 } });
+    mergeDailyModelEfficiency(daily, src(1));
+    mergeDailyModelEfficiency(daily, src(4));
+    assert.equal(daily.m.exactCost, 5);
+    assert.equal(daily.m.exactCostSessions, 2);
+});
+
+test('buildSessionEfficiencyAttribution: carries the session exact cost; the router row gets the full share', () => {
+    const session = {
+        modelUsage: ROUTED_USAGE,
+        copilotExactCostDollars: 4,
+        usageAnalysis: { modelEfficiency: { hydrafusion: counters({ calls: 2, editTurns: 1 }) } },
+    };
+    const attribution = buildSessionEfficiencyAttribution(session);
+    assert.equal(attribution.exactCostDollars, 4);
+    const daily: DailyModelEfficiency = {};
+    accumulateDailyModelCounters(daily, attribution, ROUTED_PRICING);
+    const record = daily.hydrafusion.sessionRecords![0];
+    assert.equal(record.exactCost, 4);
+});
+
+test('accumulateDailyModelCounters: a session record has no exact cost when the session reported none', () => {
+    const daily: DailyModelEfficiency = {};
+    accumulateDailyModelCounters(daily, { modelUsage: ROUTED_USAGE, modelEfficiency: { 'gpt-5.6-sol': counters({ calls: 1 }) } }, ROUTED_PRICING);
+    assert.equal('exactCost' in daily['gpt-5.6-sol'].sessionRecords![0], false);
+});
+
+test('addSessionEfficiencyToDailyStats: scales the exact cost by each day fraction', () => {
+    const map = new Map<string, DailyTokenStats>([
+        ['2026-07-01', { date: '2026-07-01' } as DailyTokenStats],
+        ['2026-07-02', { date: '2026-07-02' } as DailyTokenStats],
+    ]);
+    addSessionEfficiencyToDailyStats(map, {
+        editorType: 'Copilot CLI',
+        modelUsage: { 'gpt-5.6-sol': { inputTokens: 100, outputTokens: 0, sessions: 1 } },
+        dailyFractions: { '2026-07-01': 0.25, '2026-07-02': 0.75 },
+        copilotExactCostDollars: 8,
+    }, ROUTED_PRICING);
+    assert.ok(Math.abs(map.get('2026-07-01')!.modelEfficiency!['gpt-5.6-sol'].exactCost! - 2) < 1e-9);
+    assert.ok(Math.abs(map.get('2026-07-02')!.modelEfficiency!['gpt-5.6-sol'].exactCost! - 6) < 1e-9);
 });

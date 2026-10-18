@@ -215,3 +215,35 @@ test('buildUsageAnalysisViewData carries the recent-session buckets for every ho
 	assert.deepEqual(buildUsageAnalysisViewData(stats({ recentSessions }), inputs()).recentSessions, recentSessions);
 	assert.equal(buildUsageAnalysisViewData(stats(), inputs()).recentSessions, undefined, 'absent when the host has none');
 });
+
+// ── HydraFusion router aggregate ──────────────────────────────────────────
+
+test('buildUsageAnalysisViewData: hydraFusion is null for every period when nothing routed', () => {
+	const data = buildUsageAnalysisViewData(stats(), inputs());
+	assert.deepEqual(data.hydraFusion, { today: null, last30Days: null, month: null, lastMonth: null });
+});
+
+test('buildUsageAnalysisViewData: derives the router aggregate per period', () => {
+	const last30Days = emptyPeriod();
+	last30Days.hydraFusion = {
+		sessions: 2, totalTurns: 4, compoundTurns: 2, judgeAccepts: 1, judgeRejects: 1, escalatedTurns: 1,
+		totalAiu: 40, reviewAiu: 10, degradedTurns: 0, patternCounts: [{ pattern: 'cascade', turns: 4, aiu: 40 }],
+	};
+	const data = buildUsageAnalysisViewData(stats({ last30Days }), inputs());
+	assert.equal(data.hydraFusion.today, null);
+	const agg = data.hydraFusion.last30Days!;
+	assert.equal(agg.aiuPerTurn, 10);
+	assert.equal(agg.compoundRatePercent, 50);
+	assert.equal(agg.judgeRejectionRatePercent, 50);
+	assert.equal(agg.reviewSharePercent, 25);
+	assert.equal(agg.escalationRatePercent, 25);
+});
+
+test('buildUsageAnalysisViewData: a rollup with zero turns is treated as not routed', () => {
+	const last30Days = emptyPeriod();
+	last30Days.hydraFusion = {
+		sessions: 1, totalTurns: 0, compoundTurns: 0, judgeAccepts: 0, judgeRejects: 0, escalatedTurns: 0,
+		totalAiu: 0, reviewAiu: 0, degradedTurns: 0, patternCounts: [],
+	};
+	assert.equal(buildUsageAnalysisViewData(stats({ last30Days }), inputs()).hydraFusion.last30Days, null);
+});

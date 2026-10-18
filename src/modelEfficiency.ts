@@ -238,7 +238,15 @@ export function mergeModelEfficiency(target: ModelEfficiencyUsage, source: Model
 		t.outputTokens += counters.outputTokens;
 		t.cachedReadTokens += counters.cachedReadTokens;
 		t.cost += counters.cost;
+		addExactCost(t, counters.exactCost, counters.exactCostSessions);
 	}
+}
+
+/** Adds exact-billing figures to a counter set, leaving the fields absent when there is nothing to add. */
+function addExactCost(target: ModelEfficiencyCounters, exactCost: number | undefined, exactCostSessions: number | undefined): void {
+	if (exactCost === undefined && exactCostSessions === undefined) { return; }
+	target.exactCost = (target.exactCost ?? 0) + (exactCost ?? 0);
+	target.exactCostSessions = (target.exactCostSessions ?? 0) + (exactCostSessions ?? 0);
 }
 
 /**
@@ -304,6 +312,8 @@ export interface SessionEfficiencyAttribution {
 	linesRemoved?: number;
 	applies?: number;
 	codeBlocks?: number;
+	/** Exact Copilot billing for the whole session in USD; split across models by token share. */
+	exactCostDollars?: number;
 }
 
 /**
@@ -430,10 +440,13 @@ export function accumulateDailyModelTokens(
 	modelUsage: ModelUsage | undefined,
 	modelPricing: { [key: string]: ModelPricing } = {},
 	modelEfficiency?: ModelEfficiencyUsage,
+	exactCostDollars?: number,
 ): void {
 	if (!modelUsage) { return; }
 	const router = findRoutedSessionModel(modelUsage, modelEfficiency);
 	const counted = new Set<string>();
+	const totalTokens = Object.values(modelUsage).reduce((sum, u) => sum + (u.inputTokens || 0) + (u.outputTokens || 0), 0);
+	const modelCount = Object.keys(modelUsage).length;
 	for (const [model, usage] of Object.entries(modelUsage)) {
 		const key = efficiencyModelKey(model, router, modelEfficiency);
 		const entry = ensureDailyEntry(target, key);
@@ -442,8 +455,18 @@ export function accumulateDailyModelTokens(
 		entry.outputTokens += usage.outputTokens || 0;
 		entry.cachedReadTokens += usage.cachedReadTokens || 0;
 		entry.cost += calculateEstimatedCost({ [model]: usage }, modelPricing);
+		if (exactCostDollars !== undefined) {
+			// Exact billing is per session, not per model: split it by token share, which is
+			// also how the router row collects the shares of the real models behind it.
+			const share = totalTokens > 0 ? ((usage.inputTokens || 0) + (usage.outputTokens || 0)) / totalTokens : 1 / modelCount;
+			addExactCost(entry, exactCostDollars * share, 0);
+		}
 		// One session, however many real models the router spread it over.
-		if (!counted.has(key)) { entry.sessions += 1; counted.add(key); }
+		if (!counted.has(key)) {
+			entry.sessions += 1;
+			if (exactCostDollars !== undefined) { entry.exactCostSessions = (entry.exactCostSessions ?? 0) + 1; }
+			counted.add(key);
+		}
 	}
 }
 
@@ -521,6 +544,7 @@ function buildModelSessionRecord(
 		outputTokens: usage?.outputTokens || 0,
 		cachedReadTokens: usage?.cachedReadTokens || 0,
 		cost: usage ? calculateEstimatedCost({ [model]: usage }, pricing) : 0,
+		...(input.exactCostDollars !== undefined ? { exactCost: scaled(input.exactCostDollars) } : {}),
 		calls: c.calls,
 		editTurns: c.editTurns,
 		oneShotEditTurns: c.oneShotEditTurns,
@@ -538,7 +562,7 @@ function buildModelSessionRecord(
  * the session's own LOC totals and falling back to its edit-scope analysis.
  */
 /** The session fields {@link buildSessionEfficiencyAttribution} reads; a `SessionFileCache` satisfies it. */
-export type SessionEfficiencySource = Pick<SessionFileCache, 'modelUsage' | 'linesAdded' | 'linesRemoved'> & {
+export type SessionEfficiencySource = Pick<SessionFileCache, 'modelUsage' | 'linesAdded' | 'linesRemoved' | 'copilotExactCostDollars'> & {
 	usageAnalysis?: Partial<Pick<SessionUsageAnalysis, 'modelEfficiency' | 'sessionDuration' | 'editScope' | 'applyUsage'>>;
 };
 
@@ -554,6 +578,7 @@ export function buildSessionEfficiencyAttribution(sessionData: SessionEfficiency
 		linesRemoved: sessionData.linesRemoved ?? analysis?.editScope?.linesRemoved,
 		applies: analysis?.applyUsage?.totalApplies,
 		codeBlocks: analysis?.applyUsage?.totalCodeBlocks,
+		exactCostDollars: sessionData.copilotExactCostDollars,
 	};
 }
 
@@ -573,6 +598,7 @@ export function buildSessionEfficiencyAttribution(sessionData: SessionEfficiency
 		t.outputTokens += s.outputTokens;
 		t.cachedReadTokens += s.cachedReadTokens;
 		t.cost += s.cost;
+		addExactCost(t, s.exactCost, s.exactCostSessions);
 		t.sessions += s.sessions;
 		t.sessionShare += s.sessionShare;
 		t.activeDurationMs += s.activeDurationMs;
@@ -702,10 +728,11 @@ export function accumulateDayAndEditorModelTokens(
 	modelUsage: ModelUsage,
 	pricing: { [model: string]: ModelPricing },
 	modelEfficiency?: ModelEfficiencyUsage,
+	exactCostDollars?: number,
 ): void {
 	const slice = getOrCreateEditorSlice(entry, editor);
-	accumulateDailyModelTokens(entry.modelEfficiency!, modelUsage, pricing, modelEfficiency);
-	accumulateDailyModelTokens(slice, modelUsage, pricing, modelEfficiency);
+	accumulateDailyModelTokens(entry.modelEfficiency!, modelUsage, pricing, modelEfficiency, exactCostDollars);
+	accumulateDailyModelTokens(slice, modelUsage, pricing, modelEfficiency, exactCostDollars);
 }
 
 /**
@@ -742,7 +769,7 @@ export function addSessionEfficiencyToDailyStats(
 	// this session's counters (see activeSessionDays).
 	const activeDays = activeSessionDays(session.dailyFractions).filter(([k]) => dailyStatsMap.has(k));
 	for (const [dayKey, fraction] of activeDays) {
-		accumulateDayAndEditorModelTokens(dailyStatsMap.get(dayKey)!, session.editorType, scaleModelUsage(session.modelUsage, fraction), pricing, modelEfficiency);
+		accumulateDayAndEditorModelTokens(dailyStatsMap.get(dayKey)!, session.editorType, scaleModelUsage(session.modelUsage, fraction), pricing, modelEfficiency, session.copilotExactCostDollars === undefined ? undefined : session.copilotExactCostDollars * fraction);
 	}
 	const lastDay = activeDays.at(-1)?.[0];
 	if (lastDay) {

@@ -43,6 +43,7 @@ import { registerMessageHandler } from '../shared/messageHandler';
 import { getModelDisplayName, getModelLookupCandidates } from '../../../../src/webview/shared/modelUtils';
 import { getModelBillingProvider } from '../../../../src/chartDataBuilder';
 import { buildContextWindowSectionHtml, NEAR_LIMIT_PERCENT } from './contextWindowSection';
+import { buildRouterSectionHtml, sanitizeRouterPayload, type RouterPayload } from './hydraFusionCard';
 import { deriveModelEfficiencyRates, computeEfficiencyLowUsageThreshold, computeLongTailModels } from '../../../../src/modelEfficiency';
 import { buildCorrectionImprovementPrompt } from '../../../../src/correctionDetection';
 import type { ModelEfficiencyUsage, ModelEfficiencyCounters } from '../../../../src/types';
@@ -230,6 +231,8 @@ type UsageAnalysisStats = {
 	curationAnalysis?: ToolCurationAnalysis | null;
 	/** Compact projection of the memory-files hygiene analysis (counts/rollup scalars only — no per-file paths). Null when none found. */
 	memoryFilesAnalysis?: MemoryFilesAnalysisView | null;
+	/** HydraFusion router aggregate per period; a period is null when no session routed through it. */
+	hydraFusion?: RouterPayload;
 	/**
 	 * Compact projection of this repository's server-side Copilot memory store. Unlike
 	 * `memoryFilesAnalysis` this carries fact text, because for server memories the fact is
@@ -1701,6 +1704,7 @@ function sanitizeOptionalReports(sanitized: UsageAnalysisStats, raw: any): void 
 	}
 	sanitized.repeatedTasks = sanitizeRepeatedTaskReport(raw.repeatedTasks);
 	sanitized.autoCompactionsLast7Days = sanitizeAutomaticCompactions(raw?.autoCompactionsLast7Days);
+	sanitized.hydraFusion = sanitizeRouterPayload(raw?.hydraFusion);
 }
 
 function applySessionSummaries(sanitized: UsageAnalysisStats, raw: any): void {
@@ -5259,7 +5263,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				${renderMultiModelPeriod('📆 Last 30 Days', stats.last30Days.modelSwitching, allKeys.allLowCostModels, allKeys.allMediumCostModels, allKeys.allHighCostModels, allKeys.allUnknownModels)}
 				${renderMultiModelPeriod('📅 Previous Month', stats.month.modelSwitching, allKeys.allLowCostModels, allKeys.allMediumCostModels, allKeys.allHighCostModels, allKeys.allUnknownModels)}
 			</div>
-		</div>`);
+		</div>${buildRouterSectionHtml(stats.hydraFusion)}`);
 	const sessionsSummaryHtml = `
 		<!-- Summary Section -->
 		<div class="section" id="section-sessions-summary">

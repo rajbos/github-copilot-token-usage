@@ -2,6 +2,11 @@ import { describe, test } from 'node:test';
 import * as assert from 'node:assert/strict';
 
 import {
+	addHydraFusionRollup,
+	aggregateHydraFusionSummaries,
+	createEmptyHydraFusionRollup,
+	deriveHydraFusionAggregate,
+	toHydraFusionRollup,
 	aiuToUsd,
 	analyzeHydraFusionSession,
 	containsHydraFusionEvents,
@@ -464,5 +469,73 @@ describe('matchHydraFusionTurnsToChatTurns', () => {
 	test('returns an empty map for a session with no fusion turns', () => {
 		const chatTurns = [{ turnNumber: 1, timestamp: '2026-01-01T00:00:00.000Z' }];
 		assert.equal(matchHydraFusionTurnsToChatTurns(chatTurns, []).size, 0);
+	});
+});
+
+describe('aggregateHydraFusionSummaries', () => {
+	const cascade = (id?: string) => analyzeHydraFusionSession(cascadeSession(id))!;
+	const single = () => analyzeHydraFusionSession(singleSession())!;
+
+	test('empty input yields zero totals and null rates, not NaN', () => {
+		const agg = aggregateHydraFusionSummaries([]);
+		assert.equal(agg.sessions, 0);
+		assert.equal(agg.totalTurns, 0);
+		assert.equal(agg.aiuPerTurn, null);
+		assert.equal(agg.usdPerTurn, null);
+		assert.equal(agg.judgeRejectionRatePercent, null);
+		assert.equal(agg.compoundRatePercent, 0);
+		assert.equal(agg.reviewSharePercent, 0);
+		assert.equal(agg.escalationRatePercent, 0);
+		assert.deepEqual(agg.patternCounts, []);
+	});
+
+	test('sums turns, judge decisions, escalations and the pattern mix across sessions', () => {
+		const agg = aggregateHydraFusionSummaries([cascade(), single(), cascade('fusion-2')]);
+		assert.equal(agg.sessions, 3);
+		assert.equal(agg.totalTurns, 3);
+		assert.equal(agg.compoundTurns, 2);
+		assert.equal(agg.judgeRejects, 2);
+		assert.equal(agg.judgeAccepts, 0);
+		assert.equal(agg.judgeRejectionRatePercent, 100);
+		assert.equal(agg.escalatedTurns, 2);
+		assert.ok(Math.abs(agg.compoundRatePercent - 66.666) < 0.01);
+		assert.ok(Math.abs(agg.escalationRatePercent - 66.666) < 0.01);
+		assert.deepEqual(agg.patternCounts.map(p => [p.pattern, p.turns]), [['cascade', 2], ['single', 1]]);
+	});
+
+	test('credits come from the per-turn rollups, never rollups plus legs (double-count guard)', () => {
+		const agg = aggregateHydraFusionSummaries([cascade(), single()]);
+		// cascade rollup 14.72 AIU (its legs sum to 14.72 as well); single 8 AIU.
+		assert.ok(Math.abs(agg.totalAiu - 22.72) < 1e-9);
+		assert.ok(Math.abs(agg.aiuPerTurn! - 11.36) < 1e-9);
+		assert.ok(Math.abs(agg.totalUsd - aiuToUsd(22.72)) < 1e-9);
+		assert.ok(Math.abs(agg.usdPerTurn! - aiuToUsd(11.36)) < 1e-9);
+	});
+
+	test('review share is the review credits over total credits', () => {
+		const agg = aggregateHydraFusionSummaries([cascade(), single()]);
+		const expected = (cascade().reviewAiu / 22.72) * 100;
+		assert.ok(agg.reviewSharePercent > 0);
+		assert.ok(Math.abs(agg.reviewSharePercent - expected) < 1e-9);
+	});
+
+	test('does not mutate its inputs and returns an independent pattern list', () => {
+		const a = cascade();
+		const before = JSON.stringify(a);
+		const agg = aggregateHydraFusionSummaries([a]);
+		agg.patternCounts[0].turns = 99;
+		assert.equal(JSON.stringify(a), before);
+	});
+
+	test('rollups are additive: summing per-session rollups equals aggregating the summaries', () => {
+		const total = createEmptyHydraFusionRollup();
+		addHydraFusionRollup(total, toHydraFusionRollup(cascade()));
+		addHydraFusionRollup(total, toHydraFusionRollup(single()));
+		assert.deepEqual(deriveHydraFusionAggregate(total), aggregateHydraFusionSummaries([cascade(), single()]));
+	});
+
+	test('a rollup carries counts and credits only (no model ids or prompts)', () => {
+		const keys = Object.keys(toHydraFusionRollup(cascade())).sort();
+		assert.deepEqual(keys, ['compoundTurns', 'degradedTurns', 'escalatedTurns', 'judgeAccepts', 'judgeRejects', 'patternCounts', 'reviewAiu', 'sessions', 'totalAiu', 'totalTurns']);
 	});
 });
