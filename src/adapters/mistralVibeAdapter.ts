@@ -1,7 +1,7 @@
 import * as fs from 'fs';
-import type { ModelUsage, ChatTurn } from '../types';
+import type { ModelUsage, ChatTurn, VendorSessionStats, SessionDurationData } from '../types';
 import type { IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem, DiscoveryResult, CandidatePath, UsageAnalysisAdapterContext } from '../ecosystemAdapter';
-import { MistralVibeDataAccess } from '../mistralvibe';
+import { MistralVibeDataAccess, type VibeSessionStats } from '../mistralvibe';
 import { createEmptyContextRefs } from '../tokenEstimation';
 import { createEmptySessionUsageAnalysis, applyModelTierClassification } from '../usageAnalysis';
 
@@ -173,6 +173,41 @@ export class MistralVibeAdapter implements IEcosystemAdapter, IDiscoverableEcosy
 		analysis.modelSwitching.totalRequests = models.length;
 		analysis.modelSwitching.switchCount = 0;
 		applyModelTierClassification(ctx.modelPricing, uniqueModels, models, analysis);
+		const stats = await this.mistralVibe.getSessionStats(sessionFile);
+		const vendorStats = buildVendorStats(stats);
+		if (vendorStats) { analysis.vendorStats = vendorStats; }
+		const duration = wallClockDuration(meta.firstInteraction, meta.lastInteraction);
+		if (duration) { analysis.sessionDuration = duration; }
 		return analysis;
 	}
+}
+
+/**
+ * Wall-clock session duration from meta.json `start_time` / `end_time`. Vibe records no per-turn
+ * timestamps, so this is the only duration available: it INCLUDES idle gaps between turns and is
+ * used as `activeDurationMs` only as a fallback. Undefined when either timestamp is missing,
+ * unparseable, or the range is not positive.
+ */
+function wallClockDuration(start: string | null, end: string | null): SessionDurationData | undefined {
+	if (!start || !end) { return undefined; }
+	const ms = new Date(end).getTime() - new Date(start).getTime();
+	if (!Number.isFinite(ms) || ms <= 0) { return undefined; }
+	return { totalDurationMs: ms, avgDurationMs: ms, avgFirstProgressMs: 0, avgTotalElapsedMs: 0, avgWaitTimeMs: 0, activeDurationMs: ms };
+}
+
+/** Map the parsed meta.json stats to the additive vendor-stats shape; undefined when none were reported. */
+function buildVendorStats(s: VibeSessionStats): VendorSessionStats | undefined {
+	const out: VendorSessionStats = {};
+	if (s.tokensPerSecond !== undefined) { out.tokensPerSecond = { samples: 1, sum: s.tokensPerSecond }; }
+	if (s.lastTurnDurationMs !== undefined) { out.lastTurnDurationMs = { samples: 1, sum: s.lastTurnDurationMs }; }
+	if (s.sessionCostReported !== undefined) { out.reportedCostDollars = s.sessionCostReported; }
+	if (s.steps !== undefined) { out.steps = s.steps; }
+	const outcomes: NonNullable<VendorSessionStats['toolOutcomes']> = {};
+	if (s.toolCallsSucceeded !== undefined) { outcomes.succeeded = s.toolCallsSucceeded; }
+	if (s.toolCallsFailed !== undefined) { outcomes.failed = s.toolCallsFailed; }
+	if (s.toolCallsRejected !== undefined) { outcomes.rejected = s.toolCallsRejected; }
+	if (s.toolCallsAgreed !== undefined) { outcomes.agreed = s.toolCallsAgreed; }
+	if (s.toolCallsHookDenied !== undefined) { outcomes.hookDenied = s.toolCallsHookDenied; }
+	if (Object.keys(outcomes).length > 0) { out.toolOutcomes = outcomes; }
+	return Object.keys(out).length > 0 ? out : undefined;
 }

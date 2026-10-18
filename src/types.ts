@@ -543,6 +543,41 @@ export interface SessionUsageAnalysis {
    * carries no user-message text.
    */
   firstUserPrompt?: string;
+  /** Vendor-reported session-level stats (Mistral Vibe meta.json). Absent for other formats. */
+  vendorStats?: VendorSessionStats;
+}
+
+/** A sum plus sample count, so rates and durations merge across sessions without averaging averages. */
+export interface SampledSum {
+  samples: number;
+  sum: number;
+}
+
+/**
+ * Session-level numeric stats a vendor's own log reports (Mistral Vibe `meta.json` `stats`).
+ * Every field is optional and additive, so the same shape holds one session or a merged period.
+ * An absent stat stays absent; it is never zero-filled.
+ */
+export interface VendorSessionStats {
+  /** Vendor-reported generation speed in tokens/second (sum + session count). */
+  tokensPerSecond?: SampledSum;
+  /** Duration of each session's last turn in ms (sum + session count). */
+  lastTurnDurationMs?: SampledSum;
+  /** Vendor-reported cost in dollars. Cross-check only: cost estimates stay on calculateEstimatedCost. */
+  reportedCostDollars?: number;
+  /** Agent steps (LLM round-trips) the vendor counted. */
+  steps?: number;
+  /** Session-level tool-call outcomes; the vendor does not attribute them per tool. */
+  toolOutcomes?: VendorToolOutcomes;
+}
+
+/** Tool-call outcome counters; `rejected` and `hookDenied` are calls declined rather than failed. */
+export interface VendorToolOutcomes {
+  succeeded?: number;
+  failed?: number;
+  rejected?: number;
+  agreed?: number;
+  hookDenied?: number;
 }
 
 /**
@@ -1314,6 +1349,8 @@ export interface UsageAnalysisPeriod {
    * token counts.
    */
   cacheBreakage?: CacheBreakagePeriodStats;
+  /** Vendor-reported session stats summed across the period's sessions. Absent when none carried them. */
+  vendorStats?: VendorSessionStats;
 }
 
 /** Aggregated context-window usage for one usage-analysis period. */

@@ -321,6 +321,47 @@
         "variant",
         "version"
       ]
+    },
+    "mistral-vibe": {
+      "displayName": "Mistral Vibe",
+      "doc": "docs/logFilesSchema/mistral-vibe-session-schema.md",
+      "contracts": [
+        {
+          "format": "json",
+          "require": [
+            "start_time",
+            "stats"
+          ],
+          "desc": "Vibe meta.json carries an ISO start_time and a stats{} object (token totals live inside it but are absent in sessions that made no LLM call)."
+        }
+      ],
+      "knownFields": [
+        "config",
+        "config.active_model",
+        "end_time",
+        "session_id",
+        "start_time",
+        "stats",
+        "stats.context_tokens",
+        "stats.last_turn_cached_tokens",
+        "stats.last_turn_completion_tokens",
+        "stats.last_turn_duration",
+        "stats.last_turn_prompt_tokens",
+        "stats.last_turn_total_tokens",
+        "stats.session_cached_tokens",
+        "stats.session_completion_tokens",
+        "stats.session_cost",
+        "stats.session_prompt_tokens",
+        "stats.session_total_llm_tokens",
+        "stats.steps",
+        "stats.tokens_per_second",
+        "stats.tool_calls_agreed",
+        "stats.tool_calls_failed",
+        "stats.tool_calls_hook_denied",
+        "stats.tool_calls_rejected",
+        "stats.tool_calls_succeeded",
+        "title"
+      ]
     }
   }
 }

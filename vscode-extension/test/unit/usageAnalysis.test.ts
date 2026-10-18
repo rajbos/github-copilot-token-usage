@@ -226,6 +226,37 @@ test('mergeUsageAnalysis: accumulates model efficiency counters per model', () =
     assert.equal(period.modelEfficiency?.['gpt-4o'].retries, 2);
 });
 
+test('mergeUsageAnalysis: sums vendorStats across sessions and keeps absent stats absent', () => {
+    const period = emptyPeriod();
+    const a = emptyAnalysis();
+    a.vendorStats = {
+        tokensPerSecond: { samples: 1, sum: 100 }, reportedCostDollars: 0.5, steps: 10,
+        toolOutcomes: { succeeded: 8, failed: 1 },
+    };
+    const b = emptyAnalysis();
+    b.vendorStats = {
+        tokensPerSecond: { samples: 1, sum: 50 }, lastTurnDurationMs: { samples: 1, sum: 2000 },
+        toolOutcomes: { succeeded: 2, rejected: 3, hookDenied: 1 },
+    };
+    mergeUsageAnalysis(period, a);
+    mergeUsageAnalysis(period, b);
+    mergeUsageAnalysis(period, emptyAnalysis());
+
+    const v = period.vendorStats!;
+    assert.deepEqual(v.tokensPerSecond, { samples: 2, sum: 150 });
+    assert.deepEqual(v.lastTurnDurationMs, { samples: 1, sum: 2000 });
+    assert.equal(v.reportedCostDollars, 0.5);
+    assert.equal(v.steps, 10);
+    assert.deepEqual(v.toolOutcomes, { succeeded: 10, failed: 1, rejected: 3, hookDenied: 1 });
+    assert.equal('agreed' in v.toolOutcomes!, false, 'a counter no session reported stays absent');
+});
+
+test('mergeUsageAnalysis: leaves period.vendorStats absent when no analysis has it', () => {
+    const period = emptyPeriod();
+    mergeUsageAnalysis(period, emptyAnalysis());
+    assert.equal(period.vendorStats, undefined);
+});
+
 test('mergeUsageAnalysis: leaves period.modelEfficiency absent when analysis has none', () => {
     const period = emptyPeriod();
     mergeUsageAnalysis(period, emptyAnalysis());
