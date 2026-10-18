@@ -784,3 +784,13 @@ test('accumulateDayAndEditorModelTokens: a routed session is re-keyed in both th
     assert.deepEqual(Object.keys(entry.editorModelEfficiency?.['Copilot CLI'] ?? {}), ['hydrafusion']);
     assert.deepEqual(mergedEditorSlices(entry), entry.modelEfficiency);
 });
+
+test('accumulateDayAndEditorModelTokens: the Claude Code (VS Code) label is its own slice and still merges back to the day', () => {
+	const entry = emptyDay();
+	accumulateDayAndEditorModelTokens(entry, 'Claude Code CLI', { 'gpt-5': { inputTokens: 300, outputTokens: 60, sessions: 1 } }, {});
+	accumulateDayAndEditorModelTokens(entry, 'Claude Code (VS Code)', { 'gpt-5': { inputTokens: 700, outputTokens: 140, sessions: 1 } }, {});
+
+	assert.deepEqual(Object.keys(entry.editorModelEfficiency!).sort(), ['Claude Code (VS Code)', 'Claude Code CLI']);
+	assert.equal(entry.modelEfficiency!['gpt-5'].inputTokens, 1000);
+	assert.deepEqual(mergedEditorSlices(entry)['gpt-5'], entry.modelEfficiency!['gpt-5']);
+});

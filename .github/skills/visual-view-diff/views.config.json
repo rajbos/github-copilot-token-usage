@@ -395,6 +395,17 @@
           "noiseFloorPixels": 400
         },
         {
+          "id": "models-harnesses",
+          "title": "Models tab, one model across two harnesses",
+          "steps": [
+            { "click": ".eff-tab[data-tab=\"models\"]" },
+            { "select": "#model-mode", "value": "harnesses" }
+          ],
+          "expect": ".eff-tab.active[data-tab=\"models\"]",
+          "settleMs": 3000,
+          "noiseFloorPixels": 400
+        },
+        {
           "id": "value",
           "title": "Value tab",
           "steps": [{ "click": ".eff-tab[data-tab=\"value\"]" }],

@@ -40,6 +40,7 @@ import {
 	buildModelBucketSeries,
 	buildSkillUsageSeries,
 	DEFAULT_MODEL_SESSION_FILTER,
+	compareModelAcrossHarnesses,
 	compareModels,
 	computeModelPeriodMetrics,
 	computeOutlierCutoffTokens,
@@ -49,6 +50,7 @@ import {
 	filterModelsByVendor,
 	filterSessionsByEditor,
 	listComparableModels,
+	listModelHarnesses,
 	listModelVendors,
 	resolveEfficiencyRange,
 	resolveModelCompareWindow,
@@ -284,6 +286,8 @@ function computeScopedData(d: EfficiencyViewData): ScopedData {
 
 /** Model day rows scoped to the selected editor. */
 function scopedModelDaily(d: EfficiencyViewData): typeof d.modelDaily {
+	// `harnesses` mode picks its own two editors, so the toolbar's editor scope must not narrow the rows.
+	if (modelState.mode === 'harnesses') { return d.modelDaily; }
 	return selectModelDaysForEditor(d.modelDaily, scope.editor || undefined);
 }
 
@@ -893,7 +897,7 @@ const modelState: ModelCompareSelection & {
 	initialized: boolean;
 	sessionFilter: ModelSessionFilter;
 } = {
-	mode: 'models', modelA: '', modelB: '',
+	mode: 'models', modelA: '', modelB: '', editorA: '', editorB: '',
 	window: 'last30', windowA: 'lastMonth', windowB: 'thisMonth',
 	trendMetric: 'cost-per-edit-turn', initialized: false,
 	sessionFilter: { ...DEFAULT_MODEL_SESSION_FILTER },
@@ -964,6 +968,8 @@ function reconcileModelState(d: EfficiencyViewData): void {
 	const next = reconcileModelSelection(scopedModelDaily(d), modelState, payloadNow(d), scope.vendor || undefined);
 	modelState.modelA = next.modelA;
 	modelState.modelB = next.modelB;
+	modelState.editorA = next.editorA ?? '';
+	modelState.editorB = next.editorB ?? '';
 }
 
 /** Resolves the current selection into a comparison, or null when a side has no data. */
@@ -971,6 +977,9 @@ function buildModelComparison(d: EfficiencyViewData): ModelComparison | null {
 	const now = payloadNow(d);
 	const scopedDays = scopedModelDaily(d);
 	const filter = modelState.sessionFilter;
+	if (modelState.mode === 'harnesses') {
+		return compareModelAcrossHarnesses(scopedDays, modelState.modelA, modelState.editorA ?? '', modelState.editorB ?? '', resolveModelCompareWindow(modelState.window, now), filter);
+	}
 	if (modelState.mode === 'periods') {
 		const wA = resolveModelCompareWindow(modelState.windowA, now);
 		const wB = resolveModelCompareWindow(modelState.windowB, now);
@@ -1117,10 +1126,19 @@ function renderModelControls(d: EfficiencyViewData, eligible: ComparableModel[])
 	const modeSelect = selectHtml('model-mode', [
 		{ value: 'models', label: localize('efficiency.models.mode.models') },
 		{ value: 'periods', label: localize('efficiency.models.mode.periods') },
+		{ value: 'harnesses', label: localize('efficiency.models.mode.harnesses') },
 	], modelState.mode);
 	const caption = (key: string): string => escapeHtml(localize(`efficiency.models.controls.${key}`));
 	// Mode and window(s) share the first row; the model pickers get their own row below.
-	const body = modelState.mode === 'periods'
+	const harnesses = listModelHarnesses(selectDaysInWindow(scopedModelDaily(d), resolveModelCompareWindow(modelState.window, payloadNow(d)))).map(h => ({ value: h, label: h }));
+	const body = modelState.mode === 'harnesses'
+		? `
+			<label>${caption('window')} ${selectHtml('window', windows, modelState.window)}</label>
+			<div class="model-controls-break"></div>
+			<label>${caption('model')} ${searchableSelectHtml('model-a', models, modelState.modelA)}</label>
+			<label>${caption('harnessA')} ${selectHtml('editor-a', harnesses, modelState.editorA ?? '')}</label>
+			<label>${caption('harnessB')} ${selectHtml('editor-b', harnesses, modelState.editorB ?? '')}</label>`
+		: modelState.mode === 'periods'
 		? `
 			<label>${caption('baseline')} ${selectHtml('window-a', windows, modelState.windowA)}</label>
 			<label>${caption('comparedWith')} ${selectHtml('window-b', windows, modelState.windowB)}</label>
@@ -1164,7 +1182,7 @@ function filterSummaryHtml(cmp: ModelComparison): string {
 }
 
 function comparisonTableHtml(cmp: ModelComparison): string {
-	const modeKey = modelState.mode === 'periods' ? 'efficiency.models.mode.periods' : 'efficiency.models.mode.models';
+	const modeKey = `efficiency.models.mode.${modelState.mode}`;
 	return renderModelComparisonTable(cmp, localize(modeKey));
 }
 
@@ -1311,6 +1329,10 @@ function renderCacheTab(d: EfficiencyViewData): string {
  */
 function noEligibleModelsNote(d: EfficiencyViewData, eligible: ComparableModel[]): string {
 	const now = payloadNow(d);
+	if (modelState.mode === 'harnesses') {
+		const w = resolveModelCompareWindow(modelState.window, now);
+		return localizeFormat('efficiency.models.noSharedHarnessModel', w.label, w.rangeLabel);
+	}
 	if (modelState.mode === 'periods') {
 		const a = resolveModelCompareWindow(modelState.windowA, now);
 		const b = resolveModelCompareWindow(modelState.windowB, now);
@@ -1464,7 +1486,7 @@ async function drawModelRadar(cmp: ModelComparison, generation: number): Promise
 
 /** The models whose weekly series belong on the trend chart for the current mode. */
 function trendModels(): string[] {
-	const wanted = modelState.mode === 'periods'
+	const wanted = modelState.mode !== 'models'
 		? [modelState.modelA]
 		: [modelState.modelA, modelState.modelB];
 	return wanted.filter((m, i, arr) => m !== '' && arr.indexOf(m) === i);
@@ -1806,6 +1828,8 @@ function wireModelControls(): void {
 	bind('model-mode', v => { modelState.mode = v as CompareMode; });
 	bind('model-a', v => { modelState.modelA = v; });
 	bind('model-b', v => { modelState.modelB = v; });
+	bind('editor-a', v => { modelState.editorA = v; });
+	bind('editor-b', v => { modelState.editorB = v; });
 	bind('window', v => { modelState.window = v as ModelCompareWindowId; });
 	bind('window-a', v => { modelState.windowA = v as ModelCompareWindowId; });
 	bind('window-b', v => { modelState.windowB = v as ModelCompareWindowId; });

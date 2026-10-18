@@ -10,14 +10,37 @@ Typical questions it can now settle:
 - "Is Claude Opus worth its price per edit turn compared with a cheaper model?"
 - "Is the model I rely on getting better or quietly getting worse over time?"
 
-## Two modes
+## Three modes
 
 | Mode | What it compares | Use it for |
 |---|---|---|
 | **Compare two models** | Model A vs Model B over the *same* window | Head-to-head model choice |
 | **One model, two periods** | The same model across two windows | Detecting drift in a model you already rely on |
+| **One model, two harnesses** | The same model in two editors/CLIs over the *same* window | Testing "is the CLI more efficient than the IDE plugin or desktop app?" |
 
 Windows available: last 30 days, previous 30 days, last 90 days, this month, last month.
+
+### One model, two harnesses
+
+Pick a model, a window and two harnesses (editor labels such as `Claude Code CLI`,
+`Claude Code (VS Code)`, `Claude Desktop`, `VS Code`, `Copilot CLI`). Each side is
+the model's exact per-editor rows, run through the same comparison as the other
+modes, so the same sample floors (5 session-shares, 10 edit turns) and 10% noise
+gate apply. Only models used in *both* harnesses in the window are offered, and
+rows whose editor could not be determined are excluded from both sides. The
+toolbar's editor scope is ignored in this mode (you pick the editors here), the
+vendor filter still applies.
+
+Claude Code sessions now distinguish three harnesses by the `entrypoint` in the
+session log: `cli` → `Claude Code CLI`, `claude-desktop` → `Claude Desktop`,
+`claude-vscode` → `Claude Code (VS Code)`; any other entrypoint stays `Claude Code`.
+
+Read the result with its confounds in mind: the task mix usually differs per
+harness (see the task-mix bar), and raw token totals for Claude sources include
+cache-read tokens, which inflates them against sources that do not report cache
+reads. Prefer **cost per edit turn**, tokens per edit turn, one-shot rate and
+cache read share over raw totals. Mistral Vibe has no IDE-plugin adapter yet, so
+the Mistral half of the claim cannot be tested.
 
 ## Scoping the comparison
 

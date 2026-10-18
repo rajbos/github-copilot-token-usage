@@ -61,6 +61,7 @@ export const EDITOR_LOGOS: Readonly<Record<string, EditorLogo>> = {
 	'Antigravity': { light: antigravity },
 	'Claude Code': CLAUDE_CODE,
 	'Claude Code CLI': CLAUDE_CODE,
+	'Claude Code (VS Code)': CLAUDE_CODE,
 	'Claude Desktop': CLAUDE,
 	'Claude Desktop Cowork': CLAUDE,
 	'Codex CLI': { light: openai, dark: openaiDark },
