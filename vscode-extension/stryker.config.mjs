@@ -14,6 +14,7 @@ export default {
       'out/src/test/tokenEstimation.test.js',
       'out/src/test/tokenEstimationBoundaries.test.js',
       'out/src/test/sessionParser.test.js',
+      'out/src/test/sessionParserBoundaries.test.js',
       'out/vscode-extension/test/unit/sessionParser-integration.test.js',
       'out/vscode-extension/test/unit/maturityScoring.test.js',
       'out/vscode-extension/test/unit/usageAnalysis.test.js',
@@ -21,7 +22,9 @@ export default {
       'out/src/test/utils-errors.test.js',
       'out/vscode-extension/test/unit/utils-html.test.js',
       'out/vscode-extension/test/unit/workspaceHelpers.test.js',
+      'out/vscode-extension/test/unit/workspaceHelpersBoundaries.test.js',
       'out/vscode-extension/test/unit/claudecode.test.js',
+      'out/vscode-extension/test/unit/claudecodeBoundaries.test.js',
     ].join(' '),
   },
 
