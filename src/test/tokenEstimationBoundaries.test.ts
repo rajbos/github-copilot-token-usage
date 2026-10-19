@@ -790,3 +790,12 @@ test('createEmptyContextRefs / getTotalTokensFromModelUsage', () => {
 		b: { inputTokens: 100, outputTokens: 20, sessions: 1 },
 	}), 135);
 });
+
+test('event shutdown: unparsable timestamp is not attributed to a NaN day', () => {
+	const r = estimateTokensFromJsonlSession(jl({
+		type: 'session.shutdown', timestamp: 'not-a-date',
+		data: { modelMetrics: { m: { usage: { inputTokens: 10, outputTokens: 5 } } } },
+	}));
+	assert.deepEqual(r.dailyActualTokens, {});
+	assert.equal(r.actualTokens, 15);
+});
