@@ -23,6 +23,7 @@ export default {
       'out/src/test/utils-errors.test.js',
       'out/vscode-extension/test/unit/utils-html.test.js',
       'out/vscode-extension/test/unit/workspaceHelpers.test.js',
+      'out/vscode-extension/test/unit/workspaceHelpersBoundaries2.test.js',
       'out/vscode-extension/test/unit/workspaceHelpersBoundaries.test.js',
       'out/vscode-extension/test/unit/claudecode.test.js',
       'out/vscode-extension/test/unit/claudecodeBoundaries.test.js',
