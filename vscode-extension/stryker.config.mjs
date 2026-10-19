@@ -13,6 +13,7 @@ export default {
       '--test-force-exit',
       'out/src/test/tokenEstimation.test.js',
       'out/src/test/tokenEstimationBoundaries.test.js',
+      'out/src/test/tokenEstimationBoundaries2.test.js',
       'out/src/test/sessionParser.test.js',
       'out/src/test/sessionParserBoundaries.test.js',
       'out/vscode-extension/test/unit/sessionParser-integration.test.js',
