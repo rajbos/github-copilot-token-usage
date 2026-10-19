@@ -601,7 +601,9 @@ export class CopilotCliStoreAccess {
 		for (const turn of turns) {
 			if (!turn.timestamp) { continue; }
 			try {
-				const dateKey = toLocalDayKey(new Date(turn.timestamp));
+				const turnDate = new Date(turn.timestamp);
+				if (isNaN(turnDate.getTime())) { continue; }
+				const dateKey = toLocalDayKey(turnDate);
 				counts[dateKey] = (counts[dateKey] || 0) + 1;
 				total++;
 			} catch { /* skip malformed timestamp */ }
