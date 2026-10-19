@@ -6,7 +6,7 @@
   "publisher": "RobBos",
   "icon": "assets/logo.png",
   "engines": {
-    "vscode": "^1.134.0"
+    "vscode": "^1.136.0"
   },
   "repository": {
     "type": "git",
@@ -583,7 +583,7 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "26.6.5",
     "@types/sql.js": "1.4.11",
-    "@types/vscode": "1.134.0",
+    "@types/vscode": "1.136.0",
     "@typescript-eslint/eslint-plugin": "^8.71.0",
     "@typescript-eslint/parser": "^8.71.1",
     "@vscode/codicons": "0.0.45",
