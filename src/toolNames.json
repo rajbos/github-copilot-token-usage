@@ -1625,8 +1625,8 @@
   ,"preview_suppression_rule": "Preview Suppression Rule"
   ,"search_action_usage": "Search Action Usage"
   ,"search_dev_machine_compromised_packages": "Search Dev Machine Compromised Packages"
-  ,"stepsecurity": "Stepsecurity"
-  ,"stepsecurity-": "Stepsecurity (Local)"
-  ,"stepsecurity-list_outbound_calls_in_run": "List Outbound Calls in Run"
-  ,"stepsecurity-list_recent_workflow_runs": "List Recent Workflow Runs"
+  ,"stepsecurity": "StepSecurity"
+  ,"stepsecurity-": "StepSecurity (Local)"
+  ,"stepsecurity-list_outbound_calls_in_run": "StepSecurity: List Outbound Calls in Run"
+  ,"stepsecurity-list_recent_workflow_runs": "StepSecurity: List Recent Workflow Runs"
 }
