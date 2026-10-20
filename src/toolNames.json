@@ -1629,4 +1629,9 @@
   ,"stepsecurity-": "StepSecurity (Local)"
   ,"stepsecurity-list_outbound_calls_in_run": "StepSecurity: List Outbound Calls in Run"
   ,"stepsecurity-list_recent_workflow_runs": "StepSecurity: List Recent Workflow Runs"
+  ,"claude-in-chrome": "Claude in Chrome"
+  ,"mcp__ccd_session__start_session": "CCD Session: Start Session"
+  ,"mcp__ccd_turn__update_plan": "CCD Turn: Update Plan"
+  ,"mcp__claude-in-chrome__tabs_close_mcp": "Claude in Chrome: Close Tabs"
+  ,"mcp__terminal__run_in_terminal": "Terminal: Run In Terminal"
 }
