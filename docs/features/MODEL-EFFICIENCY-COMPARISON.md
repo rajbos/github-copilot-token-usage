@@ -104,8 +104,30 @@ from "how far back does the drift chart go".
 | Edit retry rate | lower is better | Retries per edit turn |
 | Self-correction rate | lower is better | How often the model fixed its own output |
 | Cache read share | higher is better | Prompt reuse, which lowers cost |
+| Fresh input tokens per turn | lower is better | Input not served from the prompt cache: the "token hunger" number |
+| Cached input tokens per turn | higher is better | Context re-read from the cache each turn (cheap) |
 | Active minutes per session | lower is better | Wall-clock time to get the work done |
+| Median turn time | lower is better | End-to-end seconds per turn (histogram p50, accurate to a factor of two) |
+| Output tokens per second | higher is better | Reported output tokens divided by turn time, over turns that reported them |
 | Apply rate | higher is better | Suggested blocks you actually accepted |
+
+## Why raw token totals mislead across harnesses
+
+Claude Code, Claude Desktop, Mistral Vibe and several others count cache reads
+inside `inputTokens`, so a harness that re-reads a large cached context every
+turn looks "hungrier" on *Tokens per session* even when its full-price input is
+small. For "which harness or model is token-hungry" read **Fresh input tokens per
+turn** (`(inputTokens − cachedReadTokens) / calls`, with cached clamped to input
+for providers such as DeepSeek that report more cache reads than input). A side
+that never reports cache reads shows its raw input as fresh, which is an upper
+bound; the comparison adds a "Read with care" caveat and the Usage Analysis
+model table shows the value with a leading `≤`.
+
+Adapters declare whether they populate cache reads through
+`IEcosystemAdapter.reportsCacheReads`. Verified true: Claude Code, Claude Desktop,
+Copilot CLI, Cline, Gemini CLI, Hermes, Kilo, OpenCode, Pi, Mistral Vibe. False
+or unset: Copilot Chat (VS Code JSON/JSONL) and the rest, which never set
+`cachedReadTokens`.
 
 ## How the numbers are attributed
 
@@ -132,6 +154,49 @@ themselves rather than a billing plan. This is deliberately different from the
 **Cost Attribution** tab, which uses Copilot AI-Credit pricing to reflect what a
 Copilot subscription actually consumes. Comparing dollar figures across the two
 tabs is not meaningful.
+
+### Exact Copilot billing basis
+
+Copilot CLI sessions report what they actually cost (`session.shutdown.totalNanoAiu`,
+surfaced as `copilotExactCostDollars`). That figure is folded into the per-model
+counters as a separate `exactCost` next to the estimated `cost`
+(plus `exactCostSessions`, the number of sessions it covers). The two are never
+added together. Each session record also carries its token-share of the exact cost.
+
+When any session in the payload has exact billing, the Models tab shows a
+**Cost basis** switch:
+
+- **Provider rates** (default) — token counts at provider/API rates, as above.
+- **Exact Copilot billing** — the cost rows (cost per edit turn, per session, per
+  1000 lines, per million tokens) use `exactCost`.
+
+Exact billing only counts when it covers **every** session on a side (after the
+mixed-model and outlier filters). A side with any session lacking it renders "—" on
+the cost rows and a caveat says so, rather than mixing exact figures with estimates.
+The usual sample floors and the 10% noise band still apply.
+
+**HydraFusion needs this basis.** The router row (`hydrafusion`) has no list price —
+its cost is the sum of whatever legs ran — so it has no entry in `modelPricing.json`.
+For a routed session the whole session's exact cost lands on the router row (the real
+models behind it are re-keyed onto the router, see `attributeRoutedModelUsage`). To
+judge whether routing is cheaper than a single pinned model, switch to the exact
+basis and compare it with a Copilot CLI model whose sessions also report exact
+billing. Sessions cached before exact billing was recorded have none, so they show
+"—" on this basis.
+
+The drift chart below the comparison keeps plotting provider-rate cost.
+
+### Router card (Usage Analysis)
+
+`aggregateHydraFusionSummaries()` in `src/hydrafusion.ts` produces period totals for
+Copilot CLI sessions that routed through HydraFusion: turns, compound rate, judge
+accept/reject and rejection rate, escalation rate, AIU per turn, review overhead
+share, total spend and the pattern mix. Numbers only. Each session's rollup
+(`SessionUsageAnalysis.hydraFusion`) is summed into `UsageAnalysisPeriod.hydraFusion`
+and `buildUsageAnalysisViewData()` ships the derived aggregate as `hydraFusion`
+(one entry per period, `null` when nothing routed) to every host, including the
+CLI's `usage-analysis --json`. The Usage Analysis view renders it as a "HydraFusion
+Router" card under Multi-Model Usage.
 
 ## Guardrails against false conclusions
 
@@ -215,6 +280,33 @@ The comparison engine itself lives in `src/efficiencyAnalysis.ts`
 `buildModelBucketSeries`, `selectModelDaysForEditor`, `listModelVendors`,
 `filterModelsByVendor`) and is shared, so the CLI and other hosts can consume
 the same logic without reimplementing it.
+
+## Turn latency
+
+Each turn's duration is recorded in shared code (`src/modelEfficiency.ts`,
+`turnDurationMs`) as one additive `LatencyHistogram` per model, stored as
+`ModelEfficiencyCounters.turnLatency` — so it is also split per editor and merges
+by addition like every other counter. The rule is the same for every source: the
+user message timestamp to the **last assistant or tool event of that turn**.
+Output tokens per second divides only the reported (never estimated) output tokens
+by the time of the turns that reported them (`timedOutputTokens` / `timedOutputMs`).
+
+A turn includes tool execution, sub-agent work and user-approval waits, so this is
+**end-to-end latency, not model latency**, and tokens per second understates raw
+decode speed for tool-heavy turns. The same turn windows give sources without
+Copilot Chat's `timings.totalElapsed` an `activeDurationMs` (merged windows, idle
+gaps excluded), so "Active minutes per session" is no longer Copilot-Chat-only.
+
+| Source | Turn window | Output tokens/s |
+|---|---|---|
+| Copilot Chat (JSON / delta) | `timestamp` + `result.timings.totalElapsed` | when the result reports output tokens |
+| Copilot CLI (`events.jsonl`) | `user.message` to last `assistant.*` / `tool.*` event | from `assistant.message.outputTokens` |
+| Claude Code, Claude Desktop | human message to last assistant or tool-result event | from the API usage |
+| Copilot CLI session store (SQLite) | none — turns carry only a start time | — |
+| Mistral Vibe and other adapters | none — `messages.jsonl` has no timestamps | — |
+
+Sources without a turn end show "—", never zero. Mistral Vibe's session-level
+`stats.last_turn_duration` is not used here.
 
 ## Limitations
 

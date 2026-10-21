@@ -543,6 +543,7 @@ test('l10n: usage tab-group, band and context-reference keys resolve in English'
 		'usage.tab.insights': 'Insights',
 		'usage.tab.corrections': 'Corrections',
 		'usage.customAgents.title': 'Custom Agents',
+		'usage.efficiency.freshInput.label': 'Fresh in',
 		'usage.customAgents.none': 'No custom agent used',
 		'usage.band.overview.title': 'Overview',
 		'usage.band.spend.title': 'Spend & models',
@@ -596,6 +597,7 @@ test('l10n: usage tab-group, band and context-reference keys resolve in zh-cn', 
 			'usage.tab.insights': '洞察',
 			'usage.tab.corrections': '纠正',
 			'usage.customAgents.title': '自定义代理',
+			'usage.efficiency.freshInput.label': '新输入',
 			'usage.customAgents.none': '未使用自定义代理',
 			'usage.band.overview.title': '概览',
 			'usage.band.spend.title': '花费与模型',
@@ -2227,6 +2229,41 @@ test('l10n: the banner\'s placeholder templates keep their {0}/{1} slots in both
 		}
 		for (const key of ['usage.githubActivity.updated', 'usage.githubActivity.tasksScannedTooltip', 'usage.githubActivity.tasksScannedLabel']) {
 			assert.match(t(key), /\{1\}/, `zh-cn ${key} keeps its {1} slot`);
+		}
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
+test('l10n: cost-basis switch and Router card strings resolve in English and zh-cn', () => {
+	mock.setLanguage('en');
+	const english: Record<string, string> = {
+		'efficiency.models.controls.costBasis': 'Cost basis',
+		'efficiency.models.costBasis.provider': 'Provider rates',
+		'efficiency.models.costBasis.exact': 'Exact Copilot billing',
+		'usage.router.title': 'HydraFusion Router',
+		'usage.router.stat.compoundRate': 'Compound rate',
+		'usage.router.stat.judgeRejection': 'Judge rejection rate',
+		'usage.router.stat.aiuPerTurn': 'AIU per turn',
+		'usage.router.period.last30Days': 'Last 30 days',
+	};
+	for (const [key, value] of Object.entries(english)) {
+		assert.equal(t(key), value, `English value for ${key}`);
+	}
+	assert.match(t('efficiency.models.costBasis.exactNote'), /exact Copilot billing/);
+	assert.equal(t('efficiency.models.sideStats', '1', '2', '3K', '$4.00'), '1 sessions · 2 edit turns · 3K tokens · $4.00');
+	assert.match(t('efficiency.models.costBasis.providerNote'), /provider\/API rates/);
+
+	mock.setLanguage('zh-cn');
+	try {
+		const chinese: Record<string, string> = {
+			'efficiency.models.controls.costBasis': '\u6210\u672c\u57fa\u51c6',
+			'efficiency.models.costBasis.provider': '\u63d0\u4f9b\u5546\u8d39\u7387',
+			'usage.router.title': 'HydraFusion \u8def\u7531\u5668',
+			'usage.router.stat.compoundRate': '\u590d\u5408\u7387',
+		};
+		for (const [key, value] of Object.entries(chinese)) {
+			assert.equal(t(key), value, `zh-cn value for ${key}`);
 		}
 	} finally {
 		mock.setLanguage('en');

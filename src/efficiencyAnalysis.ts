@@ -2,7 +2,7 @@ import type { ApplyButtonUsage, DailyModelEfficiency, DailyModelEfficiencyEntry,
 import type { CacheBreakagePeriodStats } from './cacheBreakage';
 import { getModelDisplayName } from './webview/shared/modelUtils';
 import { getModelBillingProvider } from './chartDataBuilder';
-import { createEmptyDailyModelEfficiencyEntry, mergeDailyModelEfficiency } from './modelEfficiency';
+import { createEmptyDailyModelEfficiencyEntry, medianTurnSeconds, mergeDailyModelEfficiency, mergeTurnLatency, outputTokensPerSecond } from './modelEfficiency';
 
 /**
  * Efficiency analysis — pure computations behind the "Efficiency" view.
@@ -751,7 +751,7 @@ export function splitTrailingWindows(dailyStats: DailyTokenStats[], now: Date): 
 // Period delta cards
 // ---------------------------------------------------------------------------
 
-export type DeltaUnit = 'ratio' | 'percent' | 'minutes' | 'tokens' | 'currency';
+export type DeltaUnit = 'ratio' | 'percent' | 'minutes' | 'seconds' | 'tokensPerSecond' | 'tokens' | 'currency';
 
 /** One month-over-month delta card. `prev`/`cur` are null when the metric is unavailable in that period. */
 export interface EfficiencyDelta {
@@ -1237,6 +1237,13 @@ export function computeSkillImpact(sessions: EfficiencySessionInput[]): SkillImp
 // ---------------------------------------------------------------------------
 
 /**
+ * What the Models tab prices work with: `provider` is token counts at provider/API rates
+ * (the default); `exact` is the Copilot AIU billing the session reported. The two are
+ * never mixed — a side without exact billing renders "—" on the exact basis.
+ */
+export type ModelCostBasis = 'provider' | 'exact';
+
+/**
  * One model's efficiency profile over a time window, derived from the daily
  * per-model aggregates. Costs use provider/API rates (the basis carried by
  * `ModelEfficiencyCounters.cost`), so "cheaper per edit turn" is a statement
@@ -1255,7 +1262,12 @@ export interface ModelPeriodMetrics {
 	calls: number;
 	editTurns: number;
 	tokens: number;
+	/** Cost on the basis named by `costBasis`; 0 when that basis is unavailable for this side. */
 	cost: number;
+	/** Which cost the cost-based rows use. */
+	costBasis: ModelCostBasis;
+	/** True when every session folded into this side carries exact Copilot billing. */
+	exactCostAvailable: boolean;
 	loc: number;
 	costPerEditTurn: number | null;
 	costPerSession: number | null;
@@ -1267,8 +1279,18 @@ export interface ModelPeriodMetrics {
 	retryRate: number | null;
 	selfCorrectionRate: number | null;
 	cacheReadShare: number | null;
+	/** Input tokens per turn not served from the prompt cache; an upper bound when `cacheReadsReported` is false. */
+	freshInputTokensPerCall: number | null;
+	/** Input tokens per turn served from the prompt cache. */
+	cachedInputTokensPerCall: number | null;
+	/** True when the window carries any cache-read tokens; false means the source cannot report them. */
+	cacheReadsReported: boolean;
 	activeMinutesPerSession: number | null;
 	applyRate: number | null;
+	/** Median end-to-end turn duration (includes tool runs and approval waits); null when no turn was timed. */
+	medianTurnSeconds: number | null;
+	/** Output tokens per second over timed turns that reported output tokens; null when none did. */
+	outputTokensPerSecond: number | null;
 	/** Share of this model's tokens per task category (0..1), for confounder context. */
 	taskMix: { [category: string]: number };
 	/** True when the window carries enough sessions for the ratios to be trusted. */
@@ -1422,6 +1444,7 @@ export function computeModelPeriodMetrics(
 	filter: ModelSessionFilter = UNFILTERED_MODEL_SESSIONS,
 	/** Pooled outlier cutoff from {@link computeOutlierCutoffTokens}; sessions above it are excluded. */
 	outlierCutoffTokens: number | null = null,
+	costBasis: ModelCostBasis = 'provider',
 ): ModelPeriodMetrics | null {
 	const entries = days.map(day => day.modelEfficiency?.[model]);
 	if (!entries.some(Boolean)) { return null; }
@@ -1434,7 +1457,7 @@ export function computeModelPeriodMetrics(
 	const totals = filtering.applied
 		? totalsFromSessionRecords(entries, filter, outlierCutoffTokens, filtering)
 		: totalsFromDayAggregates(model, entries);
-	return finishPeriodMetrics(model, periodLabel, totals, taskMixRaw, filtering);
+	return finishPeriodMetrics(model, periodLabel, totals, taskMixRaw, filtering, costBasis);
 }
 
 function totalsFromDayAggregates(model: string, entries: (DailyModelEfficiencyEntry | undefined)[]): DailyModelEfficiencyEntry {
@@ -1473,6 +1496,10 @@ function addSessionRecord(totals: DailyModelEfficiencyEntry, rec: ModelSessionRe
 	totals.outputTokens += rec.outputTokens;
 	totals.cachedReadTokens += rec.cachedReadTokens;
 	totals.cost += rec.cost;
+	if (rec.exactCost !== undefined) {
+		totals.exactCost = (totals.exactCost ?? 0) + rec.exactCost;
+		totals.exactCostSessions = (totals.exactCostSessions ?? 0) + 1;
+	}
 	totals.linesAdded += rec.loc;
 	totals.applies += rec.applies;
 	totals.codeBlocks += rec.codeBlocks;
@@ -1480,6 +1507,7 @@ function addSessionRecord(totals: DailyModelEfficiencyEntry, rec: ModelSessionRe
 		totals.activeDurationMs += rec.activeDurationMs;
 		totals.durationSessionShare += rec.share;
 	}
+	mergeTurnLatency(totals, rec);
 }
 
 /**
@@ -1545,8 +1573,14 @@ function finishPeriodMetrics(
 	totals: DailyModelEfficiencyEntry,
 	taskMixRaw: Map<string, number>,
 	filtering: ModelFilterOutcome,
+	costBasis: ModelCostBasis,
 ): ModelPeriodMetrics {
 	const tokens = totals.inputTokens + totals.outputTokens;
+	// Exact billing counts only when it covers every session on this side; a partial figure
+	// would understate the cost, and mixing it with estimates would compare two bases.
+	const exactCostAvailable = totals.sessions > 0 && (totals.exactCostSessions ?? 0) >= totals.sessions;
+	const costUsable = costBasis === 'provider' || exactCostAvailable;
+	const cost = costBasis === 'exact' ? (exactCostAvailable ? totals.exactCost ?? 0 : 0) : totals.cost;
 	const loc = totals.linesAdded + totals.linesRemoved;
 	const enoughSessions = totals.sessionShare >= MIN_SESSION_SHARE_FOR_COMPARE;
 	const enoughEdits = totals.editTurns >= MIN_EDIT_TURNS_FOR_COMPARE;
@@ -1560,12 +1594,14 @@ function finishPeriodMetrics(
 		calls: totals.calls,
 		editTurns: totals.editTurns,
 		tokens,
-		cost: totals.cost,
+		cost,
+		costBasis,
+		exactCostAvailable,
 		loc,
-		costPerEditTurn: gatedRatio(totals.cost, totals.editTurns, enoughEdits),
-		costPerSession: gatedRatio(totals.cost, totals.sessionShare, enoughSessions),
-		costPerKloc: gatedRatio(totals.cost * 1000, loc, enoughSessions),
-		dollarsPerMTokens: gatedRatio(totals.cost * 1_000_000, tokens),
+		costPerEditTurn: gatedRatio(cost, totals.editTurns, enoughEdits && costUsable),
+		costPerSession: gatedRatio(cost, totals.sessionShare, enoughSessions && costUsable),
+		costPerKloc: gatedRatio(cost * 1000, loc, enoughSessions && costUsable),
+		dollarsPerMTokens: gatedRatio(cost * 1_000_000, tokens, costUsable),
 		tokensPerEditTurn: gatedRatio(tokens, totals.editTurns, enoughEdits),
 		tokensPerSession: gatedRatio(tokens, totals.sessionShare, enoughSessions),
 		oneShotRate: gatedRatio(totals.oneShotEditTurns, totals.editTurns, enoughEdits),
@@ -1573,8 +1609,13 @@ function finishPeriodMetrics(
 		selfCorrectionRate: gatedRatio(totals.selfCorrections, totals.editTurns, enoughEdits),
 		// Capped at 1.0: some providers report cachedReadTokens > inputTokens.
 		cacheReadShare: capShare(gatedRatio(totals.cachedReadTokens, totals.inputTokens)),
+		freshInputTokensPerCall: gatedRatio(totals.inputTokens - Math.min(totals.cachedReadTokens, totals.inputTokens), totals.calls),
+		cachedInputTokensPerCall: gatedRatio(Math.min(totals.cachedReadTokens, totals.inputTokens), totals.calls),
+		cacheReadsReported: totals.cachedReadTokens > 0,
 		activeMinutesPerSession: gatedRatio(totals.activeDurationMs / 60_000, totals.durationSessionShare),
 		applyRate: gatedRatio(totals.applies, totals.codeBlocks),
+		medianTurnSeconds: medianTurnSeconds(totals),
+		outputTokensPerSecond: outputTokensPerSecond(totals),
 		taskMix: normalizeMix(taskMixRaw),
 		sampleSufficient: enoughSessions,
 		editSampleSufficient: enoughEdits,
@@ -1784,13 +1825,14 @@ export function compareModelAcrossHarnesses(
 	editorB: string,
 	window: ModelCompareWindow,
 	filter: ModelSessionFilter = UNFILTERED_MODEL_SESSIONS,
+	costBasis: ModelCostBasis = 'provider',
 ): ModelComparison | null {
 	const inWindow = selectDaysInWindow(days, window);
 	const daysA = selectModelDaysForEditor(inWindow, editorA);
 	const daysB = selectModelDaysForEditor(inWindow, editorB);
 	const cutoff = computeOutlierCutoffTokens([{ days: daysA, model }, { days: daysB, model }], filter);
-	const a = computeModelPeriodMetrics(daysA, model, editorA, filter, cutoff);
-	const b = computeModelPeriodMetrics(daysB, model, editorB, filter, cutoff);
+	const a = computeModelPeriodMetrics(daysA, model, editorA, filter, cutoff, costBasis);
+	const b = computeModelPeriodMetrics(daysB, model, editorB, filter, cutoff, costBasis);
 	return a && b ? compareModels(a, b) : null;
 }
 
@@ -1933,7 +1975,7 @@ function reconcileHarnessEditors(days: ModelDailyInput[], selection: ModelCompar
 
 export type ModelComparisonMetricId =	| 'cost-per-edit-turn' | 'cost-per-session' | 'cost-per-kloc' | 'dollars-per-mtokens'
 	| 'tokens-per-edit-turn' | 'tokens-per-session' | 'one-shot-rate' | 'retry-rate'
-	| 'self-correction-rate' | 'cache-read-share' | 'active-minutes-per-session' | 'apply-rate';
+	| 'self-correction-rate' | 'cache-read-share' | 'fresh-input-per-call' | 'cached-input-per-call' | 'active-minutes-per-session' | 'median-turn-seconds' | 'output-tokens-per-second' | 'apply-rate';
 
 /** One metric compared head-to-head between two sides. */
 export interface ModelComparisonRow {
@@ -2010,6 +2052,9 @@ function taskMixDivergence(a: { [c: string]: number }, b: { [c: string]: number 
 function buildCaveats(a: ModelPeriodMetrics, b: ModelPeriodMetrics): string[] {
 	const caveats: string[] = [];
 	for (const side of [a, b]) {
+		if (side.costBasis === 'exact' && !side.exactCostAvailable) {
+			caveats.push(`${side.displayName} (${side.periodLabel}) has no exact Copilot billing for all of its sessions, so its cost rows show “—” on the exact-billing basis rather than mixing in estimates.`);
+		}
 		if (!side.sampleSufficient) {
 			caveats.push(`${side.displayName} (${side.periodLabel}) has only ${side.sessionShare.toFixed(1)} session equivalents — below the ${MIN_SESSION_SHARE_FOR_COMPARE} needed for reliable per-session ratios.`);
 		}
@@ -2020,6 +2065,10 @@ function buildCaveats(a: ModelPeriodMetrics, b: ModelPeriodMetrics): string[] {
 	const divergence = taskMixDivergence(a.taskMix, b.taskMix);
 	if (divergence >= TASK_MIX_DIVERGENCE_THRESHOLD) {
 		caveats.push(`The two sides did different kinds of work (${Math.round(divergence * 100)}% task-mix difference), so part of the gap may reflect the tasks rather than the models.`);
+	}
+	const blind = [a, b].filter(side => !side.cacheReadsReported && side.calls > 0);
+	if (blind.length > 0) {
+		caveats.push(`${blind.map(side => `${side.displayName} (${side.periodLabel})`).join(' and ')} reported no prompt-cache reads, so its fresh input tokens are an upper bound: any cached context is counted as fresh.`);
 	}
 	if (a.filtering.unavailable || b.filtering.unavailable) { caveats.push(FILTER_UNAVAILABLE_CAVEAT); }
 	if (a.sessions > a.sessionShare * 1.5 || b.sessions > b.sessionShare * 1.5) {
@@ -2050,7 +2099,7 @@ export function compareModels(a: ModelPeriodMetrics, b: ModelPeriodMetrics): Mod
 			'What one round of file edits actually costs. The headline efficiency number.',
 			a.costPerEditTurn, b.costPerEditTurn, 'currency', 'down'),
 		comparisonRow('cost-per-session', 'Cost per session',
-			'Average spend per session, at provider rates.',
+			a.costBasis === 'exact' ? 'Average spend per session, at exact Copilot billing.' : 'Average spend per session, at provider rates.',
 			a.costPerSession, b.costPerSession, 'currency', 'down'),
 		comparisonRow('cost-per-kloc', 'Cost per 1000 lines changed',
 			'Spend per unit of code actually shipped.',
@@ -2076,9 +2125,21 @@ export function compareModels(a: ModelPeriodMetrics, b: ModelPeriodMetrics): Mod
 		comparisonRow('cache-read-share', 'Cache read share',
 			'Share of input tokens served from the prompt cache. Higher is cheaper.',
 			a.cacheReadShare, b.cacheReadShare, 'percent', 'up'),
+		comparisonRow('fresh-input-per-call', 'Fresh input tokens per turn',
+			'Input tokens per turn that were not served from the prompt cache, so harnesses that count cache reads inside input compare on the same basis. Lower is better.',
+			a.freshInputTokensPerCall, b.freshInputTokensPerCall, 'tokens', 'down'),
+		comparisonRow('cached-input-per-call', 'Cached input tokens per turn',
+			'Context re-read from the prompt cache each turn. Context, not cost: cache reads are cheap.',
+			a.cachedInputTokensPerCall, b.cachedInputTokensPerCall, 'tokens', 'up'),
 		comparisonRow('active-minutes-per-session', 'Active minutes per session',
 			'Net working time per session, excluding idle gaps.',
 			a.activeMinutesPerSession, b.activeMinutesPerSession, 'minutes', 'down'),
+		comparisonRow('median-turn-seconds', 'Median turn time',
+			'Median end-to-end time per turn, including tool runs and approval waits. Not model latency.',
+			a.medianTurnSeconds, b.medianTurnSeconds, 'seconds', 'down'),
+		comparisonRow('output-tokens-per-second', 'Output tokens per second',
+			'Output tokens divided by turn time, over turns that reported output tokens. Includes tool waits, so it understates raw decode speed.',
+			a.outputTokensPerSecond, b.outputTokensPerSecond, 'tokensPerSecond', 'up'),
 		comparisonRow('apply-rate', 'Apply rate',
 			'Share of suggested code blocks actually applied — does the output stick?',
 			a.applyRate, b.applyRate, 'percent', 'up'),

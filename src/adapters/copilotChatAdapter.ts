@@ -283,6 +283,8 @@ async function scanGlobalStorageRecursively(
 export class CopilotChatAdapter implements IEcosystemAdapter, IDiscoverableEcosystem {
 	readonly id = 'copilotchat';
 	readonly displayName = 'GitHub Copilot Chat';
+	// Chat JSON/JSONL sessions carry no cache-read breakdown (verified: nothing here sets cachedReadTokens).
+	readonly reportsCacheReads = false;
 
 	/**
 	 * Currently a no-op match. The adapter participates in discovery via

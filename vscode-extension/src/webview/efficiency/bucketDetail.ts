@@ -27,6 +27,8 @@ export function formatBucketValue(value: number | null, unit: BucketMetricUnit):
 		case 'currency': return `$${value.toFixed(2)}`;
 		case 'tokens': return formatCompact(Math.round(value));
 		case 'minutes': return `${value.toFixed(1)} min`;
+		case 'seconds': return `${value.toFixed(1)} s`;
+		case 'tokensPerSecond': return `${value.toFixed(1)} tok/s`;
 		case 'percent': return `${value.toFixed(0)}%`;
 		case 'ratio': return value.toFixed(1);
 		case 'count': return value >= 100 ? formatNumber(Math.round(value)) : value.toFixed(1);

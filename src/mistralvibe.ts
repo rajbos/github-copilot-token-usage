@@ -25,6 +25,32 @@ import type { ModelUsage } from './types';
 import { isUnsafeObjectKey } from './utils/protoGuard';
 import { normalizePathForComparison } from './utils/pathUtils';
 
+/**
+ * Numeric session statistics from meta.json `stats`, beyond the token totals.
+ * Every field is `undefined` when the key is absent or not a finite non-negative number
+ * (an absent stat is never reported as 0). Numeric only: nothing from system_prompt,
+ * title or messages.jsonl.
+ */
+export interface VibeSessionStats {
+	/** Vendor-reported generation speed (`stats.tokens_per_second`). */
+	tokensPerSecond?: number;
+	/** Duration of the last turn in ms (`stats.last_turn_duration` is in seconds). */
+	lastTurnDurationMs?: number;
+	/** Vendor-reported session cost in dollars (`stats.session_cost`). Cross-check only; cost stays on calculateEstimatedCost. */
+	sessionCostReported?: number;
+	steps?: number;
+	toolCallsSucceeded?: number;
+	toolCallsFailed?: number;
+	toolCallsRejected?: number;
+	toolCallsAgreed?: number;
+	toolCallsHookDenied?: number;
+}
+
+/** A finite, non-negative number, otherwise undefined. */
+function nonNegativeNumber(value: unknown): number | undefined {
+	return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
 export class MistralVibeDataAccess {
 
 /**
@@ -190,6 +216,28 @@ outputTokens: completionTokens,
 ...(cachedTokens > 0 ? { cachedReadTokens: Math.max(0, Math.min(cachedTokens, promptTokens)) } : {}),
 sessions: 0,
 }
+};
+}
+
+/**
+ * Read the extra numeric stats (speed, cost, steps, tool-call outcomes) from meta.json.
+ * Absent or malformed values are `undefined`, never 0. `last_turn_duration` is seconds in Vibe's
+ * meta.json and is converted to milliseconds here.
+ */
+async getSessionStats(metaJsonPath: string): Promise<VibeSessionStats> {
+const stats = (await this.readSessionMeta(metaJsonPath))?.stats;
+if (!stats || typeof stats !== 'object') { return {}; }
+const lastTurnSeconds = nonNegativeNumber(stats.last_turn_duration);
+return {
+tokensPerSecond: nonNegativeNumber(stats.tokens_per_second),
+lastTurnDurationMs: lastTurnSeconds === undefined ? undefined : Math.round(lastTurnSeconds * 1000),
+sessionCostReported: nonNegativeNumber(stats.session_cost),
+steps: nonNegativeNumber(stats.steps),
+toolCallsSucceeded: nonNegativeNumber(stats.tool_calls_succeeded),
+toolCallsFailed: nonNegativeNumber(stats.tool_calls_failed),
+toolCallsRejected: nonNegativeNumber(stats.tool_calls_rejected),
+toolCallsAgreed: nonNegativeNumber(stats.tool_calls_agreed),
+toolCallsHookDenied: nonNegativeNumber(stats.tool_calls_hook_denied),
 };
 }
 

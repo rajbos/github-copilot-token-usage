@@ -83,7 +83,7 @@ Options:
   --days N             Only consider files modified within the last N days (default 30; 0 = no limit)
   --max N              Analyze at most N most-recent files per platform (default 5)
   --platform <id>      Only validate one platform (copilot-chat, copilot-cli, jetbrains,
-                       claude-code, gemini-cli, antigravity, opencode)
+                       claude-code, gemini-cli, antigravity, opencode, mistral-vibe)
   --update-baseline    Rewrite knownFields in schema-baselines.json from what was observed
                        (does NOT touch parser contracts)
   --include-examples   Capture truncated example values (may contain user content)
@@ -237,6 +237,14 @@ function discoverAntigravity() {
   const files = [];
   // brain/<uuid>/.system_generated/logs/transcript.jsonl
   walkFiles(root, (n) => n === 'transcript.jsonl', files, 4);
+  return files;
+}
+
+function discoverMistralVibe() {
+  const vibeHome = process.env.VIBE_HOME ? path.resolve(process.env.VIBE_HOME.replace(/^~/, HOME)) : path.join(HOME, '.vibe');
+  const files = [];
+  // <vibe-home>/logs/session/session_<date>_<time>_<id>/meta.json (messages.jsonl is deliberately not read)
+  walkFiles(path.join(vibeHome, 'logs', 'session'), (n) => n === 'meta.json', files, 2);
   return files;
 }
 
@@ -410,11 +418,12 @@ const PLATFORM_DISCOVERY = {
   'gemini-cli': discoverGeminiCli,
   'antigravity': discoverAntigravity,
   'opencode': discoverOpenCode,
+  'mistral-vibe': discoverMistralVibe,
 };
 
 // Ecosystems supported by the extension but NOT validated by this skill
 // (DB / binary formats requiring the adapters' parsers).
-const NOT_VALIDATED = ['crush', 'visual-studio', 'continue', 'mistral-vibe', 'claude-desktop'];
+const NOT_VALIDATED = ['crush', 'visual-studio', 'continue', 'claude-desktop'];
 
 // ---------------------------------------------------------------------------
 // Schema extraction

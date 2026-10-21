@@ -16,6 +16,7 @@ import { createEmptySessionUsageAnalysis, applyModelTierClassification } from '.
 
 export class GeminiCliAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'geminicli';
+	readonly reportsCacheReads = true;
 	readonly displayName = 'Gemini CLI';
 
 	constructor(private readonly geminiCli: GeminiCliDataAccess) {}

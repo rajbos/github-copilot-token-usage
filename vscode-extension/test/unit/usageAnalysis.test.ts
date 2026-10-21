@@ -208,6 +208,36 @@ test('mergeUsageAnalysis: accumulates tool call counts across sessions', () => {
     assert.equal(period.toolCalls.byTool['listFiles'], 1);
 });
 
+test('mergeUsageAnalysis: sums HydraFusion rollups across sessions and merges the pattern mix', () => {
+    const period = emptyPeriod();
+    const rollup = (turns: number, aiu: number, pattern: string) => ({
+        sessions: 1, totalTurns: turns, compoundTurns: 1, judgeAccepts: 0, judgeRejects: 1, escalatedTurns: 1,
+        totalAiu: aiu, reviewAiu: aiu / 2, degradedTurns: 0, patternCounts: [{ pattern, turns, aiu }],
+    });
+    const a1 = emptyAnalysis();
+    a1.hydraFusion = rollup(2, 10, 'cascade');
+    const a2 = emptyAnalysis();
+    a2.hydraFusion = rollup(1, 4, 'cascade');
+    const a3 = emptyAnalysis();
+    a3.hydraFusion = rollup(1, 1, 'single');
+    mergeUsageAnalysis(period, a1);
+    mergeUsageAnalysis(period, a2);
+    mergeUsageAnalysis(period, a3);
+    mergeUsageAnalysis(period, emptyAnalysis());
+    assert.equal(period.hydraFusion!.sessions, 3);
+    assert.equal(period.hydraFusion!.totalTurns, 4);
+    assert.equal(period.hydraFusion!.totalAiu, 15);
+    assert.deepEqual(period.hydraFusion!.patternCounts, [{ pattern: 'cascade', turns: 3, aiu: 14 }, { pattern: 'single', turns: 1, aiu: 1 }]);
+    // The session's own rollup is not mutated by being merged.
+    assert.equal(a1.hydraFusion.totalTurns, 2);
+});
+
+test('mergeUsageAnalysis: a period with no routed sessions has no hydraFusion rollup', () => {
+    const period = emptyPeriod();
+    mergeUsageAnalysis(period, emptyAnalysis());
+    assert.equal(period.hydraFusion, undefined);
+});
+
 test('mergeUsageAnalysis: accumulates model efficiency counters per model', () => {
     const period = emptyPeriod();
     const a = emptyAnalysis();
@@ -224,6 +254,37 @@ test('mergeUsageAnalysis: accumulates model efficiency counters per model', () =
     assert.equal(period.modelEfficiency?.['gpt-4o'].editTurns, 4);
     assert.equal(period.modelEfficiency?.['gpt-4o'].oneShotEditTurns, 2);
     assert.equal(period.modelEfficiency?.['gpt-4o'].retries, 2);
+});
+
+test('mergeUsageAnalysis: sums vendorStats across sessions and keeps absent stats absent', () => {
+    const period = emptyPeriod();
+    const a = emptyAnalysis();
+    a.vendorStats = {
+        tokensPerSecond: { samples: 1, sum: 100 }, reportedCostDollars: 0.5, steps: 10,
+        toolOutcomes: { succeeded: 8, failed: 1 },
+    };
+    const b = emptyAnalysis();
+    b.vendorStats = {
+        tokensPerSecond: { samples: 1, sum: 50 }, lastTurnDurationMs: { samples: 1, sum: 2000 },
+        toolOutcomes: { succeeded: 2, rejected: 3, hookDenied: 1 },
+    };
+    mergeUsageAnalysis(period, a);
+    mergeUsageAnalysis(period, b);
+    mergeUsageAnalysis(period, emptyAnalysis());
+
+    const v = period.vendorStats!;
+    assert.deepEqual(v.tokensPerSecond, { samples: 2, sum: 150 });
+    assert.deepEqual(v.lastTurnDurationMs, { samples: 1, sum: 2000 });
+    assert.equal(v.reportedCostDollars, 0.5);
+    assert.equal(v.steps, 10);
+    assert.deepEqual(v.toolOutcomes, { succeeded: 10, failed: 1, rejected: 3, hookDenied: 1 });
+    assert.equal('agreed' in v.toolOutcomes!, false, 'a counter no session reported stays absent');
+});
+
+test('mergeUsageAnalysis: leaves period.vendorStats absent when no analysis has it', () => {
+    const period = emptyPeriod();
+    mergeUsageAnalysis(period, emptyAnalysis());
+    assert.equal(period.vendorStats, undefined);
 });
 
 test('mergeUsageAnalysis: leaves period.modelEfficiency absent when analysis has none', () => {
@@ -3856,4 +3917,51 @@ test('analyzeSessionUsage: onAnalysisError fires only when the session could not
 	const result = await analyzeSessionUsage(deps, missing);
 	assert.equal(errors.length, 1, 'an unreadable session signals onAnalysisError');
 	assert.ok(result.taskClassification, 'callers still get a well-formed empty analysis');
+});
+
+test('analyzeSessionUsage: Copilot Chat JSON turn windows fill the per-model latency histogram', async () => {
+    const t0 = Date.parse('2026-05-01T10:00:00Z');
+    const content = JSON.stringify({
+        requests: [
+            { modelId: 'copilot/gpt-4o', timestamp: t0, message: { text: 'a' }, result: { promptTokens: 10, outputTokens: 300, timings: { totalElapsed: 10_000 } } },
+            { modelId: 'copilot/gpt-4o', timestamp: t0 + 60_000, message: { text: 'b' }, result: { promptTokens: 10, outputTokens: 100, timings: { totalElapsed: 10_000 } } },
+        ]
+    });
+    const result = await analyzeSessionUsage(makeMockDeps(), FAKE_JSON_PATH, content);
+    const counters = result.modelEfficiency?.['gpt-4o'];
+    assert.equal(counters?.turnLatency?.count, 2);
+    assert.equal(counters?.turnLatency?.sumMs, 20_000);
+    assert.equal(counters?.timedOutputTokens, 400);
+    assert.equal(counters?.timedOutputMs, 20_000);
+    assert.equal(result.sessionDuration?.activeDurationMs, 20_000);
+});
+
+test('analyzeSessionUsage: Copilot Chat JSON without timestamps or timings produces no latency histogram', async () => {
+    const content = JSON.stringify({
+        requests: [{ modelId: 'copilot/gpt-4o', message: { text: 'a' }, result: { promptTokens: 10, outputTokens: 5 } }]
+    });
+    const result = await analyzeSessionUsage(makeMockDeps(), FAKE_JSON_PATH, content);
+    assert.equal(result.modelEfficiency?.['gpt-4o']?.turnLatency, undefined);
+    assert.equal(result.sessionDuration?.activeDurationMs, 0);
+});
+
+test('analyzeSessionUsage: Copilot CLI turns end at their last assistant/tool event and yield active duration', async () => {
+    const events = [
+        { type: 'session.start', data: { selectedModel: 'claude-sonnet-5' }, timestamp: '2026-05-01T10:00:00Z' },
+        { type: 'user.message', data: { content: 'one' }, timestamp: '2026-05-01T10:00:05Z' },
+        { type: 'tool.execution_start', data: { toolCallId: 'c1', toolName: 'view', arguments: { path: 'a.ts' } }, timestamp: '2026-05-01T10:00:08Z' },
+        { type: 'tool.execution_complete', data: { toolCallId: 'c1', success: true, result: { content: 'x' } }, timestamp: '2026-05-01T10:00:10Z' },
+        { type: 'assistant.message', data: { content: 'done', outputTokens: 200 }, timestamp: '2026-05-01T10:00:15Z' },
+        { type: 'session.shutdown', data: {}, timestamp: '2026-05-01T11:30:00Z' },
+        { type: 'user.message', data: { content: 'two' }, timestamp: '2026-05-01T12:00:00Z' },
+    ];
+    const content = events.map(e => JSON.stringify(e)).join('\n');
+    const result = await analyzeSessionUsage(makeMockDeps(), '/home/user/.copilot/session-state/abc/events.jsonl', content);
+    const counters = result.modelEfficiency?.['claude-sonnet-5'];
+    // Turn one: 10:00:05 -> 10:00:15 (shutdown is not response work); turn two has no response event, so it is untimed.
+    assert.equal(counters?.calls, 2);
+    assert.equal(counters?.turnLatency?.count, 1);
+    assert.equal(counters?.turnLatency?.sumMs, 10_000);
+    assert.equal(counters?.timedOutputTokens, 200);
+    assert.equal(result.sessionDuration?.activeDurationMs, 10_000);
 });

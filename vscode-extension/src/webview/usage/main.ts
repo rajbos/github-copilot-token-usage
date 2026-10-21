@@ -43,6 +43,7 @@ import { registerMessageHandler } from '../shared/messageHandler';
 import { getModelDisplayName, getModelLookupCandidates } from '../../../../src/webview/shared/modelUtils';
 import { getModelBillingProvider } from '../../../../src/chartDataBuilder';
 import { buildContextWindowSectionHtml, NEAR_LIMIT_PERCENT } from './contextWindowSection';
+import { buildRouterSectionHtml, sanitizeRouterPayload, type RouterPayload } from './hydraFusionCard';
 import { deriveModelEfficiencyRates, computeEfficiencyLowUsageThreshold, computeLongTailModels } from '../../../../src/modelEfficiency';
 import { buildCorrectionImprovementPrompt } from '../../../../src/correctionDetection';
 import type { ModelEfficiencyUsage, ModelEfficiencyCounters } from '../../../../src/types';
@@ -230,6 +231,8 @@ type UsageAnalysisStats = {
 	curationAnalysis?: ToolCurationAnalysis | null;
 	/** Compact projection of the memory-files hygiene analysis (counts/rollup scalars only — no per-file paths). Null when none found. */
 	memoryFilesAnalysis?: MemoryFilesAnalysisView | null;
+	/** HydraFusion router aggregate per period; a period is null when no session routed through it. */
+	hydraFusion?: RouterPayload;
 	/**
 	 * Compact projection of this repository's server-side Copilot memory store. Unlike
 	 * `memoryFilesAnalysis` this carries fact text, because for server memories the fact is
@@ -1701,6 +1704,7 @@ function sanitizeOptionalReports(sanitized: UsageAnalysisStats, raw: any): void 
 	}
 	sanitized.repeatedTasks = sanitizeRepeatedTaskReport(raw.repeatedTasks);
 	sanitized.autoCompactionsLast7Days = sanitizeAutomaticCompactions(raw?.autoCompactionsLast7Days);
+	sanitized.hydraFusion = sanitizeRouterPayload(raw?.hydraFusion);
 }
 
 function applySessionSummaries(sanitized: UsageAnalysisStats, raw: any): void {
@@ -4743,7 +4747,7 @@ type EfficiencyMetricKey = 'cost' | 'outputTokens' | 'toolSteps';
 type EfficiencyBubbleMetricKey = 'calls' | EfficiencyMetricKey;
 type EfficiencyColorMode = 'vendor' | 'model';
 type EfficiencyRow = { model: string; counters: ModelEfficiencyCounters; rates: ReturnType<typeof deriveModelEfficiencyRates> };
-type EfficiencySortColumn = 'model' | 'calls' | 'oneShotRate' | 'retryRate' | 'selfCorrectionRate' | 'costPerCall' | 'outputTokensPerCall' | 'toolCallsPerCall' | 'cacheHitRate';
+type EfficiencySortColumn = 'model' | 'calls' | 'oneShotRate' | 'retryRate' | 'selfCorrectionRate' | 'costPerCall' | 'outputTokensPerCall' | 'toolCallsPerCall' | 'cacheHitRate' | 'freshInputTokensPerCall';
 
 const EFFICIENCY_PERIOD_TO_DATA_KEY: Partial<Record<Period, EfficiencyPeriodKey>> = {
 	today: 'today',
@@ -4828,6 +4832,7 @@ const EFFICIENCY_COLUMN_DEFS: EfficiencyColumnDef[] = [
 	{ sortKey: 'outputTokensPerCall', label: 'Out tok', title: 'Average output tokens per user-request turn', sortValue: row => row.rates.outputTokensPerCall, render: row => row.rates.outputTokensPerCall === null ? '—' : formatCompact(Math.round(row.rates.outputTokensPerCall)) },
 	{ sortKey: 'toolCallsPerCall', label: 'Steps', title: 'Average tool invocations per user-request turn', sortValue: row => row.rates.toolCallsPerCall, render: row => formatPerTurn(row.rates.toolCallsPerCall) },
 	{ sortKey: 'cacheHitRate', label: 'Cache hit', title: 'Cache-read share of input tokens', sortValue: row => row.rates.cacheHitRate, render: row => formatRatePercent(row.rates.cacheHitRate) },
+	{ sortKey: 'freshInputTokensPerCall', label: localize('usage.efficiency.freshInput.label'), title: localize('usage.efficiency.freshInput.title'), sortValue: row => row.rates.freshInputTokensPerCall, render: row => row.rates.freshInputTokensPerCall === null ? '—' : `${row.rates.cacheReadsReported ? '' : '≤'}${formatCompact(Math.round(row.rates.freshInputTokensPerCall))}` },
 ];
 
 /** Rows by descending local use: the leaderboard's default order and the chart's input. */
@@ -5259,7 +5264,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				${renderMultiModelPeriod('📆 Last 30 Days', stats.last30Days.modelSwitching, allKeys.allLowCostModels, allKeys.allMediumCostModels, allKeys.allHighCostModels, allKeys.allUnknownModels)}
 				${renderMultiModelPeriod('📅 Previous Month', stats.month.modelSwitching, allKeys.allLowCostModels, allKeys.allMediumCostModels, allKeys.allHighCostModels, allKeys.allUnknownModels)}
 			</div>
-		</div>`);
+		</div>${buildRouterSectionHtml(stats.hydraFusion)}`);
 	const sessionsSummaryHtml = `
 		<!-- Summary Section -->
 		<div class="section" id="section-sessions-summary">

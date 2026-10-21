@@ -406,6 +406,17 @@
           "noiseFloorPixels": 400
         },
         {
+          "id": "models-exact-cost",
+          "title": "Models tab, exact Copilot billing basis",
+          "steps": [
+            { "click": ".eff-tab[data-tab=\"models\"]" },
+            { "select": "#model-cost-basis", "value": "exact" }
+          ],
+          "expect": "#model-cost-basis",
+          "settleMs": 3000,
+          "noiseFloorPixels": 400
+        },
+        {
           "id": "value",
           "title": "Value tab",
           "steps": [{ "click": ".eff-tab[data-tab=\"value\"]" }],

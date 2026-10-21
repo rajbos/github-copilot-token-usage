@@ -517,8 +517,10 @@ function _ejtsHandleShutdown(event: Record<string, unknown>, state: EjtsState): 
 	if (!state.cliShutdown) { state.cliShutdown = createCliShutdownAccumulator(); }
 	const delta = applyCliShutdownMetrics(state.cliShutdown, data.modelMetrics as Record<string, CliShutdownModelMetricsEntry>);
 	if (delta > 0 && event.timestamp) {
-		const dayKey = toLocalDayKey(new Date(String(event.timestamp)));
-		if (dayKey && dayKey !== 'Inval') {
+		const date = new Date(String(event.timestamp));
+		// toLocalDayKey of an invalid date is 'NaN-NaN-NaN', so validate the date itself.
+		if (!isNaN(date.getTime())) {
+			const dayKey = toLocalDayKey(date);
 			state.dailyActualTokens[dayKey] = (state.dailyActualTokens[dayKey] || 0) + delta;
 		}
 	}

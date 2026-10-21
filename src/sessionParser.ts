@@ -63,7 +63,8 @@ function traverseDeltaPath(
       current = nextNode;
       continue;
     }
-    if (!isObject(current)) { return null; }
+    // Non-index keys on an array (e.g. 'length') can't be traversed or replaced safely.
+    if (!isObject(current) || Array.isArray(current)) { return null; }
     current = ensureChild(current, seg, nextSeg);
   }
   return { root, current };
@@ -74,7 +75,8 @@ function applyDeltaKind1(root: JsonObject | unknown[], current: JsonObject | unk
     current[Number(lastSeg)] = v;
     return root;
   }
-  if (isObject(current)) {
+  // Non-index keys on an array (e.g. 'length') would throw or corrupt it; ignore them.
+  if (isObject(current) && !Array.isArray(current)) {
     Object.defineProperty(current, lastSeg, { value: v, writable: true, enumerable: true, configurable: true });
   }
   return root;
@@ -86,7 +88,7 @@ function applyDeltaKind2(root: JsonObject | unknown[], current: JsonObject | unk
     const idx = Number(lastSeg);
     if (!Array.isArray(current[idx])) { current[idx] = []; }
     target = current[idx] as unknown[];
-  } else if (isObject(current)) {
+  } else if (isObject(current) && !Array.isArray(current)) {
     if (!Array.isArray(current[lastSeg])) {
       Object.defineProperty(current, lastSeg, { value: [], writable: true, enumerable: true, configurable: true });
     }

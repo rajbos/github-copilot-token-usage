@@ -15,6 +15,7 @@
  * Pure: no `vscode`, no filesystem, no caching.
  */
 import { toMemoryFilesAnalysisView } from './copilotMemoryFiles';
+import { deriveHydraFusionAggregate, type HydraFusionAggregate } from './hydrafusion';
 import { evaluateUsageInsights, type EvaluatedInsight, type InsightEvaluationState } from './insightsEngine';
 import type {
 	AutomaticCompactionStats,
@@ -81,6 +82,11 @@ export interface UsageAnalysisViewData {
 	repeatedTasks: RepeatedTaskReport | null;
 	curationAnalysis: ToolCurationAnalysis | null;
 	memoryFilesAnalysis: MemoryFilesAnalysisView | null;
+	/**
+	 * HydraFusion router aggregate per period (Copilot CLI sessions only). Each value is
+	 * `null` when no session in that period routed through it, so the Router card hides.
+	 */
+	hydraFusion: Record<'today' | 'last30Days' | 'month' | 'lastMonth', HydraFusionAggregate | null>;
 }
 
 /** Every key {@link buildUsageAnalysisViewData} emits; tests pin hosts against it. */
@@ -89,7 +95,7 @@ export const USAGE_ANALYSIS_VIEW_KEYS: ReadonlyArray<keyof UsageAnalysisViewData
 	'customizationMatrix', 'missedPotential', 'lastUpdated', 'backendConfigured',
 	'readinessAvailable', 'currentWorkspacePaths', 'suppressedUnknownTools', 'toolCallsByEditor',
 	'todaySessions', 'recentSessions', 'claudeDesktopCoverage', 'use24HourTime', 'hideAutomaticToolCalls',
-	'insights', 'correctionReport', 'repeatedTasks', 'curationAnalysis', 'memoryFilesAnalysis',
+	'insights', 'correctionReport', 'repeatedTasks', 'curationAnalysis', 'memoryFilesAnalysis', 'hydraFusion',
 ];
 
 export function buildUsageAnalysisViewData(stats: UsageAnalysisStats, inputs: UsageAnalysisViewInputs): UsageAnalysisViewData {
@@ -118,5 +124,15 @@ export function buildUsageAnalysisViewData(stats: UsageAnalysisStats, inputs: Us
 		repeatedTasks: stats.repeatedTasks ?? null,
 		curationAnalysis: stats.curationAnalysis ?? null,
 		memoryFilesAnalysis: toMemoryFilesAnalysisView(stats.memoryFilesAnalysis ?? null),
+		hydraFusion: {
+			today: hydraFusionAggregate(stats.today),
+			last30Days: hydraFusionAggregate(stats.last30Days),
+			month: hydraFusionAggregate(stats.month),
+			lastMonth: hydraFusionAggregate(stats.lastMonth),
+		},
 	};
+}
+
+function hydraFusionAggregate(period: UsageAnalysisPeriod): HydraFusionAggregate | null {
+	return period.hydraFusion && period.hydraFusion.totalTurns > 0 ? deriveHydraFusionAggregate(period.hydraFusion) : null;
 }
