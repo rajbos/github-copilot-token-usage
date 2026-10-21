@@ -449,15 +449,30 @@ test('detectClaudeCodeEditorVariant: returns Claude Code CLI for entrypoint cli'
         }
 });
 
-test('detectClaudeCodeEditorVariant: returns Claude Code for any other entrypoint (e.g. VS Code extension)', () => {
+test('detectClaudeCodeEditorVariant: returns Claude Code (VS Code) for entrypoint claude-vscode', () => {
         const dir = fs.mkdtempSync(path.join(process.cwd(), 'claude-variant-'));
         const file = path.join(dir, 'session.jsonl');
         fs.writeFileSync(file, JSON.stringify({ type: 'user', entrypoint: 'claude-vscode', timestamp: '2026-01-01T00:00:00.000Z' }) + '\n');
+        try {
+                assert.equal(detectClaudeCodeEditorVariant(file), 'Claude Code (VS Code)');
+        } finally {
+                fs.rmSync(dir, { recursive: true, force: true });
+        }
+});
+
+test('detectClaudeCodeEditorVariant: an unknown entrypoint still falls back to the generic Claude Code label', () => {
+        const dir = fs.mkdtempSync(path.join(process.cwd(), 'claude-variant-'));
+        const file = path.join(dir, 'session.jsonl');
+        fs.writeFileSync(file, JSON.stringify({ type: 'user', entrypoint: 'sdk-ts', timestamp: '2026-01-01T00:00:00.000Z' }) + '\n');
         try {
                 assert.equal(detectClaudeCodeEditorVariant(file), 'Claude Code');
         } finally {
                 fs.rmSync(dir, { recursive: true, force: true });
         }
+});
+
+test('refineEditorLabelForInteractionModeSplit: the Claude Code (VS Code) label also syncs as Claude (VS Code)', () => {
+        assert.equal(refineEditorLabelForInteractionModeSplit('/home/user/.claude/projects/hash/session.jsonl', 'Claude Code (VS Code)'), 'Claude (VS Code)');
 });
 
 test('detectClaudeCodeEditorVariant: defaults to Claude Code when file is missing or has no entrypoint', () => {

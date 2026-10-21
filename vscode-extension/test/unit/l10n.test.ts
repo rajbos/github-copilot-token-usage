@@ -1148,6 +1148,9 @@ test('l10n: Efficiency Models tab control labels resolve in English and zh-cn', 
 		'efficiency.models.controls.window': 'Window',
 		'efficiency.models.mode.models': 'Compare two models',
 		'efficiency.models.mode.periods': 'One model, two periods',
+		'efficiency.models.mode.harnesses': 'One model, two harnesses',
+		'efficiency.models.controls.harnessA': 'Harness A',
+		'efficiency.models.controls.harnessB': 'Harness B',
 	};
 	for (const [key, value] of Object.entries(english)) {
 		assert.equal(t(key), value, `English value for ${key}`);
@@ -1165,6 +1168,9 @@ test('l10n: Efficiency Models tab control labels resolve in English and zh-cn', 
 			'efficiency.models.controls.window': '\u65f6\u95f4\u7a97\u53e3',
 			'efficiency.models.mode.models': '\u5bf9\u6bd4\u4e24\u4e2a\u6a21\u578b',
 			'efficiency.models.mode.periods': '\u5355\u4e2a\u6a21\u578b\uff0c\u4e24\u4e2a\u65f6\u6bb5',
+			'efficiency.models.mode.harnesses': '\u5355\u4e2a\u6a21\u578b\uff0c\u4e24\u79cd\u5de5\u5177',
+			'efficiency.models.controls.harnessA': '\u5de5\u5177 A',
+			'efficiency.models.controls.harnessB': '\u5de5\u5177 B',
 		};
 		for (const [key, value] of Object.entries(chinese)) {
 			assert.equal(t(key), value, `zh-cn value for ${key}`);

@@ -1205,7 +1205,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// existing entries dropped them, so Chart/Efficiency would undercount until the file changed.
 	// v84: Add per-session agentUsage (custom agents the user selected, by name) to usageAnalysis:
 	// cache hits skip re-analysis, so existing entries would lack it until their file changed.
-	private static readonly CACHE_VERSION = 85;
+	// v86: Claude Code sessions from the VS Code extension (entrypoint claude-vscode) are labelled
+	// 'Claude Code (VS Code)' instead of 'Claude Code' (#2479): cache hits skip re-analysis, so existing
+	// entries would keep the old editor key until their file changed.
+	private static readonly CACHE_VERSION = 86;
 	/** Initial stats should not wait indefinitely for one inaccessible or stalled session. */
 	private static readonly SESSION_PRELOAD_TIMEOUT_MS = 15_000;
 	/**

@@ -1775,7 +1775,7 @@ export function windowHasModelData(days: ModelDailyInput[], window: ModelCompare
 }
 
 /** Which two sides the Models tab is comparing. */
-export type ModelCompareMode = 'models' | 'periods';
+export type ModelCompareMode = 'models' | 'periods' | 'harnesses';
 
 /** The Models tab's current picker state, in the shape the webview keeps it. */
 export interface ModelCompareSelection {
@@ -1788,6 +1788,52 @@ export interface ModelCompareSelection {
 	windowA: ModelCompareWindowId;
 	/** The compared-with window, used by `periods` mode. */
 	windowB: ModelCompareWindowId;
+	/** Harness (editor label) of side A, used by `harnesses` mode. */
+	editorA?: string;
+	/** Harness (editor label) of side B, used by `harnesses` mode. */
+	editorB?: string;
+}
+
+/**
+ * Harnesses (editor labels) that have per-model data in `days`, most-used
+ * first (by token volume), then alphabetically. Rows without an editor are
+ * unattributed and never offered as a harness.
+ */
+export function listModelHarnesses(days: ModelDailyInput[]): string[] {
+	const tokens = new Map<string, number>();
+	for (const day of days) {
+		if (!day.editor || !day.modelEfficiency) { continue; }
+		let total = tokens.get(day.editor) ?? 0;
+		for (const e of Object.values(day.modelEfficiency)) { total += e.inputTokens + e.outputTokens; }
+		tokens.set(day.editor, total);
+	}
+	return [...tokens.keys()].sort((a, b) => (tokens.get(b) ?? 0) - (tokens.get(a) ?? 0) || a.localeCompare(b));
+}
+
+/**
+ * "One model, two harnesses": the same model's profile in `editorA` against
+ * `editorB` over one window. Each side is the model's exact per-editor rows
+ * (rows with no editor are excluded from both), and the result goes through
+ * {@link compareModels}, so the same sample floors and noise gate apply.
+ * `periodLabel` carries the harness name so the table and verdict read
+ * "<model> (<harness>)". Returns null when either side has no data.
+ */
+export function compareModelAcrossHarnesses(
+	days: ModelDailyInput[],
+	model: string,
+	editorA: string,
+	editorB: string,
+	window: ModelCompareWindow,
+	filter: ModelSessionFilter = UNFILTERED_MODEL_SESSIONS,
+	costBasis: ModelCostBasis = 'provider',
+): ModelComparison | null {
+	const inWindow = selectDaysInWindow(days, window);
+	const daysA = selectModelDaysForEditor(inWindow, editorA);
+	const daysB = selectModelDaysForEditor(inWindow, editorB);
+	const cutoff = computeOutlierCutoffTokens([{ days: daysA, model }, { days: daysB, model }], filter);
+	const a = computeModelPeriodMetrics(daysA, model, editorA, filter, cutoff, costBasis);
+	const b = computeModelPeriodMetrics(daysB, model, editorB, filter, cutoff, costBasis);
+	return a && b ? compareModels(a, b) : null;
 }
 
 /** The models that appear at all in `days` — key presence only, no aggregation. */
@@ -1823,11 +1869,27 @@ export function listEligibleModels(
 	return filterModelsByVendor(listWindowEligibleModels(days, selection, now), vendor);
 }
 
+/** The window's rows narrowed to the two harnesses of a `harnesses` selection. */
+function harnessSideDays(days: ModelDailyInput[], selection: ModelCompareSelection, now: Date): { daysA: ModelDailyInput[]; daysB: ModelDailyInput[] } {
+	const inWindow = selectDaysInWindow(days, resolveModelCompareWindow(selection.window, now));
+	return {
+		daysA: selection.editorA ? selectModelDaysForEditor(inWindow, selection.editorA) : [],
+		daysB: selection.editorB ? selectModelDaysForEditor(inWindow, selection.editorB) : [],
+	};
+}
+
 function listWindowEligibleModels(
 	days: ModelDailyInput[],
 	selection: ModelCompareSelection,
 	now: Date,
 ): ComparableModel[] {
+	if (selection.mode === 'harnesses') {
+		// Only models used in both harnesses have a second side to compare against.
+		const { daysA, daysB } = harnessSideDays(days, selection, now);
+		const inA = modelsPresent(daysA);
+		const inB = modelsPresent(daysB);
+		return listComparableModels(uniqueDays(daysA, daysB)).filter(m => inA.has(m.model) && inB.has(m.model));
+	}
 	if (selection.mode === 'periods') {
 		const daysA = selectDaysInWindow(days, resolveModelCompareWindow(selection.windowA, now));
 		const daysB = selectDaysInWindow(days, resolveModelCompareWindow(selection.windowB, now));
@@ -1857,6 +1919,7 @@ export function reconcileModelSelection(
 	now: Date,
 	vendor?: string,
 ): ModelCompareSelection {
+	if (selection.mode === 'harnesses') { selection = reconcileHarnessEditors(days, selection, now); }
 	const eligible = listEligibleModels(days, selection, now, vendor);
 	const eligibleIds = new Set(eligible.map(m => m.model));
 	// Defaults come off this pool: every model that clears the sample floor
@@ -1873,9 +1936,41 @@ export function reconcileModelSelection(
 	const modelA = eligibleIds.has(selection.modelA) ? selection.modelA : (firstOther(heldB) || firstOther());
 	// `periods` mode compares one model against itself across two windows, so it
 	// leaves Model B untouched — it is reconciled again on the way back to `models`.
-	if (selection.mode === 'periods') { return { ...selection, modelA }; }
+	// `harnesses` mode likewise compares one model, so Model B is left alone.
+	if (selection.mode !== 'models') { return { ...selection, modelA }; }
 	const keepB = eligibleIds.has(selection.modelB) && selection.modelB !== modelA;
 	return { ...selection, modelA, modelB: keepB ? selection.modelB : firstOther(modelA) };
+}
+
+/** Picks a harness pair: `held` keeps its slot, its partner prefers a shared model; with no held side the first model-sharing pair wins. */
+function pickHarnessPair(
+	harnesses: string[],
+	sharesModel: (x: string, y: string) => boolean,
+	held?: { editor: string; slot: 'a' | 'b' },
+): [string, string] | undefined {
+	const partnerFor = (x: string): string | undefined => harnesses.find(h => h !== x && sharesModel(x, h)) ?? harnesses.find(h => h !== x);
+	const first = held?.editor ?? harnesses.find(x => harnesses.some(h => h !== x && sharesModel(x, h))) ?? harnesses[0];
+	const second = first === undefined ? undefined : partnerFor(first);
+	if (first === undefined || second === undefined) { return undefined; }
+	return held?.slot === 'b' ? [second, first] : [first, second];
+}
+
+/**
+ * Keeps the two harness pickers on distinct harnesses that have data in the
+ * window. A stale or missing pick is replaced by the first pair (most-used
+ * first) that shares a model, falling back to the two most-used harnesses.
+ */
+function reconcileHarnessEditors(days: ModelDailyInput[], selection: ModelCompareSelection, now: Date): ModelCompareSelection {
+	const inWindow = selectDaysInWindow(days, resolveModelCompareWindow(selection.window, now));
+	const harnesses = listModelHarnesses(inWindow);
+	const valid = (e?: string): e is string => !!e && harnesses.includes(e);
+	if (valid(selection.editorA) && valid(selection.editorB) && selection.editorA !== selection.editorB) { return selection; }
+	const modelsOf = (editor: string): Set<string> => modelsPresent(selectModelDaysForEditor(inWindow, editor));
+	const sharesModel = (x: string, y: string): boolean => { const mx = modelsOf(x); return [...modelsOf(y)].some(m => mx.has(m)); };
+	const held = valid(selection.editorA) ? { editor: selection.editorA, slot: 'a' as const }
+		: valid(selection.editorB) ? { editor: selection.editorB, slot: 'b' as const } : undefined;
+	const pair = pickHarnessPair(harnesses, sharesModel, held);
+	return pair ? { ...selection, editorA: pair[0], editorB: pair[1] } : { ...selection, editorA: '', editorB: '' };
 }
 
 export type ModelComparisonMetricId =	| 'cost-per-edit-turn' | 'cost-per-session' | 'cost-per-kloc' | 'dollars-per-mtokens'

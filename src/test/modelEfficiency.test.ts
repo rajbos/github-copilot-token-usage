@@ -917,3 +917,13 @@ test('addSessionEfficiencyToDailyStats: scales the exact cost by each day fracti
     assert.ok(Math.abs(map.get('2026-07-01')!.modelEfficiency!['gpt-5.6-sol'].exactCost! - 2) < 1e-9);
     assert.ok(Math.abs(map.get('2026-07-02')!.modelEfficiency!['gpt-5.6-sol'].exactCost! - 6) < 1e-9);
 });
+
+test('accumulateDayAndEditorModelTokens: the Claude Code (VS Code) label is its own slice and still merges back to the day', () => {
+	const entry = emptyDay();
+	accumulateDayAndEditorModelTokens(entry, 'Claude Code CLI', { 'gpt-5': { inputTokens: 300, outputTokens: 60, sessions: 1 } }, {});
+	accumulateDayAndEditorModelTokens(entry, 'Claude Code (VS Code)', { 'gpt-5': { inputTokens: 700, outputTokens: 140, sessions: 1 } }, {});
+
+	assert.deepEqual(Object.keys(entry.editorModelEfficiency!).sort(), ['Claude Code (VS Code)', 'Claude Code CLI']);
+	assert.equal(entry.modelEfficiency!['gpt-5'].inputTokens, 1000);
+	assert.deepEqual(mergedEditorSlices(entry)['gpt-5'], entry.modelEfficiency!['gpt-5']);
+});

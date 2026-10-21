@@ -38,6 +38,8 @@ import {
 	resolveBucketResolution,
 	resolveEfficiencyRange,
 	selectModelDaysForEditor,
+	compareModelAcrossHarnesses,
+	listModelHarnesses,
 	splitModelDayByEditor,
 	toEfficiencyDailyVolume,
 	type EfficiencyDeps,
@@ -1644,4 +1646,88 @@ test('computeModelPeriodMetrics: fresh input clamps when cached exceeds input', 
 	const m = computeModelPeriodMetrics([modelDay('2026-07-01', { a: solidModel({ calls: 40, inputTokens: 400, cachedReadTokens: 5000 }) })], 'a', 'Jul')!;
 	assert.equal(m.freshInputTokensPerCall, 0);
 	assert.equal(m.cachedInputTokensPerCall, 10);
+});
+
+// ── One model, two harnesses ─────────────────────────────────────────────────
+
+function harnessRow(editor: string | undefined, overrides: Partial<DailyModelEfficiencyEntry>, date = '2026-07-10'): ModelDailyInput {
+	const row: ModelDailyInput = { date, modelEfficiency: { 'claude-sonnet-4.5': createModelEntry(overrides) } };
+	if (editor) { row.editor = editor; }
+	return row;
+}
+
+const SOLID_HARNESS = { editTurns: 20, retries: 2, oneShotEditTurns: 18, inputTokens: 1000, outputTokens: 200, sessionShare: 8, sessions: 8, cost: 10 };
+const LAST30 = resolveModelCompareWindow('last30', NOW);
+
+test('compareModelAcrossHarnesses: both sides are the same model\'s exact per-editor rows', () => {
+	const days = [
+		harnessRow('Claude Code CLI', { ...SOLID_HARNESS, cost: 6 }),
+		harnessRow('Claude Code (VS Code)', { ...SOLID_HARNESS, cost: 12 }),
+	];
+	const cmp = compareModelAcrossHarnesses(days, 'claude-sonnet-4.5', 'Claude Code CLI', 'Claude Code (VS Code)', LAST30)!;
+	assert.equal(cmp.a.periodLabel, 'Claude Code CLI');
+	assert.equal(cmp.b.periodLabel, 'Claude Code (VS Code)');
+	assert.equal(cmp.a.cost, 6);
+	assert.equal(cmp.b.cost, 12);
+	const row = cmp.rows.find(r => r.id === 'cost-per-edit-turn')!;
+	assert.equal(row.winner, 'a');
+	assert.equal(row.significant, true);
+});
+
+test('compareModelAcrossHarnesses: sample floors and the noise gate still apply', () => {
+	const small = { editTurns: 2, retries: 0, oneShotEditTurns: 2, inputTokens: 100, outputTokens: 20, sessionShare: 1, sessions: 1, cost: 1 };
+	const lowSample = compareModelAcrossHarnesses([harnessRow('A', small), harnessRow('B', small)], 'claude-sonnet-4.5', 'A', 'B', LAST30)!;
+	assert.equal(lowSample.a.sampleSufficient, false);
+	assert.ok(lowSample.caveats.some(c => c.includes('session equivalents')));
+	assert.equal(lowSample.rows.find(r => r.id === 'cost-per-edit-turn')!.a, null);
+
+	// 5% apart is inside the 10% noise band: a tie, never a winner.
+	const noisy = compareModelAcrossHarnesses(
+		[harnessRow('A', { ...SOLID_HARNESS, cost: 10 }), harnessRow('B', { ...SOLID_HARNESS, cost: 10.5 })], 'claude-sonnet-4.5', 'A', 'B', LAST30)!;
+	const row = noisy.rows.find(r => r.id === 'cost-per-edit-turn')!;
+	assert.equal(row.winner, 'tie');
+	assert.equal(row.significant, false);
+});
+
+test('compareModelAcrossHarnesses: unattributed-editor rows are excluded from both sides, and other windows are ignored', () => {
+	const days = [
+		harnessRow(undefined, { ...SOLID_HARNESS, cost: 100 }),
+		harnessRow('A', { ...SOLID_HARNESS, cost: 5 }),
+		harnessRow('B', { ...SOLID_HARNESS, cost: 7 }),
+		harnessRow('A', { ...SOLID_HARNESS, cost: 1000 }, '2025-01-01'),
+	];
+	const cmp = compareModelAcrossHarnesses(days, 'claude-sonnet-4.5', 'A', 'B', LAST30)!;
+	assert.equal(cmp.a.cost, 5);
+	assert.equal(cmp.b.cost, 7);
+	assert.equal(compareModelAcrossHarnesses(days, 'claude-sonnet-4.5', 'A', 'Missing', LAST30), null);
+});
+
+test('listModelHarnesses: most-used first, unattributed rows never offered', () => {
+	const days = [
+		harnessRow('Small', { inputTokens: 10 }),
+		harnessRow('Big', { inputTokens: 900 }),
+		harnessRow(undefined, { inputTokens: 5000 }),
+	];
+	assert.deepEqual(listModelHarnesses(days), ['Big', 'Small']);
+});
+
+test('harnesses mode: eligible models are those used in both harnesses; stale editors are reconciled', () => {
+	const shared = harnessRow('A', SOLID_HARNESS);
+	const onlyA: ModelDailyInput = { date: '2026-07-10', editor: 'A', modelEfficiency: { 'gpt-5': createModelEntry(SOLID_HARNESS) } };
+	const days = [shared, onlyA, harnessRow('B', SOLID_HARNESS), harnessRow('C', { ...SOLID_HARNESS, inputTokens: 1 })];
+	const sel = selection({ mode: 'harnesses', editorA: 'A', editorB: 'B' });
+	assert.deepEqual(listEligibleModels(days, sel, NOW).map(m => m.model), ['claude-sonnet-4.5']);
+
+	const fixed = reconcileModelSelection(days, selection({ mode: 'harnesses', editorA: 'Gone', editorB: 'Gone' }), NOW);
+	assert.notEqual(fixed.editorA, fixed.editorB);
+	assert.ok(['A', 'B', 'C'].includes(fixed.editorA!) && ['A', 'B', 'C'].includes(fixed.editorB!));
+	assert.equal(fixed.modelA, 'claude-sonnet-4.5');
+
+	const kept = reconcileModelSelection(days, selection({ mode: 'harnesses', editorA: 'A', editorB: 'C' }), NOW);
+	assert.equal(kept.editorA, 'A');
+	assert.equal(kept.editorB, 'C');
+
+	const single = reconcileModelSelection([shared], selection({ mode: 'harnesses' }), NOW);
+	assert.equal(single.editorA, '');
+	assert.equal(single.modelA, '');
 });
