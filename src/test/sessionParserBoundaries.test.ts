@@ -493,3 +493,27 @@ test('tokens total = input + output + thinking and JSON sessions report actualTo
 	assert.equal(r.actualTokens, 50);
 	assert.equal(r.interactions, 1);
 });
+
+// ----- regression: non-index keys on array parents must not abort parsing -----
+
+test('delta kind 1: non-index key on an array parent (length) is ignored, parsing continues', () => {
+	const r = parseDelta(
+		{ kind: 0, v: { requests: [{ message: { text: 'aaaa' } }] } },
+		{ kind: 1, k: ['requests', 'length'], v: 0 },
+		{ kind: 1, k: ['requests', 'foo'], v: 'x' },
+		{ kind: 1, k: ['requests', '0', 'message', 'text'], v: 'bbbbbb' },
+	);
+	assert.equal(r.interactions, 1);
+	assert.equal(r.tokens, 6);
+});
+
+test('delta kind 2: non-index key on an array parent is ignored, parsing continues', () => {
+	const r = parseDelta(
+		{ kind: 0, v: { requests: [{ message: { text: 'aaaa' } }] } },
+		{ kind: 2, k: ['requests', 'length'], v: [1] },
+		{ kind: 2, k: ['requests', 'length', 'x'], v: [1] },
+		{ kind: 1, k: ['requests', 'length', 'x'], v: 1 },
+	);
+	assert.equal(r.interactions, 1);
+	assert.equal(r.tokens, 4);
+});

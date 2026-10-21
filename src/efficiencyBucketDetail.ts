@@ -16,7 +16,7 @@ export type BucketMetricId =
 	| 'cost-per-kloc' | 'tokens-per-session' | 'turns-per-session'
 	| 'active-minutes' | 'retry-rate' | 'apply-rate' | 'loc-per-dollar';
 
-export type BucketMetricUnit = 'currency' | 'tokens' | 'count' | 'minutes' | 'percent' | 'ratio';
+export type BucketMetricUnit = 'currency' | 'tokens' | 'count' | 'minutes' | 'seconds' | 'tokensPerSecond' | 'percent' | 'ratio';
 
 /** Why a metric has no value for the bucket. */
 export type BucketUnavailableReason = 'no-sessions' | 'no-loc' | 'no-duration' | 'few-edit-turns' | 'no-code-blocks';

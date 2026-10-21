@@ -81,6 +81,12 @@ Detected models include:
 - Gemini 2.5 Pro, 3 Flash, 3 Pro
 - o3-mini, o4-mini, Grok, Raptor
 
+**Cache-adjusted input**: `ModelUsage.cachedReadTokens` is the portion of `inputTokens`
+served from the prompt cache. Fresh input is `inputTokens − cachedReadTokens` and is the
+fair basis for comparing token appetite across harnesses. Only adapters with
+`reportsCacheReads = true` populate it; for the others fresh input is an upper bound.
+See [Model Efficiency Comparison](features/MODEL-EFFICIENCY-COMPARISON.md).
+
 ### 5. Editor Usage
 **Data Source**: File path patterns
 
@@ -193,6 +199,15 @@ The following data is present in session files but not currently tracked:
 - `selections` - Editor selections/cursor positions
 - `responseMarkdownInfo` - Markdown rendering info
 - `timeSpentWaiting` - User wait time
+
+### Per-turn response latency (all session sources)
+**Data Source**: user message timestamp to the last assistant/tool event of the turn
+(Copilot Chat: `timestamp + result.timings.totalElapsed`).
+
+- Stored as `turnLatency` (an additive `LatencyHistogram`) plus `timedOutputTokens` / `timedOutputMs` on each per-model `ModelEfficiencyCounters` entry, so it is available per model and per editor.
+- Derives `medianTurnSeconds`, `outputTokensPerSecond` and, for sources without `timings.totalElapsed` (Claude Code, Copilot CLI), `activeDurationMs`.
+- It is end-to-end latency (includes tool runs and approval waits), not model latency. Sources with no per-turn end time (Copilot CLI SQLite store, Mistral Vibe) stay empty. See [MODEL-EFFICIENCY-COMPARISON.md](features/MODEL-EFFICIENCY-COMPARISON.md#turn-latency).
+- Not uploaded to the sharing server: model efficiency counters are local.
 
 ### Potential Future Metrics
 - Response time patterns

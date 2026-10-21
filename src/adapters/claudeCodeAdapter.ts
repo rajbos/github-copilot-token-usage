@@ -158,6 +158,7 @@ function eventEpochMs(event: any): number | undefined {
 
 export class ClaudeCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'claudecode';
+	readonly reportsCacheReads = true;
 	readonly displayName = 'Claude Code';
 
 	constructor(

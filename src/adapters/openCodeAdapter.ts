@@ -11,6 +11,7 @@ import { readTextFileWithSizeGuard } from '../utils/safeFileRead';
 
 export class OpenCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'opencode';
+	readonly reportsCacheReads = true;
 	readonly displayName = 'OpenCode';
 
 	constructor(private readonly openCode: OpenCodeDataAccess) {}

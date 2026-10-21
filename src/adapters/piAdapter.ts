@@ -8,6 +8,7 @@ import { createEmptySessionUsageAnalysis, applyModelTierClassification } from '.
 
 export class PiAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 readonly id = 'pi';
+	readonly reportsCacheReads = true;
 readonly displayName = 'Pi';
 
 constructor(private readonly pi: PiDataAccess) {}

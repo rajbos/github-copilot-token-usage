@@ -2,7 +2,7 @@ import type { ApplyButtonUsage, DailyModelEfficiency, DailyModelEfficiencyEntry,
 import type { CacheBreakagePeriodStats } from './cacheBreakage';
 import { getModelDisplayName } from './webview/shared/modelUtils';
 import { getModelBillingProvider } from './chartDataBuilder';
-import { createEmptyDailyModelEfficiencyEntry, mergeDailyModelEfficiency } from './modelEfficiency';
+import { createEmptyDailyModelEfficiencyEntry, medianTurnSeconds, mergeDailyModelEfficiency, mergeTurnLatency, outputTokensPerSecond } from './modelEfficiency';
 
 /**
  * Efficiency analysis — pure computations behind the "Efficiency" view.
@@ -751,7 +751,7 @@ export function splitTrailingWindows(dailyStats: DailyTokenStats[], now: Date): 
 // Period delta cards
 // ---------------------------------------------------------------------------
 
-export type DeltaUnit = 'ratio' | 'percent' | 'minutes' | 'tokens' | 'currency';
+export type DeltaUnit = 'ratio' | 'percent' | 'minutes' | 'seconds' | 'tokensPerSecond' | 'tokens' | 'currency';
 
 /** One month-over-month delta card. `prev`/`cur` are null when the metric is unavailable in that period. */
 export interface EfficiencyDelta {
@@ -1279,8 +1279,18 @@ export interface ModelPeriodMetrics {
 	retryRate: number | null;
 	selfCorrectionRate: number | null;
 	cacheReadShare: number | null;
+	/** Input tokens per turn not served from the prompt cache; an upper bound when `cacheReadsReported` is false. */
+	freshInputTokensPerCall: number | null;
+	/** Input tokens per turn served from the prompt cache. */
+	cachedInputTokensPerCall: number | null;
+	/** True when the window carries any cache-read tokens; false means the source cannot report them. */
+	cacheReadsReported: boolean;
 	activeMinutesPerSession: number | null;
 	applyRate: number | null;
+	/** Median end-to-end turn duration (includes tool runs and approval waits); null when no turn was timed. */
+	medianTurnSeconds: number | null;
+	/** Output tokens per second over timed turns that reported output tokens; null when none did. */
+	outputTokensPerSecond: number | null;
 	/** Share of this model's tokens per task category (0..1), for confounder context. */
 	taskMix: { [category: string]: number };
 	/** True when the window carries enough sessions for the ratios to be trusted. */
@@ -1497,6 +1507,7 @@ function addSessionRecord(totals: DailyModelEfficiencyEntry, rec: ModelSessionRe
 		totals.activeDurationMs += rec.activeDurationMs;
 		totals.durationSessionShare += rec.share;
 	}
+	mergeTurnLatency(totals, rec);
 }
 
 /**
@@ -1598,8 +1609,13 @@ function finishPeriodMetrics(
 		selfCorrectionRate: gatedRatio(totals.selfCorrections, totals.editTurns, enoughEdits),
 		// Capped at 1.0: some providers report cachedReadTokens > inputTokens.
 		cacheReadShare: capShare(gatedRatio(totals.cachedReadTokens, totals.inputTokens)),
+		freshInputTokensPerCall: gatedRatio(totals.inputTokens - Math.min(totals.cachedReadTokens, totals.inputTokens), totals.calls),
+		cachedInputTokensPerCall: gatedRatio(Math.min(totals.cachedReadTokens, totals.inputTokens), totals.calls),
+		cacheReadsReported: totals.cachedReadTokens > 0,
 		activeMinutesPerSession: gatedRatio(totals.activeDurationMs / 60_000, totals.durationSessionShare),
 		applyRate: gatedRatio(totals.applies, totals.codeBlocks),
+		medianTurnSeconds: medianTurnSeconds(totals),
+		outputTokensPerSecond: outputTokensPerSecond(totals),
 		taskMix: normalizeMix(taskMixRaw),
 		sampleSufficient: enoughSessions,
 		editSampleSufficient: enoughEdits,
@@ -1864,7 +1880,7 @@ export function reconcileModelSelection(
 
 export type ModelComparisonMetricId =	| 'cost-per-edit-turn' | 'cost-per-session' | 'cost-per-kloc' | 'dollars-per-mtokens'
 	| 'tokens-per-edit-turn' | 'tokens-per-session' | 'one-shot-rate' | 'retry-rate'
-	| 'self-correction-rate' | 'cache-read-share' | 'active-minutes-per-session' | 'apply-rate';
+	| 'self-correction-rate' | 'cache-read-share' | 'fresh-input-per-call' | 'cached-input-per-call' | 'active-minutes-per-session' | 'median-turn-seconds' | 'output-tokens-per-second' | 'apply-rate';
 
 /** One metric compared head-to-head between two sides. */
 export interface ModelComparisonRow {
@@ -1955,6 +1971,10 @@ function buildCaveats(a: ModelPeriodMetrics, b: ModelPeriodMetrics): string[] {
 	if (divergence >= TASK_MIX_DIVERGENCE_THRESHOLD) {
 		caveats.push(`The two sides did different kinds of work (${Math.round(divergence * 100)}% task-mix difference), so part of the gap may reflect the tasks rather than the models.`);
 	}
+	const blind = [a, b].filter(side => !side.cacheReadsReported && side.calls > 0);
+	if (blind.length > 0) {
+		caveats.push(`${blind.map(side => `${side.displayName} (${side.periodLabel})`).join(' and ')} reported no prompt-cache reads, so its fresh input tokens are an upper bound: any cached context is counted as fresh.`);
+	}
 	if (a.filtering.unavailable || b.filtering.unavailable) { caveats.push(FILTER_UNAVAILABLE_CAVEAT); }
 	if (a.sessions > a.sessionShare * 1.5 || b.sessions > b.sessionShare * 1.5) {
 		caveats.push('Much of this usage comes from sessions that mixed several models; duration and lines-of-code are split by token share and are therefore approximate.');
@@ -2010,9 +2030,21 @@ export function compareModels(a: ModelPeriodMetrics, b: ModelPeriodMetrics): Mod
 		comparisonRow('cache-read-share', 'Cache read share',
 			'Share of input tokens served from the prompt cache. Higher is cheaper.',
 			a.cacheReadShare, b.cacheReadShare, 'percent', 'up'),
+		comparisonRow('fresh-input-per-call', 'Fresh input tokens per turn',
+			'Input tokens per turn that were not served from the prompt cache, so harnesses that count cache reads inside input compare on the same basis. Lower is better.',
+			a.freshInputTokensPerCall, b.freshInputTokensPerCall, 'tokens', 'down'),
+		comparisonRow('cached-input-per-call', 'Cached input tokens per turn',
+			'Context re-read from the prompt cache each turn. Context, not cost: cache reads are cheap.',
+			a.cachedInputTokensPerCall, b.cachedInputTokensPerCall, 'tokens', 'up'),
 		comparisonRow('active-minutes-per-session', 'Active minutes per session',
 			'Net working time per session, excluding idle gaps.',
 			a.activeMinutesPerSession, b.activeMinutesPerSession, 'minutes', 'down'),
+		comparisonRow('median-turn-seconds', 'Median turn time',
+			'Median end-to-end time per turn, including tool runs and approval waits. Not model latency.',
+			a.medianTurnSeconds, b.medianTurnSeconds, 'seconds', 'down'),
+		comparisonRow('output-tokens-per-second', 'Output tokens per second',
+			'Output tokens divided by turn time, over turns that reported output tokens. Includes tool waits, so it understates raw decode speed.',
+			a.outputTokensPerSecond, b.outputTokensPerSecond, 'tokensPerSecond', 'up'),
 		comparisonRow('apply-rate', 'Apply rate',
 			'Share of suggested code blocks actually applied — does the output stick?',
 			a.applyRate, b.applyRate, 'percent', 'up'),

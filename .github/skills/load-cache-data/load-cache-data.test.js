@@ -376,7 +376,7 @@ const TOP_LEVEL_OMITTED = ['title', 'repository', 'workspaceFolderPath', 'langua
 const USAGE_ANALYSIS_PRINTED = [
     'modeUsage', 'autonomyUsage', 'cacheBreakage',
     'taskClassification', 'thinkingEffort', 'applyUsage', 'sessionDuration',
-    'conversationPatterns', 'agentTypes', 'modelEfficiency', 'correctionCounts', 'hydraFusion'
+    'conversationPatterns', 'agentTypes', 'modelEfficiency', 'correctionCounts', 'hydraFusion', 'vendorStats'
 ];
 // usageAnalysis fields printed with a path/text sub-field or session-name-keyed maps removed.
 const USAGE_ANALYSIS_FILTERED = [

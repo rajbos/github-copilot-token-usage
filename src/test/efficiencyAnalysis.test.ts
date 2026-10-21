@@ -1616,3 +1616,32 @@ test('compareModels: with exact billing on both sides the cost rows compare norm
 	assert.equal(row.winner, 'a');
 	assert.equal(row.significant, true);
 });
+
+test('compareModels: includes fresh and cached input rows', () => {
+	const a = computeModelPeriodMetrics([modelDay('2026-07-01', { a: solidModel({ calls: 40, inputTokens: 1000, cachedReadTokens: 800 }) })], 'a', 'Jul')!;
+	const b = computeModelPeriodMetrics([modelDay('2026-07-01', { b: solidModel({ calls: 40, inputTokens: 1000, cachedReadTokens: 200 }) })], 'b', 'Jul')!;
+	const cmp = compareModels(a, b);
+	const fresh = cmp.rows.find(r => r.id === 'fresh-input-per-call')!;
+	const cached = cmp.rows.find(r => r.id === 'cached-input-per-call')!;
+	assert.equal(fresh.a, 5);
+	assert.equal(fresh.b, 20);
+	assert.equal(fresh.goodDirection, 'down');
+	assert.equal(fresh.winner, 'a');
+	assert.equal(cached.a, 20);
+	assert.equal(cached.b, 5);
+	assert.equal(cmp.caveats.some(c => c.includes('prompt-cache reads')), false);
+});
+
+test('compareModels: caveats a side that reports no cache reads', () => {
+	const a = computeModelPeriodMetrics([modelDay('2026-07-01', { a: solidModel({ cachedReadTokens: 500_000 }) })], 'a', 'Jul')!;
+	const b = computeModelPeriodMetrics([modelDay('2026-07-01', { b: solidModel({ cachedReadTokens: 0 }) })], 'b', 'Jul')!;
+	assert.equal(b.cacheReadsReported, false);
+	const caveat = compareModels(a, b).caveats.find(c => c.includes('prompt-cache reads'));
+	assert.ok(caveat && caveat.includes(b.displayName) && caveat.includes('upper bound'));
+});
+
+test('computeModelPeriodMetrics: fresh input clamps when cached exceeds input', () => {
+	const m = computeModelPeriodMetrics([modelDay('2026-07-01', { a: solidModel({ calls: 40, inputTokens: 400, cachedReadTokens: 5000 }) })], 'a', 'Jul')!;
+	assert.equal(m.freshInputTokensPerCall, 0);
+	assert.equal(m.cachedInputTokensPerCall, 10);
+});

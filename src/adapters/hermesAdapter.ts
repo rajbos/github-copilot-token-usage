@@ -12,6 +12,7 @@ import { createEmptySessionUsageAnalysis, applyModelTierClassification } from '.
  */
 export class HermesAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'hermes';
+	readonly reportsCacheReads = true;
 	readonly displayName = 'Hermes';
 
 	constructor(private readonly hermes: HermesDataAccess) {}

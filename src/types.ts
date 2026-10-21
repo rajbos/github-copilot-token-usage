@@ -239,6 +239,10 @@ export interface ModelSessionRecord {
   activeDurationMs: number;
   applies: number;
   codeBlocks: number;
+  /** This session's turn-latency histogram for the model; absent when no turn was timed. */
+  turnLatency?: LatencyHistogram;
+  timedOutputTokens?: number;
+  timedOutputMs?: number;
 }
 
 export interface DailyModelEfficiencyEntry extends ModelEfficiencyCounters {
@@ -547,6 +551,41 @@ export interface SessionUsageAnalysis {
    * carries no user-message text.
    */
   firstUserPrompt?: string;
+  /** Vendor-reported session-level stats (Mistral Vibe meta.json). Absent for other formats. */
+  vendorStats?: VendorSessionStats;
+}
+
+/** A sum plus sample count, so rates and durations merge across sessions without averaging averages. */
+export interface SampledSum {
+  samples: number;
+  sum: number;
+}
+
+/**
+ * Session-level numeric stats a vendor's own log reports (Mistral Vibe `meta.json` `stats`).
+ * Every field is optional and additive, so the same shape holds one session or a merged period.
+ * An absent stat stays absent; it is never zero-filled.
+ */
+export interface VendorSessionStats {
+  /** Vendor-reported generation speed in tokens/second (sum + session count). */
+  tokensPerSecond?: SampledSum;
+  /** Duration of each session's last turn in ms (sum + session count). */
+  lastTurnDurationMs?: SampledSum;
+  /** Vendor-reported cost in dollars. Cross-check only: cost estimates stay on calculateEstimatedCost. */
+  reportedCostDollars?: number;
+  /** Agent steps (LLM round-trips) the vendor counted. */
+  steps?: number;
+  /** Session-level tool-call outcomes; the vendor does not attribute them per tool. */
+  toolOutcomes?: VendorToolOutcomes;
+}
+
+/** Tool-call outcome counters; `rejected` and `hookDenied` are calls declined rather than failed. */
+export interface VendorToolOutcomes {
+  succeeded?: number;
+  failed?: number;
+  rejected?: number;
+  agreed?: number;
+  hookDenied?: number;
 }
 
 /**
@@ -727,6 +766,16 @@ export interface ModelEfficiencyCounters {
   exactCost?: number;
   /** Sessions whose exact billing is included in `exactCost`; compare with `sessions` to see whether the model is fully covered. */
   exactCostSessions?: number;
+  /**
+   * End-to-end response duration of this model's turns (user message to the last
+   * assistant/tool event of the turn, so it includes tool execution and approval
+   * waits). Absent when no turn of this model carried both timestamps — never zero-filled.
+   */
+  turnLatency?: LatencyHistogram;
+  /** Actual output tokens of the timed turns that reported them; the numerator of output tokens/second. */
+  timedOutputTokens?: number;
+  /** Elapsed ms of exactly those turns (a subset of {@link turnLatency}); the denominator of output tokens/second. */
+  timedOutputMs?: number;
 }
 
 export interface ModelEfficiencyUsage {
@@ -1328,6 +1377,8 @@ export interface UsageAnalysisPeriod {
    * token counts.
    */
   cacheBreakage?: CacheBreakagePeriodStats;
+  /** Vendor-reported session stats summed across the period's sessions. Absent when none carried them. */
+  vendorStats?: VendorSessionStats;
 }
 
 /** Aggregated context-window usage for one usage-analysis period. */
@@ -1443,6 +1494,8 @@ export interface ActualUsage {
 export interface ChatTurn {
   turnNumber: number;
   timestamp: string | null;
+  /** ISO time of the last assistant/tool event of this turn, when the source records it. Absent means unknown, never an estimate. */
+  endTimestamp?: string | null;
   mode: "ask" | "edit" | "agent" | "plan" | "customAgent" | "cli";
   userMessage: string;
   assistantResponse: string;

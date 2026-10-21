@@ -320,6 +320,64 @@ test('MistralVibeDataAccess.getModelUsage: reports session_cached_tokens as cach
     }
 });
 
+/** Writes a full synthetic Vibe session (meta.json plus a one-turn messages.jsonl). */
+function writeVibeFullSession(meta: Record<string, unknown>): { metaPath: string; cleanup: () => void } {
+    const dir = fs.mkdtempSync(path.join(process.cwd(), 'vibe-session-'));
+    const metaPath = path.join(dir, 'meta.json');
+    fs.writeFileSync(metaPath, JSON.stringify(meta));
+    fs.writeFileSync(path.join(dir, 'messages.jsonl'), JSON.stringify({ role: 'user', content: 'hi' }) + '\n');
+    return { metaPath, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
+
+test('MistralVibeAdapter.analyzeUsage: passes meta.json stats through and falls back to wall-clock duration', async () => {
+    const { metaPath, cleanup } = writeVibeFullSession({
+        start_time: '2026-01-01T10:00:00.000000+00:00', end_time: '2026-01-01T10:05:00.000000+00:00',
+        config: { active_model: 'mistral-medium-3.5' },
+        stats: {
+            tokens_per_second: 80, last_turn_duration: 3, session_cost: 0.25, steps: 7,
+            tool_calls_succeeded: 5, tool_calls_failed: 1, tool_calls_rejected: 2, tool_calls_hook_denied: 1,
+        },
+    });
+    try {
+        const a = await mistralVibeAdapter.analyzeUsage(metaPath, { modelPricing: {}, toolNameMap: {} });
+        assert.deepEqual(a.vendorStats, {
+            tokensPerSecond: { samples: 1, sum: 80 }, lastTurnDurationMs: { samples: 1, sum: 3000 },
+            reportedCostDollars: 0.25, steps: 7,
+            toolOutcomes: { succeeded: 5, failed: 1, rejected: 2, hookDenied: 1 },
+        });
+        assert.equal(a.sessionDuration?.activeDurationMs, 300_000);
+        assert.equal(a.sessionDuration?.totalDurationMs, 300_000);
+    } finally {
+        cleanup();
+    }
+});
+
+test('MistralVibeAdapter.analyzeUsage: tolerates absent stats and timestamps', async () => {
+    const { metaPath, cleanup } = writeVibeFullSession({ config: { active_model: 'm' }, stats: { session_prompt_tokens: 1 } });
+    try {
+        const a = await mistralVibeAdapter.analyzeUsage(metaPath, { modelPricing: {}, toolNameMap: {} });
+        assert.equal(a.vendorStats, undefined);
+        assert.equal(a.sessionDuration, undefined);
+        assert.equal(a.modeUsage.cli, 1);
+    } finally {
+        cleanup();
+    }
+});
+
+test('MistralVibeAdapter.analyzeUsage: ignores a non-positive or unparseable time range', async () => {
+    const reversed = writeVibeFullSession({ start_time: '2026-01-01T10:05:00Z', end_time: '2026-01-01T10:00:00Z', stats: {} });
+    const garbage = writeVibeFullSession({ start_time: 'nope', end_time: 'also nope', stats: {} });
+    try {
+        for (const s of [reversed, garbage]) {
+            const a = await mistralVibeAdapter.analyzeUsage(s.metaPath, { modelPricing: {}, toolNameMap: {} });
+            assert.equal(a.sessionDuration, undefined);
+        }
+    } finally {
+        reversed.cleanup();
+        garbage.cleanup();
+    }
+});
+
 test('MistralVibeDataAccess.getModelUsage: cost matches Vibe\'s own session_cost for a cache-heavy session', async () => {
     // Guards the regression this fix closed: without cachedReadTokens the whole prompt
     // total is billed at the full input rate, which overstated this session ~5x
@@ -1012,5 +1070,38 @@ test('ClaudeDesktopAdapter.analyzeUsage: MCP tool_use lands under mcpTools, cons
         assert.equal(result.toolCalls.failuresByTool, undefined);
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('ClaudeDesktopAdapter.buildTurns: carries the turn end from the last event timestamp', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(process.cwd(), 'cowork-latency-'));
+    const sessionFile = path.join(tmpDir, 'session.jsonl');
+    try {
+        const events = [
+            { type: 'user', isSidechain: false, timestamp: '2026-05-01T10:00:00Z', message: { role: 'user', content: 'Hello' } },
+            { type: 'assistant', requestId: 'r1', timestamp: '2026-05-01T10:00:20Z', message: { role: 'assistant', stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 }, content: [{ type: 'text', text: 'Hi' }] } },
+        ];
+        fs.writeFileSync(sessionFile, events.map(e => JSON.stringify(e)).join('\n'));
+        const { turns } = await claudeDesktopAdapter.buildTurns(sessionFile);
+        assert.equal(turns[0].timestamp, '2026-05-01T10:00:00.000Z');
+        assert.equal(turns[0].endTimestamp, '2026-05-01T10:00:20.000Z');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('MistralVibeAdapter.buildTurns: has no per-turn end time, so no latency is recorded (never fabricated)', async () => {
+    const dir = fs.mkdtempSync(path.join(process.cwd(), 'vibe-latency-'));
+    try {
+        fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify({ config: { active_model: 'devstral' }, stats: { session_prompt_tokens: 10, session_completion_tokens: 5 } }));
+        fs.writeFileSync(path.join(dir, 'messages.jsonl'), [
+            JSON.stringify({ role: 'user', content: 'hi' }),
+            JSON.stringify({ role: 'assistant', content: 'hello' }),
+        ].join('\n'));
+        const { turns } = await mistralVibeAdapter.buildTurns(path.join(dir, 'meta.json'));
+        assert.ok(turns.length >= 1);
+        assert.ok(turns.every(t => t.endTimestamp === undefined || t.endTimestamp === null));
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
     }
 });

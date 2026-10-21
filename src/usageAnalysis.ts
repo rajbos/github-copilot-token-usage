@@ -23,6 +23,8 @@ import type {
 	TokenEstimator,
 	LanguageUsage,
 	LatencyHistogram,
+	VendorSessionStats,
+	VendorToolOutcomes,
 } from './types';
 import { mergeAutonomyUsage, recordAutonomy } from './autonomy';
 import { advanceCliAgentState, createCliAgentState, mergeAgentUsage, readVsCodeModeId, recordVsCodeRequestAgents, type CliAgentState } from './agentUsage';
@@ -33,6 +35,7 @@ import {
 	TASK_CATEGORIES,
 } from './taskClassification';
 import {
+	activeDurationFromTurns,
 	computeEfficiencyFromTurns,
 	jsonRequestToToolCalls,
 	mergeModelEfficiency,
@@ -962,12 +965,39 @@ function _applyJsonRequestsEfficiency(
 			userMessage: typeof req.message?.text === 'string' ? req.message.text : undefined,
 			assistantResponse: _jsonRequestAssistantText(req),
 			timestamp: typeof req.timestamp === 'number' ? new Date(req.timestamp).toISOString() : null,
+			...(_jsonRequestEndTimestamp(req) ? { endTimestamp: _jsonRequestEndTimestamp(req) } : {}),
+			...(_jsonRequestCompletionTokens(req) > 0 ? { actualUsage: { completionTokens: _jsonRequestCompletionTokens(req) } } : {}),
 		});
 	}
 	if (turns.length === 0) { return; }
 	analysis.modelEfficiency = computeEfficiencyFromTurns(turns);
 	_setFirstUserPrompt(analysis, turns.find(t => t.userMessage)?.userMessage);
 	_setCorrectionDetection(analysis, turns);
+}
+
+/** `timestamp + timings.totalElapsed` — the same window `_accumulateRequestTiming` uses for active time. */
+function _jsonRequestEndTimestamp(req: SessionRequestRaw): string | null {
+	const elapsed = req.result?.timings?.totalElapsed;
+	if (typeof req.timestamp !== 'number' || typeof elapsed !== 'number' || elapsed < 0) { return null; }
+	return new Date(req.timestamp + elapsed).toISOString();
+}
+
+/** Reported output tokens of a request (old, new or insiders result layout); 0 when not reported. */
+function _jsonRequestCompletionTokens(req: SessionRequestRaw): number {
+	const result = req.result;
+	const candidates = [result?.usage?.completionTokens, result?.outputTokens, result?.metadata?.outputTokens];
+	return candidates.find((n): n is number => typeof n === 'number' && n > 0) ?? 0;
+}
+
+/**
+ * Give a session without Copilot Chat's `timings.totalElapsed` an active duration
+ * from the same turn windows its latency histogram uses. Never overrides a value
+ * a source already measured.
+ */
+function _applyTurnActiveDuration(analysis: SessionUsageAnalysis, turns: EfficiencyTurn[]): void {
+	if (!analysis.sessionDuration || analysis.sessionDuration.activeDurationMs > 0) { return; }
+	const activeDurationMs = activeDurationFromTurns(turns);
+	if (activeDurationMs > 0) { analysis.sessionDuration.activeDurationMs = activeDurationMs; }
 }
 
 function _setCorrectionDetection(analysis: SessionUsageAnalysis, turns: EfficiencyTurn[]): void {
@@ -1446,6 +1476,7 @@ export function mergeUsageAnalysis(period: UsageAnalysisPeriod, analysis: Sessio
 	_muaMergeCorrections(period, analysis);
 	_muaMergeCacheBreakage(period, analysis);
 	_muaMergeHydraFusion(period, analysis);
+	_muaMergeVendorStats(period, analysis);
 }
 
 /** Sum the session's HydraFusion routing rollup into the period (additive; absent for sessions that never routed). */
@@ -1496,6 +1527,29 @@ function _muaMergeHistograms(
 		mergeLatencyHistogram(target[key] ??= createLatencyHistogram(), histogram);
 	}
 	return target;
+}
+
+/** Fold a session's vendor-reported stats into the period (all fields optional and additive; absent stays absent). */
+function _muaMergeVendorStats(period: UsageAnalysisPeriod, analysis: SessionUsageAnalysis): void {
+	const from = analysis.vendorStats;
+	if (!from) { return; }
+	const into: VendorSessionStats = period.vendorStats ??= {};
+	for (const key of ['tokensPerSecond', 'lastTurnDurationMs'] as const) {
+		const add = from[key];
+		if (add) { into[key] = { samples: (into[key]?.samples ?? 0) + add.samples, sum: (into[key]?.sum ?? 0) + add.sum }; }
+	}
+	for (const key of ['reportedCostDollars', 'steps'] as const) {
+		const add = from[key];
+		if (add !== undefined) { into[key] = (into[key] ?? 0) + add; }
+	}
+	if (from.toolOutcomes) { _muaMergeToolOutcomeCounters(into.toolOutcomes ??= {}, from.toolOutcomes); }
+}
+
+function _muaMergeToolOutcomeCounters(out: VendorToolOutcomes, from: VendorToolOutcomes): void {
+	for (const key of ['succeeded', 'failed', 'rejected', 'agreed', 'hookDenied'] as const) {
+		const add = from[key];
+		if (add !== undefined) { out[key] = (out[key] ?? 0) + add; }
+	}
 }
 
 /** Fold a session's cache-breakage result into the period's aggregated stats. */
@@ -2500,6 +2554,7 @@ function _asuProcessCliEvents(event: any, cliState: AsuCliState, analysis: Sessi
 	if (event.type === 'session.start' && event.data) { _asuHandleSessionStartEvent(event.data as Record<string, unknown>, cliState); }
 	if (event.type === 'session.model_change' && typeof event.data?.newModel === 'string') { cliState.defaultModel = event.data.newModel; }
 	_asuAccumulateAssistantText(event, cliState);
+	_asuExtendTurnWindow(event, cliState);
 	advanceCliAgentState(cliState.agent, analysis, event);
 	if (event.type === 'user.message') {
 		cliState.requestCount++;
@@ -2511,6 +2566,17 @@ function _asuProcessCliEvents(event: any, cliState: AsuCliState, analysis: Sessi
 		recordAutonomy(analysis, event.data?.agentMode);
 		const skillName = extractInvokedSkillNameFromPlainText(event.data?.content);
 		if (skillName) { addSkillCall(analysis, skillName); }
+	}
+}
+
+/** The turn ends at its last assistant/tool event; later events (shutdown, model changes) are not response work. */
+function _asuExtendTurnWindow(event: { type?: unknown; timestamp?: unknown; data?: { outputTokens?: unknown } }, cliState: AsuCliState): void {
+	const turn = cliState.efficiencyTurns[cliState.efficiencyTurns.length - 1];
+	if (!turn?.timestamp || typeof event.timestamp !== 'string') { return; }
+	if (typeof event.type !== 'string' || !(event.type.startsWith('assistant.') || event.type.startsWith('tool.'))) { return; }
+	turn.endTimestamp = event.timestamp;
+	if (event.type === 'assistant.message' && typeof event.data?.outputTokens === 'number' && event.data.outputTokens > 0) {
+		turn.actualUsage = { completionTokens: (turn.actualUsage?.completionTokens ?? 0) + event.data.outputTokens };
 	}
 }
 
@@ -2810,6 +2876,7 @@ async function _asuProcessNonDeltaJsonl(
 	await calculateModelSwitching(deps, sessionFile, analysis, fileContent);
 	// Track LOC/edit metrics for CLI sessions (delta path already handles this above)
 	await trackEnhancedMetrics(deps, sessionFile, analysis, fileContent);
+	_applyTurnActiveDuration(analysis, cliState.efficiencyTurns);
 	deriveConversationPatterns(analysis);
 }
 
@@ -2862,6 +2929,7 @@ async function _addTurnEfficiencyFromAdapter(eco: IEcosystemAdapter, sessionFile
 	if (!eco.buildTurns) { return; }
 	try {
 		const { turns } = await eco.buildTurns(sessionFile);
+		_applyTurnActiveDuration(analysis, turns);
 		if (!analysis.modelEfficiency) {
 			const eff = computeEfficiencyFromTurns(turns);
 			if (Object.keys(eff).length > 0) { analysis.modelEfficiency = eff; }

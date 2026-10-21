@@ -1205,7 +1205,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// existing entries dropped them, so Chart/Efficiency would undercount until the file changed.
 	// v84: Add per-session agentUsage (custom agents the user selected, by name) to usageAnalysis:
 	// cache hits skip re-analysis, so existing entries would lack it until their file changed.
-	private static readonly CACHE_VERSION = 84;
+	private static readonly CACHE_VERSION = 85;
 	/** Initial stats should not wait indefinitely for one inaccessible or stalled session. */
 	private static readonly SESSION_PRELOAD_TIMEOUT_MS = 15_000;
 	/**

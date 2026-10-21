@@ -872,6 +872,8 @@ const MODEL_TREND_METRICS: { id: ModelComparisonMetricId; label: string; unit: E
 	{ id: 'retry-rate', label: 'Edit retry rate', unit: 'ratio', goodDirection: 'down', pick: m => m.retryRate },
 	{ id: 'tokens-per-edit-turn', label: 'Tokens per edit turn', unit: 'tokens', goodDirection: 'down', pick: m => m.tokensPerEditTurn },
 	{ id: 'active-minutes-per-session', label: 'Active minutes per session', unit: 'minutes', goodDirection: 'down', pick: m => m.activeMinutesPerSession },
+	{ id: 'median-turn-seconds', label: 'Median turn time', unit: 'seconds', goodDirection: 'down', pick: m => m.medianTurnSeconds },
+	{ id: 'output-tokens-per-second', label: 'Output tokens per second', unit: 'tokensPerSecond', goodDirection: 'up', pick: m => m.outputTokensPerSecond },
 ];
 
 /** Metrics shown on the normalized radar — one axis per dimension of "efficient". */
