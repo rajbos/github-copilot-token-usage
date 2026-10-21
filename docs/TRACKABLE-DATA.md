@@ -200,6 +200,15 @@ The following data is present in session files but not currently tracked:
 - `responseMarkdownInfo` - Markdown rendering info
 - `timeSpentWaiting` - User wait time
 
+### Per-turn response latency (all session sources)
+**Data Source**: user message timestamp to the last assistant/tool event of the turn
+(Copilot Chat: `timestamp + result.timings.totalElapsed`).
+
+- Stored as `turnLatency` (an additive `LatencyHistogram`) plus `timedOutputTokens` / `timedOutputMs` on each per-model `ModelEfficiencyCounters` entry, so it is available per model and per editor.
+- Derives `medianTurnSeconds`, `outputTokensPerSecond` and, for sources without `timings.totalElapsed` (Claude Code, Copilot CLI), `activeDurationMs`.
+- It is end-to-end latency (includes tool runs and approval waits), not model latency. Sources with no per-turn end time (Copilot CLI SQLite store, Mistral Vibe) stay empty. See [MODEL-EFFICIENCY-COMPARISON.md](features/MODEL-EFFICIENCY-COMPARISON.md#turn-latency).
+- Not uploaded to the sharing server: model efficiency counters are local.
+
 ### Potential Future Metrics
 - Response time patterns
 - Follow-up question acceptance rate

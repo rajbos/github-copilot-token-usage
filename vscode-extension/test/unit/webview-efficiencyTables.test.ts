@@ -6,6 +6,7 @@ import { resetDataTableState, setDataTableState } from '../../src/webview/shared
 import { setFormatLocale } from '../../src/webview/shared/formatUtils';
 import { initializeWebviewLocalization } from '../../src/webview/shared/localization';
 import {
+	fmtValue,
 	MODEL_COMPARE_TABLE_ID,
 	renderModelComparisonTable,
 	renderSkillImpactTable,
@@ -137,4 +138,11 @@ test('model comparison table: keeps the analytics order by default and sorts by 
 	} finally {
 		resetDataTableState(MODEL_COMPARE_TABLE_ID);
 	}
+});
+
+test('fmtValue: turn latency units render with their suffix, null as an em dash', () => {
+	assert.equal(fmtValue(12.34, 'seconds'), '12.3 s');
+	assert.equal(fmtValue(41.26, 'tokensPerSecond'), '41.3 tok/s');
+	assert.equal(fmtValue(null, 'seconds'), '—');
+	assert.equal(fmtValue(null, 'tokensPerSecond'), '—');
 });

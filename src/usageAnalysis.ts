@@ -32,6 +32,7 @@ import {
 	TASK_CATEGORIES,
 } from './taskClassification';
 import {
+	activeDurationFromTurns,
 	computeEfficiencyFromTurns,
 	jsonRequestToToolCalls,
 	mergeModelEfficiency,
@@ -961,12 +962,39 @@ function _applyJsonRequestsEfficiency(
 			userMessage: typeof req.message?.text === 'string' ? req.message.text : undefined,
 			assistantResponse: _jsonRequestAssistantText(req),
 			timestamp: typeof req.timestamp === 'number' ? new Date(req.timestamp).toISOString() : null,
+			...(_jsonRequestEndTimestamp(req) ? { endTimestamp: _jsonRequestEndTimestamp(req) } : {}),
+			...(_jsonRequestCompletionTokens(req) > 0 ? { actualUsage: { completionTokens: _jsonRequestCompletionTokens(req) } } : {}),
 		});
 	}
 	if (turns.length === 0) { return; }
 	analysis.modelEfficiency = computeEfficiencyFromTurns(turns);
 	_setFirstUserPrompt(analysis, turns.find(t => t.userMessage)?.userMessage);
 	_setCorrectionDetection(analysis, turns);
+}
+
+/** `timestamp + timings.totalElapsed` — the same window `_accumulateRequestTiming` uses for active time. */
+function _jsonRequestEndTimestamp(req: SessionRequestRaw): string | null {
+	const elapsed = req.result?.timings?.totalElapsed;
+	if (typeof req.timestamp !== 'number' || typeof elapsed !== 'number' || elapsed < 0) { return null; }
+	return new Date(req.timestamp + elapsed).toISOString();
+}
+
+/** Reported output tokens of a request (old, new or insiders result layout); 0 when not reported. */
+function _jsonRequestCompletionTokens(req: SessionRequestRaw): number {
+	const result = req.result;
+	const candidates = [result?.usage?.completionTokens, result?.outputTokens, result?.metadata?.outputTokens];
+	return candidates.find((n): n is number => typeof n === 'number' && n > 0) ?? 0;
+}
+
+/**
+ * Give a session without Copilot Chat's `timings.totalElapsed` an active duration
+ * from the same turn windows its latency histogram uses. Never overrides a value
+ * a source already measured.
+ */
+function _applyTurnActiveDuration(analysis: SessionUsageAnalysis, turns: EfficiencyTurn[]): void {
+	if (!analysis.sessionDuration || analysis.sessionDuration.activeDurationMs > 0) { return; }
+	const activeDurationMs = activeDurationFromTurns(turns);
+	if (activeDurationMs > 0) { analysis.sessionDuration.activeDurationMs = activeDurationMs; }
 }
 
 function _setCorrectionDetection(analysis: SessionUsageAnalysis, turns: EfficiencyTurn[]): void {
@@ -2492,6 +2520,7 @@ function _asuProcessCliEvents(event: any, cliState: AsuCliState, analysis: Sessi
 	if (event.type === 'session.start' && event.data) { _asuHandleSessionStartEvent(event.data as Record<string, unknown>, cliState); }
 	if (event.type === 'session.model_change' && typeof event.data?.newModel === 'string') { cliState.defaultModel = event.data.newModel; }
 	_asuAccumulateAssistantText(event, cliState);
+	_asuExtendTurnWindow(event, cliState);
 	advanceCliAgentState(cliState.agent, analysis, event);
 	if (event.type === 'user.message') {
 		cliState.requestCount++;
@@ -2503,6 +2532,17 @@ function _asuProcessCliEvents(event: any, cliState: AsuCliState, analysis: Sessi
 		recordAutonomy(analysis, event.data?.agentMode);
 		const skillName = extractInvokedSkillNameFromPlainText(event.data?.content);
 		if (skillName) { addSkillCall(analysis, skillName); }
+	}
+}
+
+/** The turn ends at its last assistant/tool event; later events (shutdown, model changes) are not response work. */
+function _asuExtendTurnWindow(event: { type?: unknown; timestamp?: unknown; data?: { outputTokens?: unknown } }, cliState: AsuCliState): void {
+	const turn = cliState.efficiencyTurns[cliState.efficiencyTurns.length - 1];
+	if (!turn?.timestamp || typeof event.timestamp !== 'string') { return; }
+	if (typeof event.type !== 'string' || !(event.type.startsWith('assistant.') || event.type.startsWith('tool.'))) { return; }
+	turn.endTimestamp = event.timestamp;
+	if (event.type === 'assistant.message' && typeof event.data?.outputTokens === 'number' && event.data.outputTokens > 0) {
+		turn.actualUsage = { completionTokens: (turn.actualUsage?.completionTokens ?? 0) + event.data.outputTokens };
 	}
 }
 
@@ -2802,6 +2842,7 @@ async function _asuProcessNonDeltaJsonl(
 	await calculateModelSwitching(deps, sessionFile, analysis, fileContent);
 	// Track LOC/edit metrics for CLI sessions (delta path already handles this above)
 	await trackEnhancedMetrics(deps, sessionFile, analysis, fileContent);
+	_applyTurnActiveDuration(analysis, cliState.efficiencyTurns);
 	deriveConversationPatterns(analysis);
 }
 
@@ -2848,6 +2889,7 @@ async function _addTurnEfficiencyFromAdapter(eco: IEcosystemAdapter, sessionFile
 	if (!eco.buildTurns) { return; }
 	try {
 		const { turns } = await eco.buildTurns(sessionFile);
+		_applyTurnActiveDuration(analysis, turns);
 		if (!analysis.modelEfficiency) {
 			const eff = computeEfficiencyFromTurns(turns);
 			if (Object.keys(eff).length > 0) { analysis.modelEfficiency = eff; }

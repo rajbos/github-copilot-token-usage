@@ -28,21 +28,38 @@ export function buildClaudeChatTurns(
 	const turns: ChatTurn[] = [];
 	let currentUserEvent: any = null;
 	const pendingAssistantEvents: any[] = [];
+	// Latest timestamp of any event (assistant output, tool results, sub-agent work) since the human message.
+	let lastEventTime: string | null = null;
 
 	for (const event of events) {
 		if (event.type === 'user' && !event.isSidechain && event.message?.role === 'user' && isHumanUserTurn(event)) {
-			const turn = buildTurnFromEvents(currentUserEvent, pendingAssistantEvents, processAssistantEvents, turns.length + 1, estimateTokens);
+			const turn = buildTurnFromEvents(currentUserEvent, pendingAssistantEvents, processAssistantEvents, turns.length + 1, estimateTokens, lastEventTime);
 			if (turn) { turns.push(turn); }
 			currentUserEvent = event;
 			pendingAssistantEvents.length = 0;
+			lastEventTime = null;
 		} else if (event.type === 'assistant' && event.message?.stop_reason && event.message?.role === 'assistant') {
 			pendingAssistantEvents.push(event);
 		}
+		lastEventTime = advanceLastEventTime(lastEventTime, event, currentUserEvent);
 	}
-	const finalTurn = buildTurnFromEvents(currentUserEvent, pendingAssistantEvents, processAssistantEvents, turns.length + 1, estimateTokens);
+	const finalTurn = buildTurnFromEvents(currentUserEvent, pendingAssistantEvents, processAssistantEvents, turns.length + 1, estimateTokens, lastEventTime);
 	if (finalTurn) { turns.push(finalTurn); }
 
 	return turns;
+}
+
+/** Moves the turn end forward for assistant and tool-result events that follow the human message. */
+function advanceLastEventTime(current: string | null, event: { type?: unknown; timestamp?: unknown }, currentUserEvent: unknown): string | null {
+	const isResponseEvent = (event.type === 'assistant' || event.type === 'user') && event !== currentUserEvent;
+	return currentUserEvent && isResponseEvent ? laterTimestamp(current, event.timestamp) : current;
+}
+
+function laterTimestamp(current: string | null, candidate: unknown): string | null {
+	if (typeof candidate !== 'string') { return current; }
+	const candidateMs = Date.parse(candidate);
+	if (!Number.isFinite(candidateMs)) { return current; }
+	return current === null || candidateMs > Date.parse(current) ? candidate : current;
 }
 
 function buildTurnFromEvents(
@@ -50,7 +67,8 @@ function buildTurnFromEvents(
 	pendingAssistantEvents: any[],
 	processAssistantEvents: (pendingAssistantEvents: any[]) => ClaudeAssistantTurnData,
 	turnNumber: number,
-	estimateTokens: (text: string, model?: string) => number
+	estimateTokens: (text: string, model?: string) => number,
+	lastEventTime: string | null
 ): ChatTurn | null {
 	if (!userEvent) { return null; }
 	const content = userEvent.message?.content;
@@ -67,6 +85,7 @@ function buildTurnFromEvents(
 	return {
 		turnNumber,
 		timestamp: userEvent.timestamp ? new Date(userEvent.timestamp).toISOString() : null,
+		...(lastEventTime && !Number.isNaN(Date.parse(lastEventTime)) ? { endTimestamp: new Date(lastEventTime).toISOString() } : {}),
 		mode: 'agent',
 		userMessage,
 		assistantResponse: assistantText,

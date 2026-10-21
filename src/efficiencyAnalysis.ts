@@ -2,7 +2,7 @@ import type { ApplyButtonUsage, DailyModelEfficiency, DailyModelEfficiencyEntry,
 import type { CacheBreakagePeriodStats } from './cacheBreakage';
 import { getModelDisplayName } from './webview/shared/modelUtils';
 import { getModelBillingProvider } from './chartDataBuilder';
-import { createEmptyDailyModelEfficiencyEntry, mergeDailyModelEfficiency } from './modelEfficiency';
+import { createEmptyDailyModelEfficiencyEntry, medianTurnSeconds, mergeDailyModelEfficiency, mergeTurnLatency, outputTokensPerSecond } from './modelEfficiency';
 
 /**
  * Efficiency analysis — pure computations behind the "Efficiency" view.
@@ -751,7 +751,7 @@ export function splitTrailingWindows(dailyStats: DailyTokenStats[], now: Date): 
 // Period delta cards
 // ---------------------------------------------------------------------------
 
-export type DeltaUnit = 'ratio' | 'percent' | 'minutes' | 'tokens' | 'currency';
+export type DeltaUnit = 'ratio' | 'percent' | 'minutes' | 'seconds' | 'tokensPerSecond' | 'tokens' | 'currency';
 
 /** One month-over-month delta card. `prev`/`cur` are null when the metric is unavailable in that period. */
 export interface EfficiencyDelta {
@@ -1275,6 +1275,10 @@ export interface ModelPeriodMetrics {
 	cacheReadsReported: boolean;
 	activeMinutesPerSession: number | null;
 	applyRate: number | null;
+	/** Median end-to-end turn duration (includes tool runs and approval waits); null when no turn was timed. */
+	medianTurnSeconds: number | null;
+	/** Output tokens per second over timed turns that reported output tokens; null when none did. */
+	outputTokensPerSecond: number | null;
 	/** Share of this model's tokens per task category (0..1), for confounder context. */
 	taskMix: { [category: string]: number };
 	/** True when the window carries enough sessions for the ratios to be trusted. */
@@ -1486,6 +1490,7 @@ function addSessionRecord(totals: DailyModelEfficiencyEntry, rec: ModelSessionRe
 		totals.activeDurationMs += rec.activeDurationMs;
 		totals.durationSessionShare += rec.share;
 	}
+	mergeTurnLatency(totals, rec);
 }
 
 /**
@@ -1584,6 +1589,8 @@ function finishPeriodMetrics(
 		cacheReadsReported: totals.cachedReadTokens > 0,
 		activeMinutesPerSession: gatedRatio(totals.activeDurationMs / 60_000, totals.durationSessionShare),
 		applyRate: gatedRatio(totals.applies, totals.codeBlocks),
+		medianTurnSeconds: medianTurnSeconds(totals),
+		outputTokensPerSecond: outputTokensPerSecond(totals),
 		taskMix: normalizeMix(taskMixRaw),
 		sampleSufficient: enoughSessions,
 		editSampleSufficient: enoughEdits,
@@ -1848,7 +1855,7 @@ export function reconcileModelSelection(
 
 export type ModelComparisonMetricId =	| 'cost-per-edit-turn' | 'cost-per-session' | 'cost-per-kloc' | 'dollars-per-mtokens'
 	| 'tokens-per-edit-turn' | 'tokens-per-session' | 'one-shot-rate' | 'retry-rate'
-	| 'self-correction-rate' | 'cache-read-share' | 'fresh-input-per-call' | 'cached-input-per-call' | 'active-minutes-per-session' | 'apply-rate';
+	| 'self-correction-rate' | 'cache-read-share' | 'fresh-input-per-call' | 'cached-input-per-call' | 'active-minutes-per-session' | 'median-turn-seconds' | 'output-tokens-per-second' | 'apply-rate';
 
 /** One metric compared head-to-head between two sides. */
 export interface ModelComparisonRow {
@@ -2004,6 +2011,12 @@ export function compareModels(a: ModelPeriodMetrics, b: ModelPeriodMetrics): Mod
 		comparisonRow('active-minutes-per-session', 'Active minutes per session',
 			'Net working time per session, excluding idle gaps.',
 			a.activeMinutesPerSession, b.activeMinutesPerSession, 'minutes', 'down'),
+		comparisonRow('median-turn-seconds', 'Median turn time',
+			'Median end-to-end time per turn, including tool runs and approval waits. Not model latency.',
+			a.medianTurnSeconds, b.medianTurnSeconds, 'seconds', 'down'),
+		comparisonRow('output-tokens-per-second', 'Output tokens per second',
+			'Output tokens divided by turn time, over turns that reported output tokens. Includes tool waits, so it understates raw decode speed.',
+			a.outputTokensPerSecond, b.outputTokensPerSecond, 'tokensPerSecond', 'up'),
 		comparisonRow('apply-rate', 'Apply rate',
 			'Share of suggested code blocks actually applied — does the output stick?',
 			a.applyRate, b.applyRate, 'percent', 'up'),
