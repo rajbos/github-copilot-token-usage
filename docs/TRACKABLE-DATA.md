@@ -81,6 +81,12 @@ Detected models include:
 - Gemini 2.5 Pro, 3 Flash, 3 Pro
 - o3-mini, o4-mini, Grok, Raptor
 
+**Cache-adjusted input**: `ModelUsage.cachedReadTokens` is the portion of `inputTokens`
+served from the prompt cache. Fresh input is `inputTokens − cachedReadTokens` and is the
+fair basis for comparing token appetite across harnesses. Only adapters with
+`reportsCacheReads = true` populate it; for the others fresh input is an upper bound.
+See [Model Efficiency Comparison](features/MODEL-EFFICIENCY-COMPARISON.md).
+
 ### 5. Editor Usage
 **Data Source**: File path patterns
 

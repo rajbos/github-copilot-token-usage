@@ -7,6 +7,7 @@ import { createEmptySessionUsageAnalysis, applyModelTierClassification } from '.
 
 export class MistralVibeAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'mistralvibe';
+	readonly reportsCacheReads = true;
 	readonly displayName = 'Mistral Vibe';
 
 	constructor(private readonly mistralVibe: MistralVibeDataAccess) {}

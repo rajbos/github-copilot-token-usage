@@ -274,6 +274,42 @@ test('deriveModelEfficiencyRates: cacheHitRate is capped at 1.0 when cachedReadT
     assert.equal(rates.cacheHitRate, 1);
 });
 
+test('deriveModelEfficiencyRates: fresh and cached input per call split the input total', () => {
+    const rates = deriveModelEfficiencyRates({
+        calls: 10, editTurns: 0, oneShotEditTurns: 0, retries: 0, selfCorrections: 0,
+        toolCalls: 0, editToolCalls: 0, inputTokens: 1000, outputTokens: 0, cachedReadTokens: 800, cost: 0,
+    });
+    assert.equal(rates.freshInputTokensPerCall, 20);
+    assert.equal(rates.cachedInputTokensPerCall, 80);
+    assert.equal(rates.cacheReadsReported, true);
+});
+
+test('deriveModelEfficiencyRates: without cache reads fresh equals raw input and is flagged', () => {
+    const rates = deriveModelEfficiencyRates({
+        calls: 4, editTurns: 0, oneShotEditTurns: 0, retries: 0, selfCorrections: 0,
+        toolCalls: 0, editToolCalls: 0, inputTokens: 400, outputTokens: 0, cachedReadTokens: 0, cost: 0,
+    });
+    assert.equal(rates.freshInputTokensPerCall, 100);
+    assert.equal(rates.cachedInputTokensPerCall, 0);
+    assert.equal(rates.cacheReadsReported, false);
+});
+
+test('deriveModelEfficiencyRates: fresh input clamps to 0 when cachedReadTokens > inputTokens', () => {
+    const rates = deriveModelEfficiencyRates({
+        calls: 5, editTurns: 0, oneShotEditTurns: 0, retries: 0, selfCorrections: 0,
+        toolCalls: 0, editToolCalls: 0, inputTokens: 100, outputTokens: 0, cachedReadTokens: 3000, cost: 0,
+    });
+    assert.equal(rates.freshInputTokensPerCall, 0);
+    assert.equal(rates.cachedInputTokensPerCall, 20);
+});
+
+test('deriveModelEfficiencyRates: zero calls give null fresh/cached rates', () => {
+    const rates = deriveModelEfficiencyRates(createEmptyModelEfficiencyCounters());
+    assert.equal(rates.freshInputTokensPerCall, null);
+    assert.equal(rates.cachedInputTokensPerCall, null);
+    assert.equal(rates.cacheReadsReported, false);
+});
+
 // ---------------------------------------------------------------------------
 // computeEfficiencyLowUsageThreshold
 // ---------------------------------------------------------------------------

@@ -22,6 +22,7 @@ import { createEmptySessionUsageAnalysis, applyModelTierClassification } from '.
  */
 export class ClineAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'cline';
+	readonly reportsCacheReads = true;
 	readonly displayName = 'Cline';
 
 	constructor(private readonly cline: ClineDataAccess) {}

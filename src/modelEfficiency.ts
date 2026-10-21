@@ -694,6 +694,17 @@ export interface ModelEfficiencyRates {
 	medianTurnSeconds: number | null;
 	/** Output tokens per second over the timed turns that reported output tokens; null when none did. */
 	outputTokensPerSecond: number | null;
+	/**
+	 * Input tokens per turn that were not served from the prompt cache
+	 * (`inputTokens − cachedReadTokens`, clamped at 0). When the source never
+	 * reports cache reads ({@link cacheReadsReported} false) this equals the raw
+	 * input and is an upper bound.
+	 */
+	freshInputTokensPerCall: number | null;
+	/** Input tokens per turn served from the prompt cache (clamped to the input total). */
+	cachedInputTokensPerCall: number | null;
+	/** True when any cache read was reported; false means the fresh figure cannot be trusted as fresh. */
+	cacheReadsReported: boolean;
 }
 
 /** Output tokens per second from a counter's timed-turn totals; null without a usable denominator. */
@@ -710,6 +721,8 @@ export function medianTurnSeconds(c: Pick<ModelEfficiencyCounters, 'turnLatency'
 }
 
 export function deriveModelEfficiencyRates(c: ModelEfficiencyCounters): ModelEfficiencyRates {
+	// Clamp: some providers report cachedReadTokens > inputTokens (e.g. DeepSeek).
+	const cachedTokens = Math.min(c.cachedReadTokens, c.inputTokens);
 	return {
 		oneShotRate: c.editTurns > 0 ? c.oneShotEditTurns / c.editTurns : null,
 		retryRate: c.editTurns > 0 ? c.retries / c.editTurns : null,
@@ -722,6 +735,9 @@ export function deriveModelEfficiencyRates(c: ModelEfficiencyCounters): ModelEff
 		cacheHitRate: c.inputTokens > 0 ? Math.min(1, c.cachedReadTokens / c.inputTokens) : null,
 		medianTurnSeconds: medianTurnSeconds(c),
 		outputTokensPerSecond: outputTokensPerSecond(c),
+		freshInputTokensPerCall: c.calls > 0 ? (c.inputTokens - cachedTokens) / c.calls : null,
+		cachedInputTokensPerCall: c.calls > 0 ? cachedTokens / c.calls : null,
+		cacheReadsReported: c.cachedReadTokens > 0,
 	};
 }
 

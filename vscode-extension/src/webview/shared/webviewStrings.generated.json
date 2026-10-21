@@ -158,6 +158,8 @@
   "usage.band.spend.subtitle": "What that usage cost, which models it ran on, and how hard they were asked to think.",
   "usage.band.spend.title": "Spend & models",
   "usage.customAgents.title": "Custom Agents",
+  "usage.efficiency.freshInput.label": "Fresh in",
+  "usage.efficiency.freshInput.title": "Average input tokens per turn not served from the prompt cache. Shown with ≤ (an upper bound) when the source reports no cache reads",
   "usage.customAgents.subtitle": "Requests that ran under a custom agent you selected, shown with the name the session records. The same agent defined in .github/agents and in .claude/agents appears as two separate agents.",
   "usage.customAgents.none": "No custom agent used",
   "usage.contextRefs.noneRecent": "No context references recorded today or in the last 30 days.",

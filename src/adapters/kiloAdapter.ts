@@ -10,6 +10,7 @@ import { isUnsafeObjectKey } from '../utils/protoGuard';
 
 export class KiloAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'kilo';
+	readonly reportsCacheReads = true;
 	readonly displayName = 'Kilo Code';
 
 	constructor(private readonly kilo: KiloDataAccess) { }
