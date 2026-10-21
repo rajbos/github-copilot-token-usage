@@ -335,6 +335,8 @@
   "usage.tab.insights": "洞察",
   "usage.tab.corrections": "纠正",
   "usage.customAgents.title": "自定义代理",
+  "usage.efficiency.freshInput.label": "新输入",
+  "usage.efficiency.freshInput.title": "每轮未由提示缓存提供的平均输入 token 数。当来源未报告缓存读取时，显示 ≤（上限值）",
   "usage.customAgents.subtitle": "在你所选自定义代理下运行的请求，按会话记录的名称显示。在 .github/agents 和 .claude/agents 中定义的同一个代理会显示为两个独立的代理。",
   "usage.customAgents.none": "未使用自定义代理",
   "usage.band.overview.title": "概览",

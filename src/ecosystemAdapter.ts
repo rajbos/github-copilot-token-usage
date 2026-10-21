@@ -50,6 +50,14 @@ export interface IEcosystemAdapter {
 	 */
 	readonly skipBackendSync?: boolean;
 
+	/**
+	 * Whether this adapter's sessions populate `ModelUsage.cachedReadTokens` (prompt-cache
+	 * reads folded inside `inputTokens`). Absent means false: the source reports no cache
+	 * reads, so a "fresh input" figure derived from it is an upper bound. Set only after
+	 * checking the adapter's parser, never assumed.
+	 */
+	readonly reportsCacheReads?: boolean;
+
 	/** Returns true if this adapter owns the given session file path. */
 	handles(sessionFile: string): boolean;
 
@@ -237,4 +245,9 @@ export async function findWorkspacePathForDiscoveredPath(ecosystems: readonly IE
 		} catch { /* adapter failed; try next */ }
 	}
 	return undefined;
+}
+
+/** Display names of the adapters that do not report prompt-cache reads (their fresh-input figures are upper bounds). */
+export function listAdaptersWithoutCacheReads(adapters: readonly IEcosystemAdapter[]): string[] {
+	return adapters.filter(a => a.reportsCacheReads !== true).map(a => a.displayName);
 }
