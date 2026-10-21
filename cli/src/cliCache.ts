@@ -16,7 +16,8 @@ import { CliCachePolicy } from '../../src/cachePolicy';
 // 10-11 (#2316): view attributes — repository, task fallback for empty classifications, editScope.
 // 12 (#2316): all of the above in one version.
 // 13 (#2316): deletion-only sessions keep their lines of code.
-const CACHE_VERSION = 13;
+// 14 (#2483): Mistral Vibe sessions gain vendorStats and a wall-clock sessionDuration in their usage analysis.
+const CACHE_VERSION = 14;
 
 /** Maximum number of entries to keep in the cache file. */
 const MAX_CACHE_ENTRIES = 2000;

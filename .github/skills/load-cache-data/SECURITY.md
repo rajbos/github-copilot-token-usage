@@ -58,7 +58,9 @@ Nothing on disk. Stdout is one JSON line.
   (`NAME_KEYED_USAGE_FIELDS`, line 199), because those names come from the session and can
   carry a private project or customer name. `agentUsage` keeps only `agents` (how many custom
   agents were used) and `requests`; its `byAgent` map, keyed by the agent's name, is dropped for
-  the same reason (`sanitizeCacheEntry`). `modelSwitching.selectedModelExtensions` (the ids
+  the same reason (`sanitizeCacheEntry`). `vendorStats` (Mistral Vibe `meta.json` speed, duration, step, tool-outcome and reported-cost
+  numbers) is printed unchanged: every field has a fixed key and a numeric value read from numeric
+  `stats` fields only, so no session text or name can enter it. `modelSwitching.selectedModelExtensions` (the ids
   of the extensions that supplied the selected models, which can name a private or internal
   provider extension) is dropped; the model ids themselves are kept. `title`, `repository`,
   `workspaceFolderPath`, top-level `languageUsage` (keyed by file extension, or by the whole

@@ -14,7 +14,7 @@ location (trigger 4), and because its opt-in example mode can print session cont
 - Finds recent session files for Copilot Chat (VS Code variants), Copilot CLI
   (`~/.copilot/session-state`), JetBrains (`~/.copilot/jb`), Claude Code
   (`~/.claude/projects`), Gemini CLI (`~/.gemini/tmp`), Antigravity
-  (`~/.gemini/antigravity/brain`) and OpenCode (`~/.local/share/opencode`).
+  (`~/.gemini/antigravity/brain`) OpenCode (`~/.local/share/opencode`) and Mistral Vibe (`~/.vibe/logs/session/*/meta.json`, `meta.json` only).
 - Reads up to `--max` files per platform (default 5) modified within `--days` (default 30),
   at most 5000 JSONL lines per file, walks each JSON value recording field paths and types,
   and checks the small "contract" of fields our parsers need against `schema-baselines.json`.

@@ -22,6 +22,8 @@ import type {
 	TokenEstimator,
 	LanguageUsage,
 	LatencyHistogram,
+	VendorSessionStats,
+	VendorToolOutcomes,
 } from './types';
 import { mergeAutonomyUsage, recordAutonomy } from './autonomy';
 import { advanceCliAgentState, createCliAgentState, mergeAgentUsage, readVsCodeModeId, recordVsCodeRequestAgents, type CliAgentState } from './agentUsage';
@@ -1472,6 +1474,7 @@ export function mergeUsageAnalysis(period: UsageAnalysisPeriod, analysis: Sessio
 	_muaMergeTaskCategories(period, analysis);
 	_muaMergeCorrections(period, analysis);
 	_muaMergeCacheBreakage(period, analysis);
+	_muaMergeVendorStats(period, analysis);
 }
 
 /** Fold per-tool / per-MCP-server failure counts and latency histograms into the period (all optional, all additive). */
@@ -1516,6 +1519,29 @@ function _muaMergeHistograms(
 		mergeLatencyHistogram(target[key] ??= createLatencyHistogram(), histogram);
 	}
 	return target;
+}
+
+/** Fold a session's vendor-reported stats into the period (all fields optional and additive; absent stays absent). */
+function _muaMergeVendorStats(period: UsageAnalysisPeriod, analysis: SessionUsageAnalysis): void {
+	const from = analysis.vendorStats;
+	if (!from) { return; }
+	const into: VendorSessionStats = period.vendorStats ??= {};
+	for (const key of ['tokensPerSecond', 'lastTurnDurationMs'] as const) {
+		const add = from[key];
+		if (add) { into[key] = { samples: (into[key]?.samples ?? 0) + add.samples, sum: (into[key]?.sum ?? 0) + add.sum }; }
+	}
+	for (const key of ['reportedCostDollars', 'steps'] as const) {
+		const add = from[key];
+		if (add !== undefined) { into[key] = (into[key] ?? 0) + add; }
+	}
+	if (from.toolOutcomes) { _muaMergeToolOutcomeCounters(into.toolOutcomes ??= {}, from.toolOutcomes); }
+}
+
+function _muaMergeToolOutcomeCounters(out: VendorToolOutcomes, from: VendorToolOutcomes): void {
+	for (const key of ['succeeded', 'failed', 'rejected', 'agreed', 'hookDenied'] as const) {
+		const add = from[key];
+		if (add !== undefined) { out[key] = (out[key] ?? 0) + add; }
+	}
 }
 
 /** Fold a session's cache-breakage result into the period's aggregated stats. */

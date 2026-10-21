@@ -1,6 +1,6 @@
 ---
 name: validate-session-schemas
-description: Loop over recent local AI-coding session log files for every supported file-based platform (Copilot Chat, Copilot CLI, JetBrains, Claude Code, Gemini CLI, Antigravity, OpenCode) and validate they still match the documented schema, while surfacing newly-discovered fields we could start using. Use after an editor/CLI update, when adding a parser, or on a schedule to catch schema drift early.
+description: Loop over recent local AI-coding session log files for every supported file-based platform (Copilot Chat, Copilot CLI, JetBrains, Claude Code, Gemini CLI, Antigravity, OpenCode, Mistral Vibe) and validate they still match the documented schema, while surfacing newly-discovered fields we could start using. Use after an editor/CLI update, when adding a parser, or on a schedule to catch schema drift early.
 ---
 
 # Validate Session Schemas Skill
@@ -43,10 +43,11 @@ The source of truth for supported platforms is
 | `gemini-cli`   | Gemini CLI           | jsonl  | `~/.gemini/tmp/*/chats/session-*.jsonl` |
 | `antigravity`  | Antigravity          | jsonl  | `~/.gemini/antigravity/brain/*/.system_generated/logs/transcript.jsonl` |
 | `opencode`     | OpenCode             | json / jsonl | `<xdg-data>/opencode/storage/session/**/ses_*.json`; also `opencode.db` (SQLite, via `node:sqlite`) |
+| `mistral-vibe` | Mistral Vibe         | json   | `<VIBE_HOME or ~/.vibe>/logs/session/*/meta.json` (only `meta.json`; `messages.jsonl` is never read) |
 
 **Not validated by this skill** (DB / binary formats that need the adapters'
 own parsers, so a generic JSON walker can't read them): `crush` (SQLite),
-`visual-studio` (MessagePack), `continue`, `mistral-vibe`, `claude-desktop`.
+`visual-studio` (MessagePack), `continue`, `claude-desktop`.
 
 OpenCode's `opencode.db` is opened read-only. Only the DB sessions that land in
 the platform's `--days` / `--max` window (ranked together with legacy JSON

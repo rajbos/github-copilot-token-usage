@@ -634,6 +634,21 @@ test('MistralVibe: __proto__ active_model falls back to the default model', asyn
 	}
 });
 
+test('MistralVibe: hostile stats values are ignored rather than propagated', async () => {
+	const tmpDir = mkTmpDir('mistral-robust-');
+	try {
+		const file = path.join(tmpDir, 'meta.json');
+		fs.writeFileSync(file, JSON.stringify({
+			stats: { tokens_per_second: '__proto__', last_turn_duration: { a: 1 }, steps: [1], session_cost: -5, tool_calls_failed: 'x' },
+		}), 'utf8');
+		const stats = await new MistralVibeDataAccess().getSessionStats(file);
+		assertNoPrototypePollution();
+		assert.deepEqual(Object.values(stats).filter(v => v !== undefined), []);
+	} finally {
+		rm(tmpDir);
+	}
+});
+
 // ---------------------------------------------------------------------------
 // Shared accumulators (sessionParser.TokenAccumulator, statsHelpers.addModelUsage)
 // ---------------------------------------------------------------------------
