@@ -4,7 +4,7 @@
  */
 import type { TaskCategory, TaskCategoryBreakdown, TaskClassificationResult } from './taskClassification';
 import type { CacheBreakageResult, CacheBreakagePeriodStats } from './cacheBreakage';
-import type { HydraFusionSummary } from './hydrafusion';
+import type { HydraFusionSummary, HydraFusionRollup } from './hydrafusion';
 
 /**
  * Character-to-token ratio for a specific AI model.
@@ -226,6 +226,8 @@ export interface ModelSessionRecord {
   outputTokens: number;
   cachedReadTokens: number;
   cost: number;
+  /** Token-share of the session's exact Copilot billing in USD; absent when the session has none. */
+  exactCost?: number;
   calls: number;
   editTurns: number;
   oneShotEditTurns: number;
@@ -483,6 +485,8 @@ export interface ThinkingEffortUsage {
 }
 
 export interface SessionUsageAnalysis {
+  /** Numeric HydraFusion routing rollup (Copilot CLI sessions that routed through it). Absent otherwise. */
+  hydraFusion?: HydraFusionRollup;
   toolCalls: ToolCallUsage;
   modeUsage: ModeUsage;
   /** Per-interaction autonomy level (autopilot/auto vs supervised). Absent when no surface reported one. */
@@ -754,6 +758,14 @@ export interface ModelEfficiencyCounters {
   cachedReadTokens: number;
   /** Estimated cost in USD (provider/API rates). Folded in at aggregation time. */
   cost: number;
+  /**
+   * Exact GitHub Copilot billing in USD (from `totalNanoAiu`), summed over the sessions that
+   * reported it. Kept apart from the estimated `cost` — the two are different bases and are
+   * never added. Absent when no folded session carried exact billing.
+   */
+  exactCost?: number;
+  /** Sessions whose exact billing is included in `exactCost`; compare with `sessions` to see whether the model is fully covered. */
+  exactCostSessions?: number;
   /**
    * End-to-end response duration of this model's turns (user message to the last
    * assistant/tool event of the turn, so it includes tool execution and approval
@@ -1294,6 +1306,8 @@ export interface AutomaticCompactionStats {
 
 export interface UsageAnalysisPeriod {
   sessions: number;
+  /** Summed HydraFusion routing rollup across the period's sessions. Absent when none routed. */
+  hydraFusion?: HydraFusionRollup;
   toolCalls: ToolCallUsage;
   modeUsage: ModeUsage;
   /** Aggregated per-interaction autonomy level across the period's sessions. */

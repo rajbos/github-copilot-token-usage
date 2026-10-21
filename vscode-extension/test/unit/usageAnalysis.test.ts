@@ -208,6 +208,36 @@ test('mergeUsageAnalysis: accumulates tool call counts across sessions', () => {
     assert.equal(period.toolCalls.byTool['listFiles'], 1);
 });
 
+test('mergeUsageAnalysis: sums HydraFusion rollups across sessions and merges the pattern mix', () => {
+    const period = emptyPeriod();
+    const rollup = (turns: number, aiu: number, pattern: string) => ({
+        sessions: 1, totalTurns: turns, compoundTurns: 1, judgeAccepts: 0, judgeRejects: 1, escalatedTurns: 1,
+        totalAiu: aiu, reviewAiu: aiu / 2, degradedTurns: 0, patternCounts: [{ pattern, turns, aiu }],
+    });
+    const a1 = emptyAnalysis();
+    a1.hydraFusion = rollup(2, 10, 'cascade');
+    const a2 = emptyAnalysis();
+    a2.hydraFusion = rollup(1, 4, 'cascade');
+    const a3 = emptyAnalysis();
+    a3.hydraFusion = rollup(1, 1, 'single');
+    mergeUsageAnalysis(period, a1);
+    mergeUsageAnalysis(period, a2);
+    mergeUsageAnalysis(period, a3);
+    mergeUsageAnalysis(period, emptyAnalysis());
+    assert.equal(period.hydraFusion!.sessions, 3);
+    assert.equal(period.hydraFusion!.totalTurns, 4);
+    assert.equal(period.hydraFusion!.totalAiu, 15);
+    assert.deepEqual(period.hydraFusion!.patternCounts, [{ pattern: 'cascade', turns: 3, aiu: 14 }, { pattern: 'single', turns: 1, aiu: 1 }]);
+    // The session's own rollup is not mutated by being merged.
+    assert.equal(a1.hydraFusion.totalTurns, 2);
+});
+
+test('mergeUsageAnalysis: a period with no routed sessions has no hydraFusion rollup', () => {
+    const period = emptyPeriod();
+    mergeUsageAnalysis(period, emptyAnalysis());
+    assert.equal(period.hydraFusion, undefined);
+});
+
 test('mergeUsageAnalysis: accumulates model efficiency counters per model', () => {
     const period = emptyPeriod();
     const a = emptyAnalysis();

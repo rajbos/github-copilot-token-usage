@@ -2228,3 +2228,38 @@ test('l10n: the banner\'s placeholder templates keep their {0}/{1} slots in both
 		mock.setLanguage('en');
 	}
 });
+
+test('l10n: cost-basis switch and Router card strings resolve in English and zh-cn', () => {
+	mock.setLanguage('en');
+	const english: Record<string, string> = {
+		'efficiency.models.controls.costBasis': 'Cost basis',
+		'efficiency.models.costBasis.provider': 'Provider rates',
+		'efficiency.models.costBasis.exact': 'Exact Copilot billing',
+		'usage.router.title': 'HydraFusion Router',
+		'usage.router.stat.compoundRate': 'Compound rate',
+		'usage.router.stat.judgeRejection': 'Judge rejection rate',
+		'usage.router.stat.aiuPerTurn': 'AIU per turn',
+		'usage.router.period.last30Days': 'Last 30 days',
+	};
+	for (const [key, value] of Object.entries(english)) {
+		assert.equal(t(key), value, `English value for ${key}`);
+	}
+	assert.match(t('efficiency.models.costBasis.exactNote'), /exact Copilot billing/);
+	assert.equal(t('efficiency.models.sideStats', '1', '2', '3K', '$4.00'), '1 sessions · 2 edit turns · 3K tokens · $4.00');
+	assert.match(t('efficiency.models.costBasis.providerNote'), /provider\/API rates/);
+
+	mock.setLanguage('zh-cn');
+	try {
+		const chinese: Record<string, string> = {
+			'efficiency.models.controls.costBasis': '\u6210\u672c\u57fa\u51c6',
+			'efficiency.models.costBasis.provider': '\u63d0\u4f9b\u5546\u8d39\u7387',
+			'usage.router.title': 'HydraFusion \u8def\u7531\u5668',
+			'usage.router.stat.compoundRate': '\u590d\u5408\u7387',
+		};
+		for (const [key, value] of Object.entries(chinese)) {
+			assert.equal(t(key), value, `zh-cn value for ${key}`);
+		}
+	} finally {
+		mock.setLanguage('en');
+	}
+});

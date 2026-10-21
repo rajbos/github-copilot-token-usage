@@ -2,6 +2,7 @@
  * Usage analysis functions for session data processing.
  * Analysis and aggregation functions extracted from CopilotTokenTracker.
  */
+import { analyzeHydraFusionSession, toHydraFusionRollup, addHydraFusionRollup, createEmptyHydraFusionRollup } from './hydrafusion';
 import * as fs from 'fs';
 import * as path from 'path';
 import type {
@@ -1474,7 +1475,14 @@ export function mergeUsageAnalysis(period: UsageAnalysisPeriod, analysis: Sessio
 	_muaMergeTaskCategories(period, analysis);
 	_muaMergeCorrections(period, analysis);
 	_muaMergeCacheBreakage(period, analysis);
+	_muaMergeHydraFusion(period, analysis);
 	_muaMergeVendorStats(period, analysis);
+}
+
+/** Sum the session's HydraFusion routing rollup into the period (additive; absent for sessions that never routed). */
+function _muaMergeHydraFusion(period: UsageAnalysisPeriod, analysis: SessionUsageAnalysis): void {
+	if (!analysis.hydraFusion) { return; }
+	period.hydraFusion = addHydraFusionRollup(period.hydraFusion ?? createEmptyHydraFusionRollup(), analysis.hydraFusion);
 }
 
 /** Fold per-tool / per-MCP-server failure counts and latency histograms into the period (all optional, all additive). */
@@ -2888,6 +2896,12 @@ async function _asuProcessJsonlUsage(
 	await _asuProcessNonDeltaJsonl(deps, sessionFile, lines, fileContent, analysis);
 }
 
+/** Records the session's numeric HydraFusion routing rollup (Copilot CLI sessions that routed through it). */
+function _asuAttachHydraFusion(fileContent: string, analysis: SessionUsageAnalysis): void {
+	const hydraFusion = analyzeHydraFusionSession(fileContent);
+	if (hydraFusion) { analysis.hydraFusion = toHydraFusionRollup(hydraFusion); }
+}
+
 async function _asuProcessJsonUsage(
 	deps: UsageAnalysisDeps,
 	sessionFile: string,
@@ -2976,6 +2990,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 
 		if (isJsonl) {
 			await _asuProcessJsonlUsage(deps, sessionFile, fileContent, analysis);
+			_asuAttachHydraFusion(fileContent, analysis);
 		} else {
 			await _asuProcessJsonUsage(deps, sessionFile, fileContent, preloadedParsedJson, analysis);
 		}

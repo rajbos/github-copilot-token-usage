@@ -132,6 +132,49 @@ themselves rather than a billing plan. This is deliberately different from the
 Copilot subscription actually consumes. Comparing dollar figures across the two
 tabs is not meaningful.
 
+### Exact Copilot billing basis
+
+Copilot CLI sessions report what they actually cost (`session.shutdown.totalNanoAiu`,
+surfaced as `copilotExactCostDollars`). That figure is folded into the per-model
+counters as a separate `exactCost` next to the estimated `cost`
+(plus `exactCostSessions`, the number of sessions it covers). The two are never
+added together. Each session record also carries its token-share of the exact cost.
+
+When any session in the payload has exact billing, the Models tab shows a
+**Cost basis** switch:
+
+- **Provider rates** (default) — token counts at provider/API rates, as above.
+- **Exact Copilot billing** — the cost rows (cost per edit turn, per session, per
+  1000 lines, per million tokens) use `exactCost`.
+
+Exact billing only counts when it covers **every** session on a side (after the
+mixed-model and outlier filters). A side with any session lacking it renders "—" on
+the cost rows and a caveat says so, rather than mixing exact figures with estimates.
+The usual sample floors and the 10% noise band still apply.
+
+**HydraFusion needs this basis.** The router row (`hydrafusion`) has no list price —
+its cost is the sum of whatever legs ran — so it has no entry in `modelPricing.json`.
+For a routed session the whole session's exact cost lands on the router row (the real
+models behind it are re-keyed onto the router, see `attributeRoutedModelUsage`). To
+judge whether routing is cheaper than a single pinned model, switch to the exact
+basis and compare it with a Copilot CLI model whose sessions also report exact
+billing. Sessions cached before exact billing was recorded have none, so they show
+"—" on this basis.
+
+The drift chart below the comparison keeps plotting provider-rate cost.
+
+### Router card (Usage Analysis)
+
+`aggregateHydraFusionSummaries()` in `src/hydrafusion.ts` produces period totals for
+Copilot CLI sessions that routed through HydraFusion: turns, compound rate, judge
+accept/reject and rejection rate, escalation rate, AIU per turn, review overhead
+share, total spend and the pattern mix. Numbers only. Each session's rollup
+(`SessionUsageAnalysis.hydraFusion`) is summed into `UsageAnalysisPeriod.hydraFusion`
+and `buildUsageAnalysisViewData()` ships the derived aggregate as `hydraFusion`
+(one entry per period, `null` when nothing routed) to every host, including the
+CLI's `usage-analysis --json`. The Usage Analysis view renders it as a "HydraFusion
+Router" card under Multi-Model Usage.
+
 ## Guardrails against false conclusions
 
 The tab is designed to refuse a verdict rather than invent one.

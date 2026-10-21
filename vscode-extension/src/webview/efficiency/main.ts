@@ -28,6 +28,7 @@ import type {
 	ModelComparisonRow,
 	ModelCompareSelection,
 	ModelCompareWindowId,
+	ModelCostBasis,
 	ModelPeriodMetrics,
 	ModelSessionFilter,
 	SkillImpact,
@@ -894,11 +895,13 @@ const modelState: ModelCompareSelection & {
 	trendMetric: ModelComparisonMetricId;
 	initialized: boolean;
 	sessionFilter: ModelSessionFilter;
+	costBasis: ModelCostBasis;
 } = {
 	mode: 'models', modelA: '', modelB: '',
 	window: 'last30', windowA: 'lastMonth', windowB: 'thisMonth',
 	trendMetric: 'cost-per-edit-turn', initialized: false,
 	sessionFilter: { ...DEFAULT_MODEL_SESSION_FILTER },
+	costBasis: 'provider',
 };
 
 /** Which window ids currently have per-model data, in `WINDOW_OPTIONS` order. */
@@ -980,15 +983,15 @@ function buildModelComparison(d: EfficiencyViewData): ModelComparison | null {
 		const daysB = selectDaysInWindow(scopedDays, wB);
 		// One cutoff for both sides, so neither is trimmed by a different yardstick.
 		const cutoff = computeOutlierCutoffTokens([{ days: daysA, model: modelState.modelA }, { days: daysB, model: modelState.modelA }], filter);
-		const a = computeModelPeriodMetrics(daysA, modelState.modelA, wA.label, filter, cutoff);
-		const b = computeModelPeriodMetrics(daysB, modelState.modelA, wB.label, filter, cutoff);
+		const a = computeModelPeriodMetrics(daysA, modelState.modelA, wA.label, filter, cutoff, modelState.costBasis);
+		const b = computeModelPeriodMetrics(daysB, modelState.modelA, wB.label, filter, cutoff, modelState.costBasis);
 		return a && b ? compareModels(a, b) : null;
 	}
 	const w = resolveModelCompareWindow(modelState.window, now);
 	const days = selectDaysInWindow(scopedDays, w);
 	const cutoff = computeOutlierCutoffTokens([{ days, model: modelState.modelA }, { days, model: modelState.modelB }], filter);
-	const a = computeModelPeriodMetrics(days, modelState.modelA, w.label, filter, cutoff);
-	const b = computeModelPeriodMetrics(days, modelState.modelB, w.label, filter, cutoff);
+	const a = computeModelPeriodMetrics(days, modelState.modelA, w.label, filter, cutoff, modelState.costBasis);
+	const b = computeModelPeriodMetrics(days, modelState.modelB, w.label, filter, cutoff, modelState.costBasis);
 	return a && b ? compareModels(a, b) : null;
 }
 
@@ -1139,8 +1142,19 @@ function renderModelControls(d: EfficiencyViewData, eligible: ComparableModel[])
 		{ value: 'none', label: localize('efficiency.models.outliers.none') },
 	], modelState.sessionFilter.outlierTrim);
 	const mixedToggle = `<label class="model-toggle"><input type="checkbox" id="model-include-mixed"${modelState.sessionFilter.includeMixedSessions ? ' checked' : ''}> ${caption('includeMixed')}</label>`;
-	const filterRow = `<div class="model-controls-break"></div><label>${caption('outliers')} ${trimSelect}</label>${mixedToggle}`;
+	const basisSelect = hasExactCostData(d)
+		? `<label>${caption('costBasis')} ${selectHtml('model-cost-basis', [
+			{ value: 'provider', label: localize('efficiency.models.costBasis.provider') },
+			{ value: 'exact', label: localize('efficiency.models.costBasis.exact') },
+		], modelState.costBasis)}</label>`
+		: '';
+	const filterRow = `<div class="model-controls-break"></div><label>${caption('outliers')} ${trimSelect}</label>${mixedToggle}${basisSelect}`;
 	return `<div class="model-controls"><label>${caption('mode')} ${modeSelect}</label>${body}${filterRow}</div>`;
+}
+
+/** True when any session in the payload carries exact Copilot billing, i.e. the cost-basis switch can show something. */
+function hasExactCostData(d: EfficiencyViewData): boolean {
+	return d.modelDaily.some(day => Object.values(day.modelEfficiency ?? {}).some(e => (e.exactCostSessions ?? 0) > 0));
 }
 
 /** Renders a side's headline volume so the reader can judge the sample for themselves. */
@@ -1150,7 +1164,7 @@ function sideSummary(m: ModelPeriodMetrics, side: 'A' | 'B'): string {
 			<div class="model-side-tag">${side}</div>
 			<div class="model-side-name">${escapeHtml(m.displayName)}</div>
 			<div class="model-side-period">${escapeHtml(m.periodLabel)}</div>
-			<div class="model-side-stats">${m.sessions} sessions · ${m.editTurns} edit turns · ${formatCompact(m.tokens)} tokens · $${m.cost.toFixed(2)}</div>
+			<div class="model-side-stats">${escapeHtml(localizeFormat('efficiency.models.sideStats', String(m.sessions), String(m.editTurns), formatCompact(m.tokens), m.costBasis === 'exact' && !m.exactCostAvailable ? '—' : `$${m.cost.toFixed(2)}`))}</div>
 		</div>`;
 }
 
@@ -1348,7 +1362,7 @@ function renderModelsTab(d: EfficiencyViewData, s: ScopedData): string {
 	// because an unrelated selection came up empty.
 	const comparison = cmp
 		? `
-		<p class="eff-section-note">Head-to-head efficiency. Costs use <b>provider/API rates</b>, so this measures the models themselves rather than a billing plan — “model vendor” above is the model's own provider, not who bills for the call. Metrics whose sample was too small show as “—”. Session-level signals (duration, lines changed) are split across a session's models by token share.</p>
+		<p class="eff-section-note">${modelState.costBasis === 'exact' ? localize('efficiency.models.costBasis.exactNote') : localize('efficiency.models.costBasis.providerNote')}</p>
 		<div class="model-sides">${sideSummary(cmp.a, 'A')}${sideSummary(cmp.b, 'B')}</div>
 		${filterSummaryHtml(cmp)}
 		${verdictHtml(cmp)}
@@ -1812,6 +1826,7 @@ function wireModelControls(): void {
 	bind('window-a', v => { modelState.windowA = v as ModelCompareWindowId; });
 	bind('window-b', v => { modelState.windowB = v as ModelCompareWindowId; });
 	bind('model-outlier-trim', v => { modelState.sessionFilter.outlierTrim = v as ModelSessionFilter['outlierTrim']; });
+	bind('model-cost-basis', v => { modelState.costBasis = v === 'exact' ? 'exact' : 'provider'; });
 	bind('model-include-mixed', () => {
 		modelState.sessionFilter.includeMixedSessions = (document.getElementById('model-include-mixed') as HTMLInputElement).checked;
 	});

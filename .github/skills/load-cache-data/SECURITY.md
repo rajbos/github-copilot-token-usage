@@ -62,7 +62,7 @@ Nothing on disk. Stdout is one JSON line.
   numbers) is printed unchanged: every field has a fixed key and a numeric value read from numeric
   `stats` fields only, so no session text or name can enter it. `modelSwitching.selectedModelExtensions` (the ids
   of the extensions that supplied the selected models, which can name a private or internal
-  provider extension) is dropped; the model ids themselves are kept. `title`, `repository`,
+  provider extension) is dropped; the model ids themselves are kept. `hydraFusion` (the Copilot CLI router rollup) is printed unchanged: it holds only turn, judge, escalation and AIU counts plus the router's own pattern ids (`cascade`, `single`, ...), never prompt text, model ids or timestamps (see `toHydraFusionRollup`). `title`, `repository`,
   `workspaceFolderPath`, top-level `languageUsage` (keyed by file extension, or by the whole
   basename for extensionless files), any unrecognized top-level field and the cache file path
   are omitted.
