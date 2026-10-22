@@ -19,6 +19,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import initSqlJs from 'sql.js';
+import { SqlJsFileDbCacheBase } from './utils/sqlJsDbCache';
 import type { ModelUsage } from './types';
 import { toLocalDayKey } from './utils/dayKeys';
 import { isUnsafeObjectKey } from './utils/protoGuard';
@@ -26,7 +27,6 @@ import { isUnsafeObjectKey } from './utils/protoGuard';
 // Access SqlJsStatic and Database via the globally declared initSqlJs namespace
 // (made available by the /// <reference types="sql.js" /> directive above).
 type SqlJsStatic = initSqlJs.SqlJsStatic;
-type SqlDatabase = initSqlJs.Database;
 type SqlValue = initSqlJs.SqlValue;
 
 export interface CliStoreSession {
@@ -97,18 +97,13 @@ type UsageEventRow = {
 	nanoAiu: number;
 };
 
-type CliStoreDbCacheEntry = { db: SqlDatabase; mtimeMs: number; size: number };
 type CliStoreSessionsCacheEntry = { mtimeMs: number; size: number; byId: Map<string, CliStoreSession> };
 type CliStoreTurnCountsCacheEntry = { mtimeMs: number; size: number; byId: Map<string, number> };
 type CliStoreUsage = { modelUsage: ModelUsage; actualTokens: number; cacheReadTokens: number; nanoAiu: number };
 type CliStoreUsageCacheEntry = { mtimeMs: number; size: number; bySessionId: Map<string, CliStoreUsage> };
 
-export class CopilotCliStoreAccess {
-	private _sqlJsModule: SqlJsStatic | null = null;
-	private _sqlJsInitPromise: Promise<SqlJsStatic> | null = null;
+export class CopilotCliStoreAccess extends SqlJsFileDbCacheBase {
 	private _initSqlJsFn: typeof initSqlJs;
-	private _dbCache: Map<string, CliStoreDbCacheEntry> = new Map();
-	private _dbCacheInflight: Map<string, Promise<SqlDatabase | null>> = new Map();
 	// Bulk-loaded caches keyed by dbPath, invalidated on the same mtime/size basis
 	// as _dbCache. Populated by a single query over ALL sessions/turns instead of
 	// one query per session — see getSessionsMap()/getTurnCountsMap() for why.
@@ -120,108 +115,22 @@ export class CopilotCliStoreAccess {
 	private _usageCacheInflight: Map<string, Promise<Map<string, CliStoreUsage>>> = new Map();
 
 	constructor(initSqlJsFn?: typeof initSqlJs) {
+		super();
 		this._initSqlJsFn = initSqlJsFn ?? initSqlJs;
 	}
 
 	dispose(): void {
-		for (const entry of this._dbCache.values()) {
-			try { entry.db.close(); } catch { /* ignore */ }
-		}
-		this._dbCache.clear();
-		this._dbCacheInflight.clear();
+		super.dispose();
 		this._sessionsCache.clear();
 		this._sessionsCacheInflight.clear();
 		this._turnCountsCache.clear();
 		this._turnCountsCacheInflight.clear();
 		this._usageCache.clear();
 		this._usageCacheInflight.clear();
-		this._sqlJsInitPromise = null;
 	}
 
-	private closeDb(db: SqlDatabase): void {
-		try { db.close(); } catch { /* ignore */ }
-	}
-
-	private isMissingFileError(error: unknown): boolean {
-		const code = (error as NodeJS.ErrnoException)?.code;
-		return code === 'ENOENT' || code === 'ENOTDIR';
-	}
-
-	private async statDb(dbPath: string): Promise<fs.Stats | null> {
-		try {
-			return await fs.promises.stat(dbPath);
-		} catch (error) {
-			if (this.isMissingFileError(error) && this._dbCache.has(dbPath)) {
-				this.closeDb(this._dbCache.get(dbPath)!.db);
-				this._dbCache.delete(dbPath);
-			}
-			return null;
-		}
-	}
-
-	private isCachedDbCurrent(dbPath: string, stats: fs.Stats): boolean {
-		const entry = this._dbCache.get(dbPath);
-		return !!entry && entry.mtimeMs === stats.mtimeMs && entry.size === stats.size;
-	}
-
-	private getDbCacheKey(dbPath: string, stats: fs.Stats): string {
-		return `${dbPath}:${stats.mtimeMs}:${stats.size}`;
-	}
-
-	private sameDbStats(left: fs.Stats, right: fs.Stats): boolean {
-		return left.mtimeMs === right.mtimeMs && left.size === right.size;
-	}
-
-	private async refreshDb(dbPath: string, stats: fs.Stats): Promise<SqlDatabase | null> {
-		let db: SqlDatabase;
-		try {
-			const SQL = await this.initSqlJs();
-			const buffer = await fs.promises.readFile(dbPath);
-			db = new SQL.Database(buffer);
-		} catch {
-			return this._dbCache.get(dbPath)?.db ?? null;
-		}
-
-		const currentStats = await this.statDb(dbPath);
-		if (!currentStats || !this.sameDbStats(stats, currentStats)) {
-			this.closeDb(db);
-			return this._dbCache.get(dbPath)?.db ?? null;
-		}
-
-		const existing = this._dbCache.get(dbPath);
-		if (existing) { this.closeDb(existing.db); }
-		this._dbCache.set(dbPath, { db, mtimeMs: stats.mtimeMs, size: stats.size });
-		return db;
-	}
-
-	/**
-	 * Returns a cached SQL.Database instance for the session-store.db path,
-	 * re-opening only when the file's mtime or size changes.
-	 *
-	 * Uses single-flight deduplication to prevent concurrent callers from each
-	 * re-reading the DB file and leaving instances unclosed.
-	 */
-	private async getDb(dbPath: string): Promise<SqlDatabase | null> {
-		const stats = await this.statDb(dbPath);
-		if (!stats) { return this._dbCache.get(dbPath)?.db ?? null; }
-
-		if (this.isCachedDbCurrent(dbPath, stats)) {
-			return this._dbCache.get(dbPath)!.db;
-		}
-
-		const cacheKey = this.getDbCacheKey(dbPath, stats);
-		const inflight = this._dbCacheInflight.get(cacheKey);
-		if (inflight) { return inflight; }
-
-		const createDbPromise = this.refreshDb(dbPath, stats);
-		this._dbCacheInflight.set(cacheKey, createDbPromise);
-		try {
-			return await createDbPromise;
-		} finally {
-			if (this._dbCacheInflight.get(cacheKey) === createDbPromise) {
-				this._dbCacheInflight.delete(cacheKey);
-			}
-		}
+	protected override createSqlJs(config?: { wasmBinary: ArrayBuffer }): Promise<SqlJsStatic> {
+		return this._initSqlJsFn(config);
 	}
 
 	/** Absolute path to ~/.copilot/session-store.db. */
@@ -438,27 +347,6 @@ export class CopilotCliStoreAccess {
 		if (!updatedAt || Number.isNaN(updatedAt.getTime())) { return baseStats; }
 		Object.defineProperty(baseStats, 'mtime', { value: updatedAt, writable: false });
 		return baseStats;
-	}
-
-	/** Lazily initialise and cache the sql.js WASM module. */
-	async initSqlJs(): Promise<SqlJsStatic> {
-		if (this._sqlJsModule) { return this._sqlJsModule; }
-		if (!this._sqlJsInitPromise) {
-			this._sqlJsInitPromise = (async () => {
-				const wasmPath = path.join(__dirname, 'sql-wasm.wasm');
-				let wasmBinary: Uint8Array | undefined;
-				try {
-					wasmBinary = await fs.promises.readFile(wasmPath);
-				} catch { /* WASM file not present — proceed without pre-loaded binary */ }
-				const module = await this._initSqlJsFn(wasmBinary ? { wasmBinary: wasmBinary.buffer as ArrayBuffer } : undefined);
-				this._sqlJsModule = module;
-				return module;
-			})().catch(err => {
-				this._sqlJsInitPromise = null;
-				throw err;
-			});
-		}
-		return this._sqlJsInitPromise;
 	}
 
 	/**
