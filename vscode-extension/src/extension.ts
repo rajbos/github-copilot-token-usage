@@ -301,7 +301,6 @@ import {
   analyzeContextReferences as _analyzeContextReferences,
   analyzeContentReferences as _analyzeContentReferences,
   analyzeVariableData as _analyzeVariableData,
-  deriveConversationPatterns as _deriveConversationPatterns,
   analyzeRequestContext as _analyzeRequestContext,
   calculateModelSwitching as _calculateModelSwitching,
   trackEnhancedMetrics as _trackEnhancedMetrics,

@@ -783,39 +783,6 @@ function _eatdlProcessLlmRequest(event: Record<string, unknown>, acc: EatdlAcc):
 	acc.modelBreakdown[model] = entry;
 }
 
-/**
- * Extract token totals from all `llm_request` events in a Copilot Chat debug log.
- *
- * Agent-mode sessions make multiple LLM API calls per user turn. Only the last
- * call's tokens are stored in the chat session file; the debug log records every
- * call. Summing across all `llm_request` events gives the true session total.
- *
- * Returns null when no `llm_request` events are found (debug logging disabled,
- * or file is empty / does not exist).
- */
-type EatdlState = { inputTokens: number; outputTokens: number; cachedTokens: number; modelTurns: number; modelBreakdown: Record<string, { inputTokens: number; outputTokens: number; cachedTokens: number }> };
-
-function _eatdlProcessEvent(event: unknown, state: EatdlState): void {
-	const ev = event as Record<string, unknown>;
-	if (ev['type'] !== 'llm_request') { return; }
-	state.modelTurns++;
-	const attrs = ev['attrs'] as Record<string, unknown> | undefined;
-	const inp = typeof attrs?.['inputTokens'] === 'number' ? attrs['inputTokens'] as number : 0;
-	const out = typeof attrs?.['outputTokens'] === 'number' ? attrs['outputTokens'] as number : 0;
-	const cached = typeof attrs?.['cachedTokens'] === 'number' ? attrs['cachedTokens'] as number : 0;
-	state.inputTokens += inp;
-	state.outputTokens += out;
-	state.cachedTokens += cached;
-	const model = typeof attrs?.['model'] === 'string' && attrs['model'] ? attrs['model'] as string : '';
-	if (model) {
-		const entry = state.modelBreakdown[model] ?? { inputTokens: 0, outputTokens: 0, cachedTokens: 0 };
-		entry.inputTokens += inp;
-		entry.outputTokens += out;
-		entry.cachedTokens += cached;
-		state.modelBreakdown[model] = entry;
-	}
-}
-
 /** One time-to-first-token observation extracted from an `llm_request` debug-log event. */
 export interface TtftSample {
 	/** Event timestamp, normalized to epoch milliseconds — see normalizeDebugLogTimestampMs. */
@@ -878,6 +845,16 @@ export function extractTtftSamplesFromDebugLog(content: string): TtftSample[] {
 	return samples;
 }
 
+/**
+ * Extract token totals from all `llm_request` events in a Copilot Chat debug log.
+ *
+ * Agent-mode sessions make multiple LLM API calls per user turn. Only the last
+ * call's tokens are stored in the chat session file; the debug log records every
+ * call. Summing across all `llm_request` events gives the true session total.
+ *
+ * Returns null when no `llm_request` events are found (debug logging disabled,
+ * or file is empty / does not exist).
+ */
 export function extractAllTokensFromDebugLog(content: string): {
 	inputTokens: number;
 	outputTokens: number;
