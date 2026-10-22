@@ -1,4 +1,4 @@
-// Repository Heatmap webview: every file an agent touched, one cell per file, grouped by folder.
+// Repository Heatmap webview: every file an agent touched as a treemap, nested by folder.
 import { el, createButton } from '../shared/domUtils';
 import themeStyles from '../shared/theme.css';
 import dataTableStyles from '../shared/dataTable.css';
@@ -17,6 +17,7 @@ import {
 	type RepoHeatmapSummary,
 	type RepoHeatmapViewData,
 } from '../../../../src/repoHeatmapViewBuilder';
+import { buildFolderTree, findNode, layoutTreemap, type PlacedNode, type TreeNode } from '../../../../src/treemapLayout';
 import type { ChartTimeWindow } from '../../../../src/types';
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -30,7 +31,7 @@ type HostMessage =
 	| { command: 'progress'; done: number; total: number }
 	| { command: 'data'; data: RepoHeatmapViewData }
 	| { command: 'error' };
-type ViewState = { period: ChartTimeWindow; repoKey?: string; kinds: FileActivityKind[] };
+type ViewState = { period: ChartTimeWindow; repoKey?: string; kinds: FileActivityKind[]; zoomPath?: string };
 
 const vscode = acquireVsCodeApi<ViewState>();
 const initial = getWindowData<InitialRepoHeatmap>('__INITIAL_REPO_HEATMAP__') ?? { data: null, loading: true };
@@ -46,6 +47,7 @@ const state: ViewState = {
 	period: saved?.period ?? 'last30',
 	repoKey: saved?.repoKey,
 	kinds: saved?.kinds?.length ? saved.kinds : [...FILE_ACTIVITY_KINDS],
+	zoomPath: saved?.zoomPath ?? '',
 };
 let data: RepoHeatmapViewData | null = initial.data;
 let progress: { done: number; total: number } | null = initial.loading ? { done: 0, total: 0 } : null;
@@ -76,11 +78,35 @@ function cellTooltip(cell: RepoHeatmapCell): string {
 	return `${localizeFormat('repoHeatmap.cellTooltip', cell.path, parts.join(', '))}${inferred}`;
 }
 
-function buildCell(cell: RepoHeatmapCell, summary: RepoHeatmapSummary, kinds: ReadonlySet<FileActivityKind>, detail: HTMLElement): HTMLButtonElement {
+/** Folder breadcrumb: the repository, then each folder down to the one currently zoomed into. */
+function buildBreadcrumbs(repo: RepoHeatmapRepo, zoomed: TreeNode, rerender: () => void): HTMLElement {
+	const nav = el('nav', 'crumbs');
+	nav.setAttribute('aria-label', localize('repoHeatmap.breadcrumb'));
+	const segments = zoomed.path ? zoomed.path.split('/') : [];
+	const crumb = (label: string, path: string, current: boolean): HTMLElement => {
+		if (current) {
+			const here = el('span', 'crumb current', label);
+			here.setAttribute('aria-current', 'location');
+			return here;
+		}
+		const button = el('button', 'crumb', label);
+		button.type = 'button';
+		button.addEventListener('click', () => { state.zoomPath = path; persist(); rerender(); });
+		return button;
+	};
+	nav.append(crumb(repo.label, '', segments.length === 0));
+	segments.forEach((segment, i) => {
+		nav.append(el('span', 'crumb-sep', '/'), crumb(segment, segments.slice(0, i + 1).join('/'), i === segments.length - 1));
+	});
+	return nav;
+}
+
+function placeFile(placed: PlacedNode, summary: RepoHeatmapSummary, kinds: ReadonlySet<FileActivityKind>, detail: HTMLElement): HTMLElement {
+	const cell = placed.node.cell as RepoHeatmapCell;
 	const kind = dominantKind(cell, kinds);
-	const button = el('button', `cell kind-${kind}`);
+	const button = el('button', `tm-file kind-${kind}`);
 	button.type = 'button';
-	// Square-root scale so a few busy files do not wash every other cell out to nothing.
+	// Square-root scale so a few busy files do not wash every other rectangle out to nothing.
 	const intensity = 0.25 + 0.75 * Math.sqrt(cell.total / Math.max(1, summary.maxCellTotal));
 	button.style.setProperty('--intensity', intensity.toFixed(2));
 	if (kinds.has('deleted') && cell.counts[KIND_INDEX.deleted] > 0 && kind !== 'deleted') { button.classList.add('has-delete'); }
@@ -88,30 +114,56 @@ function buildCell(cell: RepoHeatmapCell, summary: RepoHeatmapSummary, kinds: Re
 	button.setAttribute('aria-label', cellTooltip(cell));
 	button.dataset.path = cell.path;
 	if (cell.path === selectedPath) { button.classList.add('selected'); }
+	if (placed.rect.w >= 52 && placed.rect.h >= 16) { button.append(el('span', 'tm-name', cell.name)); }
 	button.addEventListener('click', () => {
 		selectedPath = cell.path;
 		detail.textContent = cellTooltip(cell);
-		document.querySelectorAll('.cell.selected').forEach(n => n.classList.remove('selected'));
+		document.querySelectorAll('.tm-file.selected').forEach(n => n.classList.remove('selected'));
 		button.classList.add('selected');
 	});
 	return button;
 }
 
-function buildFolders(summary: RepoHeatmapSummary, kinds: ReadonlySet<FileActivityKind>, detail: HTMLElement): HTMLElement {
-	const wrap = el('div', 'folders');
-	for (const folder of summary.folders) {
-		const group = el('details', 'folder');
-		group.open = true;
-		const head = el('summary');
-		head.append(
-			el('span', 'folder-name', folder.folder === '.' ? localize('repoHeatmap.folderRoot') : folder.folder),
-			el('span', 'folder-meta', localizeFormat('repoHeatmap.folderMeta', fileCount(folder.files.length), touchCount(folder.total))),
-		);
-		const cells = el('div', 'cells');
-		cells.append(...folder.files.map(f => buildCell(f, summary, kinds, detail)));
-		group.append(head, cells);
-		wrap.append(group);
+function placeFolder(placed: PlacedNode, zoomed: TreeNode, rerender: () => void): HTMLElement {
+	const box = el('div', 'tm-folder');
+	const tooltip = localizeFormat('repoHeatmap.cellTooltip', placed.node.path, touchCount(placed.node.value));
+	box.title = tooltip;
+	if (placed.hasHeader) {
+		const label = el('button', 'tm-folder-label', placed.node.name);
+		label.type = 'button';
+		label.setAttribute('aria-label', tooltip);
+		label.addEventListener('click', () => {
+			if (placed.node !== zoomed) { state.zoomPath = placed.node.path; persist(); rerender(); }
+		});
+		box.append(label);
 	}
+	return box;
+}
+
+/** The height the treemap takes: most of the window, but never so short that it is unreadable. */
+const treemapHeight = (): number => Math.max(420, Math.min(760, window.innerHeight - 240));
+
+/** One rectangle per file, nested by folder, area proportional to touches. */
+function buildTreemap(summary: RepoHeatmapSummary, zoomed: TreeNode, kinds: ReadonlySet<FileActivityKind>, detail: HTMLElement, rerender: () => void): HTMLElement {
+	const wrap = el('div', 'treemap');
+	wrap.style.height = `${treemapHeight()}px`;
+	let paintedWidth = 0;
+	const paint = (): void => {
+		const width = Math.floor(wrap.clientWidth);
+		if (width <= 0 || width === paintedWidth) { return; }
+		paintedWidth = width;
+		const placed = layoutTreemap(zoomed, { x: 0, y: 0, w: width, h: treemapHeight() });
+		wrap.replaceChildren(...placed.map(p => {
+			const node = p.isFolder ? placeFolder(p, zoomed, rerender) : placeFile(p, summary, kinds, detail);
+			node.style.left = `${p.rect.x}px`;
+			node.style.top = `${p.rect.y}px`;
+			node.style.width = `${p.rect.w}px`;
+			node.style.height = `${p.rect.h}px`;
+			return node;
+		}));
+	};
+	// The layout depends on the width, which is only known once the element is in the page.
+	new ResizeObserver(paint).observe(wrap);
 	return wrap;
 }
 
@@ -146,7 +198,7 @@ function buildRepoSelect(rerender: () => void): HTMLElement[] {
 		option.selected = repo.key === currentRepo()?.key;
 		select.append(option);
 	}
-	select.addEventListener('change', () => { state.repoKey = select.value; selectedPath = ''; persist(); rerender(); });
+	select.addEventListener('change', () => { state.repoKey = select.value; state.zoomPath = ''; selectedPath = ''; persist(); rerender(); });
 	return [el('span', 'toolbar-label', localize('repoHeatmap.repository')), select, buildKindToggles(rerender)];
 }
 
@@ -195,9 +247,14 @@ function buildBody(): HTMLElement {
 	const totals = localizeFormat('repoHeatmap.totals', ...FILE_ACTIVITY_KINDS.map(k => formatNumber(summary.counts[KIND_INDEX[k]])));
 	const headline = localizeFormat('repoHeatmap.summary', repo.label, fileCount(summary.fileCount), totals);
 	body.append(el('div', 'summary', progress ? localizeFormat('repoHeatmap.summaryRefreshing', headline, progressText()) : headline), detail);
-	body.append(summary.fileCount === 0
-		? el('div', 'empty', localize('repoHeatmap.noMatch'))
-		: buildFolders(summary, kinds, detail));
+	if (summary.fileCount === 0) {
+		body.append(el('div', 'empty', localize('repoHeatmap.noMatch')));
+	} else {
+		const tree = buildFolderTree(summary);
+		// A folder that no longer has activity in this period or filter falls back to the whole repository.
+		const zoomed = findNode(tree, state.zoomPath ?? '') ?? tree;
+		body.append(buildBreadcrumbs(repo, zoomed, render), buildTreemap(summary, zoomed, kinds, detail, render));
+	}
 	body.append(buildNotes(repo, data));
 	return body;
 }

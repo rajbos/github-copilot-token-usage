@@ -100,61 +100,107 @@ body {
 	word-break: break-all;
 }
 
-.folders {
+.crumbs {
 	display: flex;
-	flex-direction: column;
-	gap: 10px;
+	align-items: center;
+	gap: 4px;
+	flex-wrap: wrap;
+	font-size: 12px;
 }
 
-.folder {
-	background: var(--bg-secondary);
-	border: 1px solid var(--border-color);
-	border-radius: 8px;
-	padding: 8px 10px;
-}
-
-.folder > summary {
+.crumb {
+	background: transparent;
+	border: none;
+	padding: 2px 4px;
+	color: var(--vscode-textLink-foreground);
+	font: inherit;
 	cursor: pointer;
-	font-size: 13px;
-	display: flex;
-	gap: 10px;
-	align-items: baseline;
+	border-radius: 3px;
 }
 
-.folder-name {
-	font-family: var(--vscode-editor-font-family, monospace);
+.crumb.current {
+	color: var(--text-primary);
 	font-weight: 600;
+	cursor: default;
 }
 
-.folder-meta {
+.crumb-sep {
 	color: var(--text-secondary);
+}
+
+.treemap {
+	position: relative;
+	width: 100%;
+	overflow: hidden;
+	background: var(--bg-primary);
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+}
+
+.tm-folder,
+.tm-file {
+	position: absolute;
+	box-sizing: border-box;
+	margin: 0;
+}
+
+.tm-folder {
+	border: 1px solid var(--border-subtle);
+	background: var(--bg-secondary);
+	border-radius: 3px;
+	pointer-events: none;
+}
+
+.tm-folder-label {
+	pointer-events: auto;
+	display: block;
+	width: 100%;
+	height: 18px;
+	padding: 0 6px;
+	border: none;
+	background: transparent;
+	color: var(--text-primary);
+	font-size: 11px;
+	font-weight: 600;
+	text-align: left;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	cursor: pointer;
+}
+
+.tm-folder-label:hover {
+	text-decoration: underline;
+}
+
+.tm-file {
+	padding: 2px 4px;
+	border: 1px solid var(--border-subtle);
+	border-radius: 2px;
+	cursor: pointer;
+	overflow: hidden;
+	text-align: left;
+	background: color-mix(in srgb, var(--kind-color) calc(var(--intensity, 0.5) * 100%), transparent);
+	color: var(--text-primary);
 	font-size: 11px;
 }
 
-.cells {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 3px;
-	margin-top: 8px;
+.tm-name {
+	display: block;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
-.cell {
-	width: 14px;
-	height: 14px;
-	border-radius: 3px;
-	padding: 0;
-	border: 1px solid var(--border-subtle, var(--vscode-panel-border));
-	cursor: pointer;
-	background: color-mix(in srgb, var(--kind-color) calc(var(--intensity, 0.5) * 100%), transparent);
-}
-
-.cell:focus-visible,
-.cell.selected {
+.tm-file:focus-visible,
+.tm-folder-label:focus-visible,
+.crumb:focus-visible,
+.tm-file.selected {
 	outline: 2px solid var(--vscode-focusBorder);
-	outline-offset: 1px;
+	outline-offset: -2px;
 }
 
-.cell.has-delete {
+.tm-file.has-delete {
 	box-shadow: inset 0 0 0 2px var(--vscode-charts-red);
 }
 

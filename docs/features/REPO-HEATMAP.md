@@ -2,9 +2,11 @@
 
 **Command:** `AI Engineering Fluency: Show Repository Heatmap` (`aiEngineeringFluency.showRepoHeatmap`)
 
-A heatmap of every file an agent touched in a repository. Each cell is one file, grouped under the
-folder it lives in; colour says what happened to it and intensity says how often. The standard
-period selector (Today, Last 7 / 30 / 90 days, Current month, All time) filters it.
+A treemap of every file an agent touched in a repository. Each rectangle is one file, nested
+inside the folders it lives in; its area is proportional to how often it was touched, its colour
+says what happened to it and its intensity how busy it was. Click a folder label (or a breadcrumb)
+to zoom into that folder and back out. The standard period selector (Today, Last 7 / 30 / 90 days,
+Current month, All time) filters it.
 
 | Kind | Source in the session logs |
 |---|---|
@@ -29,6 +31,8 @@ numeric rollups, not paths.
 - `src/repoHeatmapViewBuilder.ts` — pure: anchors paths to the repository, folds sessions into
   per-repository / per-file / per-day counters (`buildRepoHeatmapViewData`) and filters by period
   and kind, grouped by folder (`summarizeRepoHeatmap`).
+- `src/treemapLayout.ts` — pure: builds the folder tree (single-child folder chains collapse to
+  `a/b`) and lays it out with the squarified treemap algorithm.
 - `vscode-extension/src/repoHeatmapPanel.ts` and `src/webview/repoHeatmap/` — the VS Code panel and
   its webview.
 
