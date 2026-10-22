@@ -51,6 +51,26 @@
       "fixture": "details.json"
     },
     {
+      "id": "repo-heatmap",
+      "title": "Repository Heatmap",
+      "bundle": "repo-heatmap",
+      "global": "__INITIAL_REPO_HEATMAP__",
+      "fixture": "repo-heatmap.json",
+      "scenarios": [
+        {
+          "name": "Period, repository and kind filters",
+          "expect": ".folders",
+          "steps": [
+            { "select": "#period-selector", "value": "allTime" },
+            { "select": "#repo-select" },
+            { "click": ".kind-toggle.kind-read" },
+            { "click": ".kind-toggle.kind-read" },
+            { "click": ".cell" }
+          ]
+        }
+      ]
+    },
+    {
       "id": "environmental",
       "title": "Environmental Impact",
       "bundle": "environmental",

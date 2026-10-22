@@ -84,6 +84,7 @@ Detailed documentation for individual features.
 | [features/EXPORT_FEATURE_UI.md](features/EXPORT_FEATURE_UI.md) | Export feature UI layout and visual description |
 | [features/SOCIAL-MEDIA-SHARE.md](features/SOCIAL-MEDIA-SHARE.md) | Social media sharing (LinkedIn, Bluesky, Mastodon) |
 | [features/VISUAL-MOCKUP-SHARE-FEATURE.md](features/VISUAL-MOCKUP-SHARE-FEATURE.md) | Visual mockup of the social share UI |
+| [features/REPO-HEATMAP.md](features/REPO-HEATMAP.md) | Repository Heatmap: files the agent read, edited, created or deleted, by folder |
 | [features/FLUENCY-LEVEL-VIEWER.md](features/FLUENCY-LEVEL-VIEWER.md) | Debug-only Fluency Level Viewer tool |
 | [features/FLUENCY-LEVEL-VIEWER-TEST-PLAN.md](features/FLUENCY-LEVEL-VIEWER-TEST-PLAN.md) | Test plan for the Fluency Level Viewer |
 | [features/FLUENCY-LEVEL-VIEWER-UI-MOCKUP.md](features/FLUENCY-LEVEL-VIEWER-UI-MOCKUP.md) | UI mockup for the Fluency Level Viewer |

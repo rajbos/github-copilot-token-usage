@@ -1,0 +1,285 @@
+{
+  "data": {
+    "repos": [
+      {
+        "key": "https://github.com/example/ai-engineering-fluency.git",
+        "label": "example/ai-engineering-fluency",
+        "files": [
+          {
+            "path": "src/extension.ts",
+            "days": {
+              "2026-03-13": [
+                6,
+                9,
+                0,
+                0
+              ],
+              "2026-03-12": [
+                3,
+                4,
+                0,
+                0
+              ],
+              "2026-02-20": [
+                2,
+                1,
+                0,
+                0
+              ]
+            }
+          },
+          {
+            "path": "src/repoHeatmapPanel.ts",
+            "days": {
+              "2026-03-13": [
+                1,
+                5,
+                1,
+                0
+              ]
+            }
+          },
+          {
+            "path": "src/webview/repoHeatmap/main.ts",
+            "days": {
+              "2026-03-13": [
+                2,
+                6,
+                1,
+                0
+              ],
+              "2026-03-10": [
+                1,
+                2,
+                0,
+                0
+              ]
+            }
+          },
+          {
+            "path": "src/webview/repoHeatmap/styles.css",
+            "days": {
+              "2026-03-13": [
+                1,
+                2,
+                1,
+                0
+              ]
+            }
+          },
+          {
+            "path": "src/webview/chart/main.ts",
+            "days": {
+              "2026-03-11": [
+                4,
+                2,
+                0,
+                0
+              ],
+              "2026-01-05": [
+                3,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          {
+            "path": "src/webview/usage/main.ts",
+            "days": {
+              "2026-03-09": [
+                7,
+                1,
+                0,
+                0
+              ]
+            }
+          },
+          {
+            "path": "src/webview/shared/periodSelector.ts",
+            "days": {
+              "2026-03-13": [
+                3,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          {
+            "path": "src/webview/shared/domUtils.ts",
+            "days": {
+              "2026-03-13": [
+                2,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          {
+            "path": "src/fileActivity.ts",
+            "days": {
+              "2026-03-12": [
+                1,
+                4,
+                1,
+                0
+              ]
+            }
+          },
+          {
+            "path": "src/repoHeatmapViewBuilder.ts",
+            "days": {
+              "2026-03-12": [
+                2,
+                3,
+                1,
+                0
+              ]
+            }
+          },
+          {
+            "path": "src/repoHeatmapCollector.ts",
+            "days": {
+              "2026-03-12": [
+                1,
+                2,
+                1,
+                0
+              ]
+            }
+          },
+          {
+            "path": "src/statsHelpers.ts",
+            "days": {
+              "2026-03-08": [
+                5,
+                1,
+                0,
+                0
+              ]
+            }
+          },
+          {
+            "path": "src/old/legacyParser.ts",
+            "days": {
+              "2026-03-05": [
+                1,
+                0,
+                0,
+                1
+              ]
+            }
+          },
+          {
+            "path": "docs/features/REPO-HEATMAP.md",
+            "days": {
+              "2026-03-13": [
+                0,
+                0,
+                1,
+                0
+              ]
+            }
+          },
+          {
+            "path": "docs/TRACKABLE-DATA.md",
+            "days": {
+              "2026-03-13": [
+                1,
+                1,
+                0,
+                0
+              ]
+            }
+          },
+          {
+            "path": "AGENTS.md",
+            "days": {
+              "2026-03-13": [
+                2,
+                0,
+                0,
+                0
+              ],
+              "2026-03-01": [
+                1,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          {
+            "path": "README.md",
+            "days": {
+              "2026-02-14": [
+                1,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          {
+            "path": "scripts/obsolete-helper.js",
+            "days": {
+              "2026-03-02": [
+                1,
+                0,
+                0,
+                2
+              ]
+            }
+          }
+        ],
+        "truncatedFiles": 0
+      },
+      {
+        "key": "https://github.com/example/sample-app.git",
+        "label": "example/sample-app",
+        "files": [
+          {
+            "path": "src/index.ts",
+            "days": {
+              "2026-03-12": [
+                2,
+                3,
+                0,
+                0
+              ]
+            }
+          },
+          {
+            "path": "src/app.ts",
+            "days": {
+              "2026-03-12": [
+                1,
+                1,
+                0,
+                0
+              ]
+            }
+          },
+          {
+            "path": "package.json",
+            "days": {
+              "2026-03-12": [
+                1,
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        ],
+        "truncatedFiles": 0
+      }
+    ],
+    "outsideRepoTouches": 42,
+    "lastUpdated": "2026-03-14T09:30:00.000Z",
+    "hasData": true
+  },
+  "loading": false
+}

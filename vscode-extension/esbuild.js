@@ -84,6 +84,7 @@ async function main() {
 			environmental: 'src/webview/environmental/main.ts',
 			efficiency: 'src/webview/efficiency/main.ts',
 			whatsnew: 'src/webview/whatsnew/main.ts',
+			'repo-heatmap': 'src/webview/repoHeatmap/main.ts',
 		},
 		bundle: true,
 		format: 'iife',

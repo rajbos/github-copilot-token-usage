@@ -1,0 +1,171 @@
+body {
+	margin: 0;
+	background: var(--bg-primary);
+	color: var(--text-primary);
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.container {
+	padding: 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	max-width: 1400px;
+	margin: 0 auto;
+}
+
+.header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+.title {
+	font-size: 16px;
+	font-weight: 700;
+}
+
+.toolbar {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	flex-wrap: wrap;
+}
+
+.toolbar select {
+	background: var(--vscode-dropdown-background);
+	color: var(--vscode-dropdown-foreground);
+	border: 1px solid var(--border-subtle);
+	border-radius: 4px;
+	padding: 4px 8px;
+	font-size: 13px;
+	min-height: 24px;
+	max-width: 320px;
+}
+
+.toolbar-label {
+	font-size: 11px;
+	color: var(--text-secondary);
+}
+
+.kind-toggles {
+	display: inline-flex;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+
+.kind-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 3px 9px;
+	border-radius: 12px;
+	border: 1px solid var(--border-subtle);
+	background: transparent;
+	color: var(--text-primary);
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.kind-toggle[aria-pressed='false'] {
+	opacity: 0.45;
+}
+
+.kind-swatch {
+	width: 10px;
+	height: 10px;
+	border-radius: 2px;
+	display: inline-block;
+	background: var(--kind-color);
+}
+
+/* Theme chart tokens, so the four kinds stay distinguishable in light and high-contrast themes. */
+.kind-read { --kind-color: var(--vscode-charts-blue); }
+.kind-edited { --kind-color: var(--vscode-charts-orange); }
+.kind-created { --kind-color: var(--vscode-charts-green); }
+.kind-deleted { --kind-color: var(--vscode-charts-red); }
+
+.summary {
+	font-size: 13px;
+	color: var(--text-secondary);
+}
+
+.detail {
+	min-height: 20px;
+	font-size: 12px;
+	font-family: var(--vscode-editor-font-family, monospace);
+	color: var(--text-primary);
+	word-break: break-all;
+}
+
+.folders {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.folder {
+	background: var(--bg-secondary);
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	padding: 8px 10px;
+}
+
+.folder > summary {
+	cursor: pointer;
+	font-size: 13px;
+	display: flex;
+	gap: 10px;
+	align-items: baseline;
+}
+
+.folder-name {
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-weight: 600;
+}
+
+.folder-meta {
+	color: var(--text-secondary);
+	font-size: 11px;
+}
+
+.cells {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 3px;
+	margin-top: 8px;
+}
+
+.cell {
+	width: 14px;
+	height: 14px;
+	border-radius: 3px;
+	padding: 0;
+	border: 1px solid var(--border-subtle, var(--vscode-panel-border));
+	cursor: pointer;
+	background: color-mix(in srgb, var(--kind-color) calc(var(--intensity, 0.5) * 100%), transparent);
+}
+
+.cell:focus-visible,
+.cell.selected {
+	outline: 2px solid var(--vscode-focusBorder);
+	outline-offset: 1px;
+}
+
+.cell.has-delete {
+	box-shadow: inset 0 0 0 2px var(--vscode-charts-red);
+}
+
+.empty,
+.progress {
+	padding: 28px 8px;
+	text-align: center;
+	color: var(--text-secondary);
+}
+
+.footnote {
+	font-size: 11px;
+	color: var(--text-secondary);
+}
