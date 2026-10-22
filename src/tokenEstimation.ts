@@ -845,16 +845,6 @@ export function extractTtftSamplesFromDebugLog(content: string): TtftSample[] {
 	return samples;
 }
 
-/**
- * Extract token totals from all `llm_request` events in a Copilot Chat debug log.
- *
- * Agent-mode sessions make multiple LLM API calls per user turn. Only the last
- * call's tokens are stored in the chat session file; the debug log records every
- * call. Summing across all `llm_request` events gives the true session total.
- *
- * Returns null when no `llm_request` events are found (debug logging disabled,
- * or file is empty / does not exist).
- */
 export function extractAllTokensFromDebugLog(content: string): {
 	inputTokens: number;
 	outputTokens: number;
