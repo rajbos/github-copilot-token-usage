@@ -50,15 +50,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import initSqlJs from 'sql.js';
+import { SqlJsFileDbCacheBase } from './utils/sqlJsDbCache';
 import type { ModelUsage } from './types';
 import { joinedChildPrefixForComparison, normalizePath } from './utils/pathUtils';
 import { toLocalDayKey } from './utils/dayKeys';
 
-type SqlJsStatic = initSqlJs.SqlJsStatic;
-type SqlDatabase = initSqlJs.Database;
-
-type DbCacheEntry = { db: SqlDatabase; mtimeMs: number; size: number };
 
 /** Matches rollout session filenames: rollout-2026-03-19T12-00-00-<uuid>.jsonl */
 const ROLLOUT_FILE_RE = /^rollout-.*\.jsonl$/i;
@@ -130,11 +126,7 @@ export interface CodexTokenTotals {
 	thinkingTokens: number;
 }
 
-export class CodexCliDataAccess {
-	private _sqlJsModule: SqlJsStatic | null = null;
-	private _sqlJsInitPromise: Promise<SqlJsStatic> | null = null;
-	private _dbCache: Map<string, DbCacheEntry> = new Map();
-	private _dbCacheInflight: Map<string, Promise<SqlDatabase | null>> = new Map();
+export class CodexCliDataAccess extends SqlJsFileDbCacheBase {
 	/** Parsed-rollout cache keyed by file path, invalidated on mtime/size change (bounded). */
 	private _rolloutCache: Map<string, { mtimeMs: number; size: number; summary: CodexRolloutSummary }> = new Map();
 	private static readonly ROLLOUT_CACHE_MAX = 64;
@@ -142,13 +134,8 @@ export class CodexCliDataAccess {
 	private _codexHomeOverride: string | null = null;
 
 	dispose(): void {
-		for (const entry of this._dbCache.values()) {
-			try { entry.db.close(); } catch { /* ignore */ }
-		}
-		this._dbCache.clear();
-		this._dbCacheInflight.clear();
+		super.dispose();
 		this._rolloutCache.clear();
-		this._sqlJsInitPromise = null;
 	}
 
 	// ── Paths ───────────────────────────────────────────────────────────────
@@ -251,103 +238,6 @@ export class CodexCliDataAccess {
 	/** Stat the backing file for a session path. */
 	async statSessionFile(sessionFile: string): Promise<fs.Stats> {
 		return fs.promises.stat(this.getBackingPath(sessionFile));
-	}
-
-	// ── sql.js boilerplate (same pattern as crush.ts / devinCli.ts) ─────────
-
-	async initSqlJs(): Promise<SqlJsStatic> {
-		if (this._sqlJsModule) { return this._sqlJsModule; }
-		if (!this._sqlJsInitPromise) {
-			this._sqlJsInitPromise = (async () => {
-				const wasmPath = path.join(__dirname, 'sql-wasm.wasm');
-				let wasmBinary: Uint8Array | undefined;
-				try {
-					wasmBinary = await fs.promises.readFile(wasmPath);
-				} catch { /* WASM file not present — proceed without pre-loaded binary */ }
-				const module = await initSqlJs(wasmBinary ? { wasmBinary: wasmBinary.buffer as ArrayBuffer } : undefined);
-				this._sqlJsModule = module;
-				return module;
-			})().catch(err => {
-				this._sqlJsInitPromise = null;
-				throw err;
-			});
-		}
-		return this._sqlJsInitPromise;
-	}
-
-	private closeDb(db: SqlDatabase): void {
-		try { db.close(); } catch { /* ignore */ }
-	}
-
-	private isMissingFileError(error: unknown): boolean {
-		const code = (error as NodeJS.ErrnoException)?.code;
-		return code === 'ENOENT' || code === 'ENOTDIR';
-	}
-
-	private async statDb(dbPath: string): Promise<fs.Stats | null> {
-		try {
-			return await fs.promises.stat(dbPath);
-		} catch (error) {
-			if (this.isMissingFileError(error) && this._dbCache.has(dbPath)) {
-				this.closeDb(this._dbCache.get(dbPath)!.db);
-				this._dbCache.delete(dbPath);
-			}
-			return null;
-		}
-	}
-
-	private sameDbStats(left: fs.Stats, right: fs.Stats): boolean {
-		return left.mtimeMs === right.mtimeMs && left.size === right.size;
-	}
-
-	private async refreshDb(dbPath: string, stats: fs.Stats): Promise<SqlDatabase | null> {
-		let db: SqlDatabase;
-		try {
-			const SQL = await this.initSqlJs();
-			const buffer = await fs.promises.readFile(dbPath);
-			db = new SQL.Database(buffer);
-		} catch {
-			return this._dbCache.get(dbPath)?.db ?? null;
-		}
-		const currentStats = await this.statDb(dbPath);
-		if (!currentStats || !this.sameDbStats(stats, currentStats)) {
-			this.closeDb(db);
-			return this._dbCache.get(dbPath)?.db ?? null;
-		}
-		const existing = this._dbCache.get(dbPath);
-		if (existing) { this.closeDb(existing.db); }
-		this._dbCache.set(dbPath, { db, mtimeMs: stats.mtimeMs, size: stats.size });
-		return db;
-	}
-
-	/** Cached SQL.Database, re-opened only on mtime/size change; single-flight deduplicated. */
-	private async getDb(dbPath: string): Promise<SqlDatabase | null> {
-		const stats = await this.statDb(dbPath);
-		if (!stats) { return this._dbCache.get(dbPath)?.db ?? null; }
-		const cached = this._dbCache.get(dbPath);
-		if (cached && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size) { return cached.db; }
-		const cacheKey = `${dbPath}:${stats.mtimeMs}:${stats.size}`;
-		const inflight = this._dbCacheInflight.get(cacheKey);
-		if (inflight) { return inflight; }
-		const createDbPromise = this.refreshDb(dbPath, stats);
-		this._dbCacheInflight.set(cacheKey, createDbPromise);
-		try {
-			return await createDbPromise;
-		} finally {
-			if (this._dbCacheInflight.get(cacheKey) === createDbPromise) {
-				this._dbCacheInflight.delete(cacheKey);
-			}
-		}
-	}
-
-	private rowsToObjects(result: initSqlJs.QueryExecResult[]): Record<string, unknown>[] {
-		if (result.length === 0) { return []; }
-		const { columns, values } = result[0];
-		return values.map(row => {
-			const obj: Record<string, unknown> = {};
-			columns.forEach((c, i) => { obj[c] = row[i]; });
-			return obj;
-		});
 	}
 
 	// ── Threads table access ────────────────────────────────────────────────
