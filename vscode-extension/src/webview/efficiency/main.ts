@@ -48,7 +48,6 @@ import {
 	computeSkillImpact,
 	MIN_SESSION_SHARE_FOR_COMPARE,
 	efficiencyTodayKey,
-	filterModelsByVendor,
 	filterSessionsByEditor,
 	listComparableModels,
 	listModelHarnesses,

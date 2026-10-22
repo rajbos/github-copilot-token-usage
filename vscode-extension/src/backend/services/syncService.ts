@@ -6,7 +6,6 @@
 import * as vscode from 'vscode';
 import { createHash } from 'crypto';
 import * as fs from 'fs';
-import * as path from 'path';
 import * as os from 'os';
 import { DefaultAzureCredential } from '@azure/identity';
 import { safeStringifyError } from '../../../../src/utils/errors';

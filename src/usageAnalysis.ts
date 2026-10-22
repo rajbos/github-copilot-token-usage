@@ -14,7 +14,6 @@ import type {
 	EditScopeUsage,
 	ApplyButtonUsage,
 	SessionDurationData,
-	ConversationPatterns,
 	AgentTypeUsage,
 	ModelSwitchingAnalysis,
 	ModelUsage,
@@ -706,24 +705,6 @@ function _eemCountSingleEdit(editObj: SingleEditObj, ext: string, languageUsage:
 	return { linesAdded, linesRemoved };
 }
 
-/** Process all edit groups for a textEditGroup response item, returning line delta totals. */
-function _eemProcessEdits(respRaw: unknown, ext: string, languageUsage: LanguageUsage): { linesAdded: number; linesRemoved: number } {
-	const respRawAny = respRaw as { edits?: unknown };
-	let linesAdded = 0;
-	let linesRemoved = 0;
-	if (!Array.isArray(respRawAny.edits)) { return { linesAdded, linesRemoved }; }
-	for (const editGroup of respRawAny.edits as unknown[]) {
-		if (!Array.isArray(editGroup)) { continue; }
-		for (const edit of editGroup as unknown[]) {
-			if (!edit || typeof edit !== 'object') { continue; }
-			const delta = _eemCountSingleEdit(edit as SingleEditObj, ext, languageUsage);
-			linesAdded += delta.linesAdded;
-			linesRemoved += delta.linesRemoved;
-		}
-	}
-	return { linesAdded, linesRemoved };
-}
-
 function extractEditMetrics(req: SessionRequestRaw): EditMetrics {
 	const acc: EemAcc = { editedFilePaths: [], codeBlocks: 0, applies: 0, linesAdded: 0, linesRemoved: 0, languageUsage: {} };
 	if (!req.response || !Array.isArray(req.response)) { return acc; }
@@ -1130,16 +1111,6 @@ function _muaMergeContextRefFields(period: UsageAnalysisPeriod, analysis: Sessio
 	p.agentsMd += a.agentsMd || 0;
 }
 
-/** Merge byKind and byPath maps from analysis context references into period. */
-function _muaMergeContextRefMaps(period: UsageAnalysisPeriod, analysis: SessionUsageAnalysis): void {
-	for (const [kind, count] of Object.entries(analysis.contextReferences.byKind || {})) {
-		period.contextReferences.byKind[kind] = (period.contextReferences.byKind[kind] || 0) + count;
-	}
-	for (const [path, count] of Object.entries(analysis.contextReferences.byPath || {})) {
-		period.contextReferences.byPath[path] = (period.contextReferences.byPath[path] || 0) + count;
-	}
-}
-
 type SessionModelSwitching = SessionUsageAnalysis['modelSwitching'];
 
 /** Add unique model names from a tier list into the period's tracked list if not already present. */
@@ -1230,16 +1201,6 @@ function _muaMergeEditScope(period: UsageAnalysisPeriod, analysis: SessionUsageA
 	period.editScope.avgFilesPerSession = editSessions > 0 ? period.editScope.totalEditedFiles / editSessions : 0;
 }
 
-/** Merge apply usage (code block application) metrics from analysis into period. */
-function _muaMergeApplyUsage(period: UsageAnalysisPeriod, analysis: SessionUsageAnalysis): void {
-	if (!analysis.applyUsage) { return; }
-	period.applyUsage.totalApplies += analysis.applyUsage.totalApplies;
-	period.applyUsage.totalCodeBlocks += analysis.applyUsage.totalCodeBlocks;
-	period.applyUsage.applyRate = period.applyUsage.totalCodeBlocks > 0
-		? (period.applyUsage.totalApplies / period.applyUsage.totalCodeBlocks) * 100
-		: 0;
-}
-
 /** Merge session duration metrics from analysis into period using weighted averaging. */
 function _muaMergeSessionDuration(period: UsageAnalysisPeriod, analysis: SessionUsageAnalysis): void {
 	if (!analysis.sessionDuration) { return; }
@@ -1254,21 +1215,6 @@ function _muaMergeSessionDuration(period: UsageAnalysisPeriod, analysis: Session
 	period.sessionDuration.avgTotalElapsedMs = (prevElapsed + analysis.sessionDuration.avgTotalElapsedMs) / sessionCount;
 	const prevWait = period.sessionDuration.avgWaitTimeMs * (sessionCount - 1);
 	period.sessionDuration.avgWaitTimeMs = (prevWait + analysis.sessionDuration.avgWaitTimeMs) / sessionCount;
-}
-
-/** Merge conversation pattern metrics from analysis into period. */
-function _muaMergeConversationPatterns(period: UsageAnalysisPeriod, analysis: SessionUsageAnalysis): void {
-	if (!analysis.conversationPatterns) { return; }
-	period.conversationPatterns.multiTurnSessions += analysis.conversationPatterns.multiTurnSessions;
-	period.conversationPatterns.singleTurnSessions += analysis.conversationPatterns.singleTurnSessions;
-	period.conversationPatterns.maxTurnsInSession = Math.max(
-		period.conversationPatterns.maxTurnsInSession,
-		analysis.conversationPatterns.maxTurnsInSession
-	);
-	const totalSessions = period.conversationPatterns.multiTurnSessions + period.conversationPatterns.singleTurnSessions;
-	if (totalSessions <= 0) { return; }
-	const prevTotalTurns = period.conversationPatterns.avgTurnsPerSession * (totalSessions - 1);
-	period.conversationPatterns.avgTurnsPerSession = (prevTotalTurns + analysis.conversationPatterns.avgTurnsPerSession) / totalSessions;
 }
 
 /** Merge thinking effort data from analysis into period. */
