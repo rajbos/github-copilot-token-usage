@@ -1,8 +1,9 @@
-// @ts-nocheck
 import './vscode-shim-register';
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 
+import type * as vscode from 'vscode';
+import type { BackendSettings } from '../../src/backend/settings';
 import { BackendIntegration } from '../../src/backend/integration';
 
 test('BackendIntegration - constructor stores dependencies', () => {
@@ -13,14 +14,14 @@ test('BackendIntegration - constructor stores dependencies', () => {
 	const toUtcDayKeyCalls: string[] = [];
 	
 	const facade = {
-		getSettings: () => ({ test: 'settings' }),
+		getSettings: () => ({ test: 'settings' } as unknown as BackendSettings),
 		isConfigured: (s: any) => true,
 		syncToBackendStore: async () => {},
 		getStatsForDetailsPanel: async () => ({ stats: true }),
 		setFilters: (f: any) => {}
 	};
 	
-	const context = { workspaceState: { get: () => {}, update: () => {} } };
+	const context = { workspaceState: { get: () => {}, update: () => {} } } as unknown as vscode.ExtensionContext;
 	
 	const integration = new BackendIntegration({
 		facade,
@@ -36,11 +37,11 @@ test('BackendIntegration - constructor stores dependencies', () => {
 });
 
 test('BackendIntegration - getContext returns stored context', () => {
-	const context = { workspaceState: { get: () => {}, update: () => {} } };
+	const context = { workspaceState: { get: () => {}, update: () => {} } } as unknown as vscode.ExtensionContext;
 	
 	const integration = new BackendIntegration({
 		facade: {
-			getSettings: () => ({}),
+			getSettings: () => ({} as unknown as BackendSettings),
 			isConfigured: () => true,
 			syncToBackendStore: async () => {},
 			getStatsForDetailsPanel: async () => ({}),
@@ -60,7 +61,7 @@ test('BackendIntegration - getContext returns stored context', () => {
 test('BackendIntegration - getContext returns undefined when no context', () => {
 	const integration = new BackendIntegration({
 		facade: {
-			getSettings: () => ({}),
+			getSettings: () => ({} as unknown as BackendSettings),
 			isConfigured: () => true,
 			syncToBackendStore: async () => {},
 			getStatsForDetailsPanel: async () => ({}),
@@ -82,7 +83,7 @@ test('BackendIntegration - log prefixes message with [Backend]', () => {
 	
 	const integration = new BackendIntegration({
 		facade: {
-			getSettings: () => ({}),
+			getSettings: () => ({} as unknown as BackendSettings),
 			isConfigured: () => true,
 			syncToBackendStore: async () => {},
 			getStatsForDetailsPanel: async () => ({}),
@@ -106,7 +107,7 @@ test('BackendIntegration - warn calls warn function', () => {
 	
 	const integration = new BackendIntegration({
 		facade: {
-			getSettings: () => ({}),
+			getSettings: () => ({} as unknown as BackendSettings),
 			isConfigured: () => true,
 			syncToBackendStore: async () => {},
 			getStatsForDetailsPanel: async () => ({}),
@@ -130,7 +131,7 @@ test('BackendIntegration - error calls error function with error', () => {
 	
 	const integration = new BackendIntegration({
 		facade: {
-			getSettings: () => ({}),
+			getSettings: () => ({} as unknown as BackendSettings),
 			isConfigured: () => true,
 			syncToBackendStore: async () => {},
 			getStatsForDetailsPanel: async () => ({}),
@@ -156,7 +157,7 @@ test('BackendIntegration - toUtcDayKey delegates to toUtcDayKeyFn', () => {
 	
 	const integration = new BackendIntegration({
 		facade: {
-			getSettings: () => ({}),
+			getSettings: () => ({} as unknown as BackendSettings),
 			isConfigured: () => true,
 			syncToBackendStore: async () => {},
 			getStatsForDetailsPanel: async () => ({}),
@@ -182,7 +183,7 @@ test('BackendIntegration - updateTokenStats delegates to updateTokenStatsFn', as
 	
 	const integration = new BackendIntegration({
 		facade: {
-			getSettings: () => ({}),
+			getSettings: () => ({} as unknown as BackendSettings),
 			isConfigured: () => true,
 			syncToBackendStore: async () => {},
 			getStatsForDetailsPanel: async () => ({}),
@@ -202,7 +203,7 @@ test('BackendIntegration - updateTokenStats delegates to updateTokenStatsFn', as
 
 test('BackendIntegration - getSettings delegates to facade', () => {
 	const facade = {
-		getSettings: () => ({ test: 'value' }),
+		getSettings: () => ({ test: 'value' } as unknown as BackendSettings),
 		isConfigured: () => true,
 		syncToBackendStore: async () => {},
 		getStatsForDetailsPanel: async () => ({}),
@@ -225,7 +226,7 @@ test('BackendIntegration - getSettings delegates to facade', () => {
 
 test('BackendIntegration - isConfigured delegates to facade', () => {
 	const facade = {
-		getSettings: () => ({}),
+		getSettings: () => ({} as unknown as BackendSettings),
 		isConfigured: (s: any) => s?.enabled === true,
 		syncToBackendStore: async () => {},
 		getStatsForDetailsPanel: async () => ({}),
@@ -252,7 +253,7 @@ test('BackendIntegration - syncToBackendStore delegates to facade', async () => 
 	const syncCalls: boolean[] = [];
 	
 	const facade = {
-		getSettings: () => ({}),
+		getSettings: () => ({} as unknown as BackendSettings),
 		isConfigured: () => true,
 		syncToBackendStore: async (force: boolean) => { syncCalls.push(force); },
 		getStatsForDetailsPanel: async () => ({}),
@@ -278,7 +279,7 @@ test('BackendIntegration - getStatsForDetailsPanel delegates to facade', async (
 	const facadeStats = { total: 100 };
 	
 	const facade = {
-		getSettings: () => ({}),
+		getSettings: () => ({} as unknown as BackendSettings),
 		isConfigured: () => true,
 		syncToBackendStore: async () => {},
 		getStatsForDetailsPanel: async () => facadeStats,
@@ -301,7 +302,7 @@ test('BackendIntegration - getStatsForDetailsPanel delegates to facade', async (
 
 test('BackendIntegration - getStatsForDetailsPanel falls back to updateTokenStats when facade returns null', async () => {
 	const facade = {
-		getSettings: () => ({}),
+		getSettings: () => ({} as unknown as BackendSettings),
 		isConfigured: () => true,
 		syncToBackendStore: async () => {},
 		getStatsForDetailsPanel: async () => null,
@@ -329,7 +330,7 @@ test('BackendIntegration - setFilters delegates to facade', () => {
 	const filtersReceived: any[] = [];
 	
 	const facade = {
-		getSettings: () => ({}),
+		getSettings: () => ({} as unknown as BackendSettings),
 		isConfigured: () => true,
 		syncToBackendStore: async () => {},
 		getStatsForDetailsPanel: async () => ({}),
