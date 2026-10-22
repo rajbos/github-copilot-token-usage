@@ -282,7 +282,6 @@ test('PiDataAccess.discoverSessions: discovers nested child session.jsonl files'
 
     // Override the config dir so PiDataAccess scans our temp directory
     const pi = new PiDataAccess();
-    // @ts-ignore — override private getConfigDir for test
     pi.getConfigDir = () => tmpRoot;
 
     const files = await pi.discoverSessions();
