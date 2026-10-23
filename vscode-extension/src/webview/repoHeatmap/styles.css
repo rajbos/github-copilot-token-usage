@@ -1,0 +1,217 @@
+body {
+	margin: 0;
+	background: var(--bg-primary);
+	color: var(--text-primary);
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.container {
+	padding: 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	max-width: 1400px;
+	margin: 0 auto;
+}
+
+.header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+.title {
+	font-size: 16px;
+	font-weight: 700;
+}
+
+.toolbar {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	flex-wrap: wrap;
+}
+
+.toolbar select {
+	background: var(--vscode-dropdown-background);
+	color: var(--vscode-dropdown-foreground);
+	border: 1px solid var(--border-subtle);
+	border-radius: 4px;
+	padding: 4px 8px;
+	font-size: 13px;
+	min-height: 24px;
+	max-width: 320px;
+}
+
+.toolbar-label {
+	font-size: 11px;
+	color: var(--text-secondary);
+}
+
+.kind-toggles {
+	display: inline-flex;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+
+.kind-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 3px 9px;
+	border-radius: 12px;
+	border: 1px solid var(--border-subtle);
+	background: transparent;
+	color: var(--text-primary);
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.kind-toggle[aria-pressed='false'] {
+	opacity: 0.45;
+}
+
+.kind-swatch {
+	width: 10px;
+	height: 10px;
+	border-radius: 2px;
+	display: inline-block;
+	background: var(--kind-color);
+}
+
+/* Theme chart tokens, so the four kinds stay distinguishable in light and high-contrast themes. */
+.kind-read { --kind-color: var(--vscode-charts-blue); }
+.kind-edited { --kind-color: var(--vscode-charts-orange); }
+.kind-created { --kind-color: var(--vscode-charts-green); }
+.kind-deleted { --kind-color: var(--vscode-charts-red); }
+
+.summary {
+	font-size: 13px;
+	color: var(--text-secondary);
+}
+
+.detail {
+	min-height: 20px;
+	font-size: 12px;
+	font-family: var(--vscode-editor-font-family, monospace);
+	color: var(--text-primary);
+	word-break: break-all;
+}
+
+.crumbs {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex-wrap: wrap;
+	font-size: 12px;
+}
+
+.crumb {
+	background: transparent;
+	border: none;
+	padding: 2px 4px;
+	color: var(--vscode-textLink-foreground);
+	font: inherit;
+	cursor: pointer;
+	border-radius: 3px;
+}
+
+.crumb.current {
+	color: var(--text-primary);
+	font-weight: 600;
+	cursor: default;
+}
+
+.crumb-sep {
+	color: var(--text-secondary);
+}
+
+.treemap {
+	position: relative;
+	width: 100%;
+	overflow: hidden;
+	background: var(--bg-primary);
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+}
+
+.tm-folder,
+.tm-file {
+	position: absolute;
+	box-sizing: border-box;
+	margin: 0;
+}
+
+.tm-folder {
+	border: 1px solid var(--border-subtle);
+	background: var(--bg-secondary);
+	border-radius: 3px;
+	pointer-events: none;
+}
+
+.tm-folder-label {
+	pointer-events: auto;
+	display: block;
+	width: 100%;
+	height: 18px;
+	padding: 0 6px;
+	border: none;
+	background: transparent;
+	color: var(--text-primary);
+	font-size: 11px;
+	font-weight: 600;
+	text-align: left;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	cursor: pointer;
+}
+
+.tm-folder-label:hover {
+	text-decoration: underline;
+}
+
+.tm-file {
+	padding: 2px 4px;
+	border: 1px solid var(--border-subtle);
+	border-radius: 2px;
+	cursor: pointer;
+	overflow: hidden;
+	text-align: left;
+	background: color-mix(in srgb, var(--kind-color) calc(var(--intensity, 0.5) * 100%), transparent);
+	color: var(--text-primary);
+	font-size: 11px;
+}
+
+.tm-name {
+	display: block;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.tm-file:focus-visible,
+.tm-folder-label:focus-visible,
+.crumb:focus-visible,
+.tm-file.selected {
+	outline: 2px solid var(--vscode-focusBorder);
+	outline-offset: -2px;
+}
+
+.tm-file.has-delete {
+	box-shadow: inset 0 0 0 2px var(--vscode-charts-red);
+}
+
+.empty,
+.progress {
+	padding: 28px 8px;
+	text-align: center;
+	color: var(--text-secondary);
+}
+
+.footnote {
+	font-size: 11px;
+	color: var(--text-secondary);
+}

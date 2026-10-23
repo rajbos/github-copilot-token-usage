@@ -156,6 +156,11 @@
         "category": "AI Engineering Fluency"
       },
       {
+        "command": "aiEngineeringFluency.showRepoHeatmap",
+        "title": "%command.showRepoHeatmap.title%",
+        "category": "AI Engineering Fluency"
+      },
+      {
         "command": "aiEngineeringFluency.showEfficiency",
         "title": "%command.showEfficiency.title%",
         "category": "AI Engineering Fluency"
